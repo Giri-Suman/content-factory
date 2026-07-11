@@ -1,0 +1,10 @@
+{
+  "name": "@factory/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The factory command — doctor, and later: render, radar, script, publish",
+  "bin": {
+    "factory": "./bin/factory.js"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "content-factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Code-first automated video studio: trend radar -> script -> voice -> render -> review -> publish",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "renderers/*"
+  ],
+  "scripts": {
+    "doctor": "node packages/cli/bin/factory.js doctor",
+    "factory": "node packages/cli/bin/factory.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

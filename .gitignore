@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# generated output
+renders/
+data/*.sqlite
+data/*.sqlite-*
+data/cache/
+dist/
+out/
+
+# python / manim
+__pycache__/
+media/
+*.pyc
+
+# os noise
+.DS_Store
+Thumbs.db
