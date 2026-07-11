@@ -8,10 +8,7 @@ node_modules/
 
 # generated output
 renders/
-data/*.sqlite
-data/*.sqlite-*
-data/cache/
-data/build/
+data/
 dist/
 out/
 renderers/code-report/public/audio/
