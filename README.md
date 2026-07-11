@@ -14,7 +14,17 @@ Full master plan: https://claude.ai/code/artifact/eff26ba0-ee88-42f3-a7f5-b7f6d5
 ```bash
 cp .env.example .env      # fill keys as phases come online
 npm run doctor            # verify the toolchain — zero install needed
+npm install               # remotion + react + shiki (P1+)
+
+# render an episode (16:9 + 9:16) from a script:
+node packages/cli/bin/factory.js render renderers/code-report/examples/factory-online.json
 ```
+
+Without ElevenLabs keys in `.env`, voice falls back to Windows TTS with
+estimated word timings — fine for previews. Add `ELEVENLABS_API_KEY` +
+`ELEVENLABS_VOICE_ID` and the same command uses your cloned voice with
+exact word-level sync. Voice is cached per scene, so unchanged scenes
+never re-bill the API.
 
 `factory doctor` is the health check for the whole machine. It knows which
 phase each dependency belongs to, so it tells you what's blocking *now* vs.
@@ -37,8 +47,8 @@ renders/            (gitignored) finished MP4s
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | P0 | Monorepo + `factory doctor` | **done** |
-| P1 | Code Report renderer — script.json → MP4 (16:9 + 9:16) | next |
-| P2 | Trend Radar + Script Studio (publishing starts) | |
+| P1 | Code Report renderer — script.json → MP4 (16:9 + 9:16) | **done** |
+| P2 | Trend Radar + Script Studio (publishing starts) | next |
 | P3 | Mission Control dashboard | |
 | P4 | Math engine (Manim) + Shorts factory | |
 | P5 | Publisher (YT/TikTok/IG) + analytics loop | |

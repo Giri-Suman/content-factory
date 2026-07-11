@@ -1,0 +1,10 @@
+{
+  "name": "@factory/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "script.json -> voice -> assets -> props -> remotion render",
+  "dependencies": {
+    "shiki": "^3.2.1"
+  }
+}

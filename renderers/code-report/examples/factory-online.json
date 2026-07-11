@@ -1,0 +1,60 @@
+{
+  "id": "factory-online",
+  "title": "The Content Factory is online",
+  "brand": { "name": "CONTENT FACTORY", "accent": "#ffb224" },
+  "outro": { "cta": "New AI + code videos every week." },
+  "scenes": [
+    {
+      "type": "kinetic",
+      "voiceover": "The Content Factory is officially online. An entire video studio, compiled from code.",
+      "emphasis": ["Content", "Factory", "code."]
+    },
+    {
+      "type": "code",
+      "voiceover": "Every video starts as a JSON script. Scenes, voiceover, visuals. React components compile it into the finished video, frame by frame.",
+      "lang": "javascript",
+      "focus": [4, 6],
+      "code": "const episode = {\n  id: \"factory-online\",\n  scenes: [\n    { type: \"code\",   voiceover: \"...\" },\n    { type: \"stat\",   voiceover: \"...\" },\n    { type: \"meme\",   voiceover: \"...\" },\n  ],\n};\n\nawait factory.render(episode); // -> mp4"
+    },
+    {
+      "type": "terminal",
+      "voiceover": "One command runs the whole pipeline. Voice, captions, code animation, and both aspect ratios, rendered without opening a single editor.",
+      "lines": [
+        "$ factory render episode.json",
+        "voice........ ok (7 scenes)",
+        "captions..... ok (word-level sync)",
+        "render 16:9.. ok  render 9:16.. ok",
+        "done -> renders/factory-online/"
+      ]
+    },
+    {
+      "type": "screenshot",
+      "voiceover": "The trend radar watches the entire developer internet, so the next video idea finds us before anyone else covers it.",
+      "src": "https://github.com/trending",
+      "pan": "down"
+    },
+    {
+      "type": "stat",
+      "voiceover": "Almost everything here is automated. Quiz shorts, one hundred percent. Data stories, ninety five. The news format, ninety. Humans keep the last mile.",
+      "label": "Automation level by format",
+      "stats": [
+        { "name": "Quiz Shorts", "value": 100, "suffix": "%" },
+        { "name": "Data stories", "value": 95, "suffix": "%" },
+        { "name": "News reports", "value": 90, "suffix": "%" },
+        { "name": "Math visuals", "value": 90, "suffix": "%" }
+      ]
+    },
+    {
+      "type": "quote",
+      "voiceover": "Automation does not replace creators. It multiplies them.",
+      "quote": "Automation doesn't replace creators. It multiplies them.",
+      "attribution": "the master plan"
+    },
+    {
+      "type": "meme",
+      "voiceover": "And yes. The render farm is already asking for overtime pay.",
+      "emoji": "🤖",
+      "text": "Render go brrr"
+    }
+  ]
+}
