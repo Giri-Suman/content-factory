@@ -37,6 +37,23 @@ Math shorts need Manim in the project venv (kept off C: on purpose):
 `D:\python312\python.exe -m venv .venv` then `.venv\Scripts\pip install manim`.
 No LaTeX required — scenes are linted to use Text/shapes only.
 
+## Publishing (safe by default)
+
+```bash
+node packages/cli/bin/factory.js auth-youtube      # one-time: you approve in browser
+node packages/cli/bin/factory.js publish <id>      # compliance check + DRY RUN (nothing uploaded)
+node packages/cli/bin/factory.js publish <id> --go # real upload, PRIVATE by default
+node packages/cli/bin/factory.js publish <id> --go --public   # explicit, goes live
+node packages/cli/bin/factory.js publish <id> --go --at "2026-07-13T15:00"  # scheduled
+node packages/cli/bin/factory.js analytics         # pull stats -> category weights steer the radar
+```
+
+Publishing is gated: a compliance lint (render present, human review logged,
+synthetic-media disclosure, no verbatim narration, ≤2/day/platform) must pass;
+uploads are **private** unless you explicitly pass `--public`/`--unlisted`;
+`--go` is required for any real upload (default is a dry run). The synthetic-
+content disclosure is set programmatically on every upload.
+
 ## Mission Control (the portal)
 
 Trends (scan/filter/draft) → Scripts (scene-by-scene editor, title/hook
@@ -85,7 +102,7 @@ renders/            (gitignored) finished MP4s
 | P2 | Trend Radar + Script Studio (publishing starts) | **done** |
 | P3 | Mission Control dashboard (localhost:4600) | **done** |
 | P4 | Math engine (Manim) + Shorts factory | **done** |
-| P5 | Publisher (YT/TikTok/IG) + analytics loop | |
+| P5 | Publisher (YouTube) + compliance gate + analytics loop | **done** |
 | P6 | Auto-Editor for filmed footage (separate makeup channel) | |
 
 ## P0 homework (human tasks — nothing here can be automated)

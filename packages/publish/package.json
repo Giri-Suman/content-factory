@@ -1,0 +1,8 @@
+{
+  "name": "@factory/publish",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Compliance gate, YouTube publisher (disclosure flags, private-by-default), analytics feedback loop",
+  "dependencies": {}
+}

@@ -70,7 +70,22 @@ export function readEnvKeys() {
     ollama: Boolean(vals.OLLAMA_MODEL),
     elevenlabs: Boolean(vals.ELEVENLABS_API_KEY && vals.ELEVENLABS_VOICE_ID),
     telegram: Boolean(vals.TELEGRAM_BOT_TOKEN && vals.TELEGRAM_CHAT_ID),
+    youtube: Boolean(vals.YT_CLIENT_ID && vals.YT_CLIENT_SECRET && vals.YT_REFRESH_TOKEN),
   };
+}
+
+/** Compliance report for a rendered id (delegates to the tested CLI). */
+export async function compliance(id) {
+  const safe = path.basename(String(id)).replace(/[^a-z0-9-]/gi, "");
+  const { code, out } = await runCli(["compliance", safe, "--json"], 30000);
+  const line = out.split(/\r?\n/).reverse().find((l) => l.startsWith("RESULT "));
+  if (code !== 0 || !line) return { pass: false, checks: [{ id: "error", level: "fail", msg: out.slice(-300) || "compliance check failed" }] };
+  return JSON.parse(line.slice(7));
+}
+
+/** Analytics performance snapshot (perf.json). */
+export function readPerf() {
+  return readJson(path.join(dataDir, "perf.json"), { weights: { coding: 1, ai: 1, math: 1, makeup: 1 }, updatedAt: null, videos: [] });
 }
 
 export function listScripts() {

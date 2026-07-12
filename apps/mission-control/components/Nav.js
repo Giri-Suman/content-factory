@@ -7,6 +7,7 @@ const LINKS = [
   ["/scripts", "Scripts"],
   ["/math", "Math"],
   ["/renders", "Renders"],
+  ["/analytics", "Analytics"],
   ["/settings", "Settings"],
 ];
 

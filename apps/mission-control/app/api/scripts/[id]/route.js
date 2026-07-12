@@ -23,6 +23,7 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ error: "invalid script" }, { status: 400 });
   }
   script.id = id; // the filename is the identity
+  script.reviewedAt = new Date().toISOString(); // a human opened + saved this = the review gate
   writeFileSync(file, JSON.stringify(script, null, 2));
   return NextResponse.json({ ok: true });
 }

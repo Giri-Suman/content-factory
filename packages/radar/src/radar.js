@@ -3,6 +3,10 @@ import { upsertTrend, getByIds, updateScore, topTrends, hotUnalerted, markAlerte
 import { ingestAll } from "./sources.js";
 import { heuristicScore, llmScore } from "./score.js";
 import { sendAlert } from "./alert.js";
+import { categoryWeight } from "../../publish/src/analytics.js";
+
+// analytics feedback: multiply a trend's score by its category's performance weight
+const weighted = (score, category) => Math.max(0, Math.min(100, Math.round(score * categoryWeight(category))));
 
 const ALERT_THRESHOLD = 80;
 
@@ -33,8 +37,8 @@ export async function runRadar() {
 
   for (const t of fresh) {
     const viaLlm = llm?.scored.get(t.id);
-    if (viaLlm) updateScore(t.id, viaLlm.score, llm.provider, viaLlm.reason);
-    else updateScore(t.id, heuristicScore(t), "heuristic", null);
+    const raw = viaLlm ? viaLlm.score : heuristicScore(t);
+    updateScore(t.id, weighted(raw, t.category), viaLlm ? llm.provider : "heuristic", viaLlm?.reason || null);
   }
   save();
 
