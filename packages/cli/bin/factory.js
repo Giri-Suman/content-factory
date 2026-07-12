@@ -13,6 +13,9 @@ ${c.bold("factory")} — content-factory command line
   ${c.cyan("factory radar")}                        scan + score trending topics, alert hot ones
   ${c.cyan("factory script <id | \"topic\">")}        draft a script.json from a trend or topic
       --template                       skeleton to hand-fill (no API key needed)
+  ${c.cyan("factory math \"<topic>\"")}               LLM-written manim math short (9:16)
+      factory math <demo-name> --demo  render a bundled demo (no key needed)
+  ${c.cyan("factory shorts <id>")}                  cut 1-3 standalone clips from a rendered episode
   ${c.cyan("factory help")}                         this message
 
   ${c.dim("arriving in later phases:")}
@@ -40,6 +43,18 @@ switch (cmd) {
   case "script": {
     const { generateScript } = await import("../../studio/src/generate.js");
     const ok = await generateScript(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "math": {
+    const { mathShort } = await import("../../pipeline/src/math.js");
+    const ok = await mathShort(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "shorts": {
+    const { makeClips } = await import("../../pipeline/src/clips.js");
+    const ok = await makeClips(rest);
     process.exit(ok ? 0 : 1);
     break;
   }

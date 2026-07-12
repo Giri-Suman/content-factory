@@ -1,0 +1,6 @@
+{
+  "id": "gauss-sum",
+  "title": "Add 1 to 100 in 3 seconds",
+  "hook": "Add 1 to 100 — instantly",
+  "voiceover": "You can add every number from one to a hundred in three seconds. No calculator. Here's the trick: don't add them in order. Pair them up. One plus one hundred is a hundred and one. Two plus ninety-nine? Also a hundred and one. Three plus ninety-eight — a hundred and one again. Every single pair lands on the exact same number. And there are exactly fifty pairs. So the whole sum is just fifty times a hundred and one. Five thousand and fifty. Done. A schoolteacher gave this problem to keep his class busy for an hour. An eight-year-old named Gauss handed it back in seconds — and became one of the greatest mathematicians ever."
+}

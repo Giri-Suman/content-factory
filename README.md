@@ -26,13 +26,23 @@ node packages/cli/bin/factory.js render data/scripts/<id>.json
 
 # or use the portal — everything above in one UI:
 npm run dev --prefix apps/mission-control       # -> http://localhost:4600
+
+# math shorts (Manim) + clip mining:
+node packages/cli/bin/factory.js math gauss-sum --demo    # bundled demo, no key
+node packages/cli/bin/factory.js math "why 0! = 1"        # LLM writes the scene
+node packages/cli/bin/factory.js shorts <rendered-id>     # cut 1-3 clips from an episode
 ```
+
+Math shorts need Manim in the project venv (kept off C: on purpose):
+`D:\python312\python.exe -m venv .venv` then `.venv\Scripts\pip install manim`.
+No LaTeX required — scenes are linted to use Text/shapes only.
 
 ## Mission Control (the portal)
 
 Trends (scan/filter/draft) → Scripts (scene-by-scene editor, title/hook
-options) → Approve & render (live job log) → Renders (in-browser preview of
-both aspect ratios) → Settings (radar categories + provider status).
+options) → Math (Manim shorts + demos) → Approve & render (live job log) →
+Renders (in-browser preview + “Cut shorts”) → Settings (radar categories +
+provider status).
 
 ## AI providers (pick one in .env)
 
@@ -74,7 +84,7 @@ renders/            (gitignored) finished MP4s
 | P1 | Code Report renderer — script.json → MP4 (16:9 + 9:16) | **done** |
 | P2 | Trend Radar + Script Studio (publishing starts) | **done** |
 | P3 | Mission Control dashboard (localhost:4600) | **done** |
-| P4 | Math engine (Manim) + Shorts factory | |
+| P4 | Math engine (Manim) + Shorts factory | **done** |
 | P5 | Publisher (YT/TikTok/IG) + analytics loop | |
 | P6 | Auto-Editor for filmed footage (separate makeup channel) | |
 

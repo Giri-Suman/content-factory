@@ -1,12 +1,17 @@
 import React from "react";
 import { Composition } from "remotion";
 import { CodeReportVideo } from "./Video.jsx";
+import { ShortOverlay } from "./ShortOverlay.jsx";
 
 const FPS = 30;
 
 // duration comes from the prepared props (--props file), not hardcoded
 const calc = ({ props }) => ({
   durationInFrames: props?.timeline?.totalFrames || 300,
+});
+
+const calcOverlay = ({ props }) => ({
+  durationInFrames: props?.totalFrames || 300,
 });
 
 export const Root = () => (
@@ -30,6 +35,16 @@ export const Root = () => (
       height={1920}
       defaultProps={{}}
       calculateMetadata={calc}
+    />
+    <Composition
+      id="ShortOverlay"
+      component={ShortOverlay}
+      durationInFrames={300}
+      fps={FPS}
+      width={1080}
+      height={1920}
+      defaultProps={{}}
+      calculateMetadata={calcOverlay}
     />
   </>
 );

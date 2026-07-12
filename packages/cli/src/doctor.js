@@ -139,8 +139,19 @@ const GROUPS = [
     title: "Math engine + Shorts factory",
     checks: [
       ["Python >= 3.10", pythonCheck],
-      ["Manim CE", () => binCheck(["manim --version", "python -m manim --version"], "pip install manim  (needs Python first)", { later: true })],
-      ["whisper (captions/transcripts)", () => binCheck(["whisper-cli --help", "whisper --help"], "installed during P4 — whisper.cpp release or pip install openai-whisper", { later: true })],
+      ["Manim CE", () =>
+        binCheck(
+          [`"${path.join(repoRoot, ".venv", "Scripts", "python.exe")}" -m manim --version`, "manim --version", "python -m manim --version"],
+          "node packages/cli/bin/factory.js math needs it — see README (installs into .venv)",
+          { later: true }
+        )],
+    ],
+  },
+  {
+    phase: "P6",
+    title: "Auto-Editor (filmed footage — makeup channel)",
+    checks: [
+      ["whisper (footage captions)", () => binCheck(["whisper-cli --help", "whisper --help"], "installed in P6 — whisper.cpp release or pip install openai-whisper", { later: true })],
     ],
   },
   {
