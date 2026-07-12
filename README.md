@@ -18,6 +18,11 @@ npm install               # remotion + react + shiki (P1+)
 
 # render an episode (16:9 + 9:16) from a script:
 node packages/cli/bin/factory.js render renderers/code-report/examples/factory-online.json
+
+# the daily loop:
+node packages/cli/bin/factory.js radar          # scan + score trending topics
+node packages/cli/bin/factory.js script <ID>    # draft a script from a trend (or a "topic")
+node packages/cli/bin/factory.js render data/scripts/<id>.json
 ```
 
 Without ElevenLabs keys in `.env`, voice falls back to Windows TTS with
@@ -48,8 +53,8 @@ renders/            (gitignored) finished MP4s
 |-------|-------------|--------|
 | P0 | Monorepo + `factory doctor` | **done** |
 | P1 | Code Report renderer — script.json → MP4 (16:9 + 9:16) | **done** |
-| P2 | Trend Radar + Script Studio (publishing starts) | next |
-| P3 | Mission Control dashboard | |
+| P2 | Trend Radar + Script Studio (publishing starts) | **done** |
+| P3 | Mission Control dashboard | next |
 | P4 | Math engine (Manim) + Shorts factory | |
 | P5 | Publisher (YT/TikTok/IG) + analytics loop | |
 | P6 | Auto-Editor for filmed footage (separate makeup channel) | |
