@@ -17,32 +17,33 @@ export async function runRadar() {
   ensureDirs();
 
   console.log("\nscanning sources...");
-  const { items, failures } = await ingestAll();
+  const { items, failures, enabled } = await ingestAll();
   for (const f of failures) console.error(`  ! ${f}`);
-  console.log(`  ${items.length} items from ${new Set(items.map((i) => i.source)).size} sources`);
+  console.log(
+    `  ${items.length} items from ${new Set(items.map((i) => i.source)).size} sources (categories: ${enabled.join(", ") || "none"})`
+  );
 
   const ids = [...new Set(items.map(upsertTrend))];
   const fresh = getByIds(ids);
 
-  const useLlm = Boolean(process.env.ANTHROPIC_API_KEY);
-  console.log(
-    `scoring ${fresh.length} trends (${useLlm ? "claude" : "heuristic — set ANTHROPIC_API_KEY for smarter scoring"})...`
-  );
-  const llm = useLlm ? await llmScore(fresh) : null;
+  console.log(`scoring ${fresh.length} trends...`);
+  const llm = await llmScore(fresh);
+  if (llm) console.log(`  scored via ${llm.provider}`);
+  else console.log(`  heuristic scoring — set an LLM key in .env (anthropic/openrouter/ollama) for smarter scoring`);
 
   for (const t of fresh) {
-    const viaLlm = llm?.get(t.id);
-    if (viaLlm) updateScore(t.id, viaLlm.score, "claude", viaLlm.reason);
+    const viaLlm = llm?.scored.get(t.id);
+    if (viaLlm) updateScore(t.id, viaLlm.score, llm.provider, viaLlm.reason);
     else updateScore(t.id, heuristicScore(t), "heuristic", null);
   }
   save();
 
   const top = topTrends(15);
-  console.log("\n  ID       SCORE  AGE  SOURCE        TITLE");
-  console.log("  " + "-".repeat(96));
+  console.log("\n  ID       SCORE  AGE  CATEGORY  SOURCE        TITLE");
+  console.log("  " + "-".repeat(100));
   for (const t of top) {
     console.log(
-      `  ${t.id.padEnd(8)} ${String(t.score).padStart(3)}   ${age(t.published_at).padEnd(4)} ${t.source.padEnd(13)} ${t.title.slice(0, 62)}`
+      `  ${t.id.padEnd(8)} ${String(t.score).padStart(3)}   ${age(t.published_at).padEnd(4)} ${(t.category || "?").padEnd(9)} ${t.source.padEnd(13)} ${t.title.slice(0, 54)}`
     );
   }
 

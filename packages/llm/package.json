@@ -1,0 +1,10 @@
+{
+  "name": "@factory/llm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider-agnostic LLM layer: Anthropic (best), OpenRouter (cheap/free), Ollama (local, free)",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0"
+  }
+}

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,4 +40,35 @@ export function ensureDirs() {
   for (const dir of [paths.data, paths.renders]) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
+}
+
+/* ---------- user config (data/config.json — the portal's settings) ---------- */
+
+const CONFIG_PATH = path.join(paths.data, "config.json");
+
+export const DEFAULT_CONFIG = {
+  // which content niches the trend radar scans — toggled in Mission Control
+  categories: { coding: true, ai: true, math: false, makeup: false },
+};
+
+export function loadUserConfig() {
+  if (existsSync(CONFIG_PATH)) {
+    try {
+      const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+      return {
+        ...DEFAULT_CONFIG,
+        ...cfg,
+        categories: { ...DEFAULT_CONFIG.categories, ...(cfg.categories || {}) },
+      };
+    } catch {
+      /* corrupted file -> defaults */
+    }
+  }
+  return structuredClone(DEFAULT_CONFIG);
+}
+
+export function saveUserConfig(cfg) {
+  ensureDirs();
+  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  return cfg;
 }

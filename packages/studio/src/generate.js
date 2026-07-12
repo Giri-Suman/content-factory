@@ -1,11 +1,9 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, ensureDirs, paths } from "../../shared/src/config.js";
 import { findTrendByPrefix, markUsed } from "../../radar/src/db.js";
+import { chat, providerStatus } from "../../llm/src/llm.js";
 import { STYLE_GUIDE, buildUserPrompt, SCENE_TYPES } from "./style.js";
-
-const SCRIPT_MODEL = () => process.env.ANTHROPIC_SCRIPT_MODEL || "claude-opus-4-8";
 
 const slugify = (s) =>
   s
@@ -58,9 +56,53 @@ function writeOut(script, meta, trendId) {
   return scriptPath;
 }
 
-export async function generateScript(argv) {
+/**
+ * Core drafting flow, reusable by the CLI and Mission Control.
+ * input: a trend-id prefix or a freeform topic string.
+ * Returns { scriptPath, script, meta, provider, template }.
+ */
+export async function draftScript(input, { template = false } = {}) {
   loadEnv();
   ensureDirs();
+
+  let context;
+  let trendId = null;
+  const trend = /^[a-z0-9]{4,10}$/.test(input) ? findTrendByPrefix(input) : null;
+  if (trend) {
+    trendId = trend.id;
+    context = {
+      title: trend.title,
+      url: trend.url,
+      source: trend.source,
+      points: trend.points,
+      comments: trend.comments,
+      category: trend.category,
+    };
+  } else {
+    context = { topic: input };
+  }
+
+  const status = providerStatus();
+  if (template || !status.active) {
+    const script = templateScript(context);
+    const scriptPath = writeOut(script, null, trendId);
+    return { scriptPath, script, meta: null, provider: null, template: true, context };
+  }
+
+  const result = await chat({
+    system: STYLE_GUIDE,
+    user: buildUserPrompt(context),
+    task: "script",
+    maxTokens: 16000,
+  });
+  const parsed = extractJson(result.text);
+  const script = validate(parsed.script || parsed);
+  const meta = parsed.meta || null;
+  const scriptPath = writeOut(script, meta, trendId);
+  return { scriptPath, script, meta, provider: `${result.provider}:${result.model}`, template: false, context };
+}
+
+export async function generateScript(argv) {
   const args = argv.filter((a) => !a.startsWith("--"));
   const flags = new Set(argv.filter((a) => a.startsWith("--")));
   const input = args.join(" ").trim();
@@ -69,63 +111,26 @@ export async function generateScript(argv) {
     return false;
   }
 
-  // trend id prefix, or freeform topic
-  let context;
-  let trendId = null;
-  const trend = /^[a-z0-9]{4,10}$/.test(input) ? findTrendByPrefix(input) : null;
-  if (trend) {
-    trendId = trend.id;
-    context = { title: trend.title, url: trend.url, source: trend.source, points: trend.points, comments: trend.comments };
-    console.log(`\ntrend ${trend.id}: ${trend.title.slice(0, 80)}`);
+  loadEnv();
+  const status = providerStatus();
+  if (!status.active && !flags.has("--template")) {
+    console.log("no LLM provider configured (.env: ANTHROPIC_API_KEY / OPENROUTER_API_KEY / OLLAMA_MODEL) — writing a hand-fill template");
+  } else if (!flags.has("--template")) {
+    console.log(`\ndrafting with ${status.active} (${status.scriptModel})...`);
+  }
+
+  const out = await draftScript(input, { template: flags.has("--template") });
+
+  if (out.template) {
+    console.log(`template -> ${out.scriptPath}\nfill in the scenes, then: factory render "${out.scriptPath}"\n`);
   } else {
-    context = { topic: input };
-    console.log(`\nfreeform topic: ${input.slice(0, 80)}`);
+    console.log(`\nscript: ${out.script.title}`);
+    console.log(`scenes: ${out.script.scenes.map((s) => s.type).join(" -> ")}`);
+    if (out.meta?.titles) console.log(`titles:\n  - ${out.meta.titles.slice(0, 5).join("\n  - ")}`);
+    console.log(`\nsaved -> ${out.scriptPath}`);
+    console.log(`review the jokes, then: factory render "${out.scriptPath}"\n`);
   }
-
-  if (flags.has("--template") || !process.env.ANTHROPIC_API_KEY) {
-    if (!process.env.ANTHROPIC_API_KEY && !flags.has("--template")) {
-      console.log("no ANTHROPIC_API_KEY in .env — writing a hand-fill template instead");
-    }
-    const script = templateScript(context);
-    const out = writeOut(script, null, trendId);
-    console.log(`template -> ${out}\nfill in the scenes, then: factory render "${out}"\n`);
-    return true;
-  }
-
-  console.log(`drafting with ${SCRIPT_MODEL()}...`);
-  const client = new Anthropic();
-  let response;
-  try {
-    response = await client.messages.create({
-      model: SCRIPT_MODEL(),
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system: STYLE_GUIDE,
-      messages: [{ role: "user", content: buildUserPrompt(context) }],
-    });
-  } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) {
-      console.error("ANTHROPIC_API_KEY is invalid — check .env");
-      return false;
-    }
-    throw err;
-  }
-
-  if (response.stop_reason === "refusal") {
-    console.error("model declined this topic — pick another trend");
-    return false;
-  }
-
-  const text = response.content.find((b) => b.type === "text")?.text || "";
-  const parsed = extractJson(text);
-  const script = validate(parsed.script || parsed);
-  const meta = parsed.meta || null;
-
-  const out = writeOut(script, meta, trendId);
-  console.log(`\nscript: ${script.title}`);
-  console.log(`scenes: ${script.scenes.map((s) => s.type).join(" -> ")}`);
-  if (meta?.titles) console.log(`titles:\n  - ${meta.titles.slice(0, 5).join("\n  - ")}`);
-  console.log(`\nsaved -> ${out}`);
-  console.log(`review the jokes, then: factory render "${out}"\n`);
+  // machine-readable line for Mission Control
+  console.log(`RESULT ${JSON.stringify({ scriptPath: out.scriptPath, id: out.script.id, template: out.template })}`);
   return true;
 }

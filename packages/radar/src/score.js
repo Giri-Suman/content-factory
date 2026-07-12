@@ -1,13 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { chat } from "../../llm/src/llm.js";
 
 /**
- * Scores 0–100 = "how likely does a video on this go viral with a coding/AI
- * audience". Claude Haiku when ANTHROPIC_API_KEY is set (per the master plan:
- * Haiku for volume scoring); keyword+engagement heuristic otherwise, so the
- * radar works before any key exists.
+ * Scores 0–100 = "how likely does a video on this go viral with this
+ * category's audience". Uses whatever LLM provider is configured
+ * (anthropic/openrouter/ollama); keyword+engagement heuristic otherwise,
+ * so the radar works before any key exists.
  */
-
-const SCORING_MODEL = process.env.ANTHROPIC_SCORING_MODEL || "claude-haiku-4-5";
 
 const KEYWORDS = [
   [/\b(gpt|claude|gemini|llama|mistral|deepseek|openai|anthropic)\b/i, 14],
@@ -18,6 +16,8 @@ const KEYWORDS = [
   [/\b(benchmark|vs\.?|versus|comparison|faster|beats)\b/i, 7],
   [/\b(deprecat|kill|shut(ting)? down|dead|end of)\b/i, 8],
   [/\b(framework|library|compiler|database|api)\b/i, 5],
+  [/\b(proof|theorem|paradox|infinity|prime)\b/i, 7],
+  [/\b(dupe|drugstore|viral|holy grail|routine|before.?after)\b/i, 7],
 ];
 
 export function heuristicScore(item) {
@@ -32,6 +32,27 @@ export function heuristicScore(item) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+const AUDIENCES = {
+  coding: "working developers who watch fast, witty tech news",
+  ai: "developers and AI enthusiasts following model releases and AI drama",
+  math: "math-curious viewers who love visual proofs, paradoxes and 'wait, what?' facts",
+  makeup: "beauty viewers who love technique breakdowns, dupes and honest reviews",
+};
+
+const SCORING_SYSTEM = `You score trending stories for short/medium YouTube videos. Each line is: id | category | source | engagement | title.
+
+Audience per category:
+${Object.entries(AUDIENCES)
+  .map(([k, v]) => `- ${k}: ${v}`)
+  .join("\n")}
+
+Score each story 0-100 for viral video potential with ITS OWN category's audience:
+novelty, emotional charge (hype/drama/fear/wonder), meme potential, audience match,
+and whether it supports a strong visual story. Household-name topics score high;
+niche academic or enterprise-only stories score low.
+
+Reply ONLY with a JSON array: [{"id":"...","score":0,"reason":"<8 words max>"}]`;
+
 function extractJson(text) {
   const start = text.indexOf("[");
   const end = text.lastIndexOf("]");
@@ -40,30 +61,19 @@ function extractJson(text) {
 }
 
 export async function llmScore(items) {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  const client = new Anthropic();
   const scored = new Map();
+  let provider = null;
 
   for (let i = 0; i < items.length; i += 40) {
     const batch = items.slice(i, i + 40);
     const listing = batch
-      .map((t) => `${t.id} | ${t.source} | ${t.points}pts/${t.comments}c | ${t.title}`)
+      .map((t) => `${t.id} | ${t.category} | ${t.source} | ${t.points}pts/${t.comments}c | ${t.title}`)
       .join("\n");
     try {
-      const response = await client.messages.create({
-        model: SCORING_MODEL,
-        max_tokens: 4000,
-        system:
-          "You score trending tech stories for a YouTube channel about coding, AI, and dev tools " +
-          "(fast, witty news-report format for developers). Score each story 0-100 for viral video " +
-          "potential: novelty, emotional charge (hype/drama/fear), meme potential, audience match, " +
-          "and whether it supports a strong visual story. Household-name AI/dev news scores high; " +
-          "niche academic or enterprise-only stories score low. " +
-          'Reply ONLY with a JSON array: [{"id":"...","score":0,"reason":"<8 words max>"}]',
-        messages: [{ role: "user", content: listing }],
-      });
-      const text = response.content.find((b) => b.type === "text")?.text || "";
-      for (const row of extractJson(text)) {
+      const result = await chat({ system: SCORING_SYSTEM, user: listing, task: "score", maxTokens: 4000 });
+      if (!result) return null; // no provider configured at all
+      provider = result.provider;
+      for (const row of extractJson(result.text)) {
         if (row.id && typeof row.score === "number") {
           scored.set(row.id, {
             score: Math.max(0, Math.min(100, Math.round(row.score))),
@@ -72,9 +82,8 @@ export async function llmScore(items) {
         }
       }
     } catch (err) {
-      if (err instanceof Anthropic.AuthenticationError) throw err;
       console.error(`  llm scoring batch failed (${err.message}) — falling back to heuristic`);
     }
   }
-  return scored;
+  return scored.size ? { scored, provider } : null;
 }

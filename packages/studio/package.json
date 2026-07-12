@@ -4,7 +4,5 @@
   "private": true,
   "type": "module",
   "description": "Script Studio: trend or topic -> draft script.json in the channel voice",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.111.0"
-  }
+  "dependencies": {}
 }

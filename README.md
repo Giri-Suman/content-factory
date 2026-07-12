@@ -19,11 +19,30 @@ npm install               # remotion + react + shiki (P1+)
 # render an episode (16:9 + 9:16) from a script:
 node packages/cli/bin/factory.js render renderers/code-report/examples/factory-online.json
 
-# the daily loop:
+# the daily loop (CLI):
 node packages/cli/bin/factory.js radar          # scan + score trending topics
 node packages/cli/bin/factory.js script <ID>    # draft a script from a trend (or a "topic")
 node packages/cli/bin/factory.js render data/scripts/<id>.json
+
+# or use the portal — everything above in one UI:
+npm run dev --prefix apps/mission-control       # -> http://localhost:4600
 ```
+
+## Mission Control (the portal)
+
+Trends (scan/filter/draft) → Scripts (scene-by-scene editor, title/hook
+options) → Approve & render (live job log) → Renders (in-browser preview of
+both aspect ratios) → Settings (radar categories + provider status).
+
+## AI providers (pick one in .env)
+
+| Provider | Cost | Quality | Setup |
+|---|---|---|---|
+| Anthropic | ~$10-20/mo | best writing | `ANTHROPIC_API_KEY` |
+| OpenRouter | cheap → **free** (`:free` models) | varies by model | `OPENROUTER_API_KEY` |
+| Ollama | **$0, runs locally** | depends on your hardware | `OLLAMA_MODEL` after `ollama pull` |
+
+No key at all still works: heuristic trend scoring + fillable script templates.
 
 Without ElevenLabs keys in `.env`, voice falls back to Windows TTS with
 estimated word timings — fine for previews. Add `ELEVENLABS_API_KEY` +
@@ -54,7 +73,7 @@ renders/            (gitignored) finished MP4s
 | P0 | Monorepo + `factory doctor` | **done** |
 | P1 | Code Report renderer — script.json → MP4 (16:9 + 9:16) | **done** |
 | P2 | Trend Radar + Script Studio (publishing starts) | **done** |
-| P3 | Mission Control dashboard | next |
+| P3 | Mission Control dashboard (localhost:4600) | **done** |
 | P4 | Math engine (Manim) + Shorts factory | |
 | P5 | Publisher (YT/TikTok/IG) + analytics loop | |
 | P6 | Auto-Editor for filmed footage (separate makeup channel) | |

@@ -4,7 +4,5 @@
   "private": true,
   "type": "module",
   "description": "Trend radar: ingest HN/GitHub/Reddit/RSS, score with Claude, alert via Telegram",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.111.0"
-  }
+  "dependencies": {}
 }

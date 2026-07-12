@@ -49,6 +49,7 @@ export function upsertTrend(item) {
   trends[id] = {
     id,
     source: item.source,
+    category: item.category || existing?.category || "coding",
     title: item.title.slice(0, 300),
     url: item.url || null,
     points: item.points || 0,
