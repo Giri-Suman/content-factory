@@ -31,6 +31,9 @@ npm run dev --prefix apps/mission-control       # -> http://localhost:4600
 node packages/cli/bin/factory.js math gauss-sum --demo    # bundled demo, no key
 node packages/cli/bin/factory.js math "why 0! = 1"        # LLM writes the scene
 node packages/cli/bin/factory.js shorts <rendered-id>     # cut 1-3 clips from an episode
+
+# auto-edit filmed footage (silence cuts + punch-ins + loudnorm, 100% local):
+node packages/cli/bin/factory.js edit "D:\footage\my-tutorial.mp4"
 ```
 
 Math shorts need Manim in the project venv (kept off C: on purpose):
@@ -103,7 +106,7 @@ renders/            (gitignored) finished MP4s
 | P3 | Mission Control dashboard (localhost:4600) | **done** |
 | P4 | Math engine (Manim) + Shorts factory | **done** |
 | P5 | Publisher (YouTube) + compliance gate + analytics loop | **done** |
-| P6 | Auto-Editor for filmed footage (separate makeup channel) | |
+| P6 | Auto-Editor for filmed footage (separate makeup channel) | **done** |
 
 ## P0 homework (human tasks — nothing here can be automated)
 

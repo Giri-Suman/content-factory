@@ -16,6 +16,8 @@ ${c.bold("factory")} — content-factory command line
   ${c.cyan("factory math \"<topic>\"")}               LLM-written manim math short (9:16)
       factory math <demo-name> --demo  render a bundled demo (no key needed)
   ${c.cyan("factory shorts <id>")}                  cut 1-3 standalone clips from a rendered episode
+  ${c.cyan("factory edit <footage.mp4>")}           auto-edit filmed footage: silence cuts + punch-ins
+      --noise=-35dB --min-silence=0.45 --no-punch --no-captions
   ${c.cyan("factory publish <id>")}                 compliance-check + upload to YouTube (dry-run without --go)
       --public | --unlisted            visibility (default: private) · --at "<iso>" schedules · --go = real upload
   ${c.cyan("factory auth-youtube")}                 one-time OAuth to get your refresh token
@@ -56,6 +58,12 @@ switch (cmd) {
   case "shorts": {
     const { makeClips } = await import("../../pipeline/src/clips.js");
     const ok = await makeClips(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "edit": {
+    const { autoEdit } = await import("../../pipeline/src/autoedit.js");
+    const ok = await autoEdit(rest);
     process.exit(ok ? 0 : 1);
     break;
   }
