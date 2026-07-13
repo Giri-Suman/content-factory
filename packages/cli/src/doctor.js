@@ -151,7 +151,12 @@ const GROUPS = [
     phase: "P6",
     title: "Auto-Editor (filmed footage — makeup channel)",
     checks: [
-      ["whisper (footage captions)", () => binCheck(["whisper-cli --help", "whisper --help"], "installed in P6 — whisper.cpp release or pip install openai-whisper", { later: true })],
+      ["whisper (footage captions)", () =>
+        binCheck(
+          [`"${path.join(repoRoot, ".venv", "Scripts", "whisper-ctranslate2.exe")}" --version`, "whisper-cli --help", "whisper --help"],
+          ".venv\\Scripts\\pip install whisper-ctranslate2 (light, no torch)",
+          { later: true }
+        )],
     ],
   },
   {

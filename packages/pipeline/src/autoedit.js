@@ -96,16 +96,23 @@ function buildFilterScript(keeps, { width, height, punch }) {
   return lines.join("\n");
 }
 
+// PYTHONIOENCODING: python CLIs crash printing non-cp1252 chars on Windows consoles
+const WHISPER_ENV = {
+  ...process.env,
+  PYTHONIOENCODING: "utf-8",
+  HF_HOME: path.join(repoRoot, "data", "models"), // model cache on D: (C: is full)
+};
+
 function whisperCmd() {
   const venvBin = path.join(repoRoot, ".venv", "Scripts");
   const candidates = [
-    { cmd: path.join(venvBin, "faster-whisper.exe"), kind: "faster-whisper" },
+    { cmd: path.join(venvBin, "whisper-ctranslate2.exe"), kind: "whisper-ctranslate2" },
     { cmd: "whisper-cli", kind: "whisper.cpp" },
     { cmd: path.join(venvBin, "whisper.exe"), kind: "openai-whisper" },
     { cmd: "whisper", kind: "openai-whisper" },
   ];
   for (const c of candidates) {
-    const res = run(c.cmd, ["--help"], { timeout: 20000 });
+    const res = run(c.cmd, ["--version"], { timeout: 30000, env: WHISPER_ENV });
     if (res.status === 0) return c;
   }
   return null;
@@ -115,10 +122,11 @@ function burnCaptions(master, outFile, workDir) {
   const w = whisperCmd();
   if (!w) return { done: false, reason: "whisper not installed (factory doctor lists install options)" };
   console.log(`  transcribing with ${w.kind}...`);
+  const env = WHISPER_ENV;
   const res =
-    w.kind === "openai-whisper"
-      ? run(w.cmd, [master, "--model", "base", "--output_format", "srt", "--output_dir", workDir], { timeout: 1000 * 60 * 60 })
-      : run(w.cmd, ["-f", master, "--output-srt", "--output-file", path.join(workDir, "master")], { timeout: 1000 * 60 * 60 });
+    w.kind === "whisper.cpp"
+      ? run(w.cmd, ["-f", master, "--output-srt", "--output-file", path.join(workDir, "master")], { timeout: 1000 * 60 * 60, env })
+      : run(w.cmd, [master, "--model", "base", "--output_format", "srt", "--output_dir", workDir], { timeout: 1000 * 60 * 60, env });
   if (res.status !== 0) return { done: false, reason: `whisper failed: ${(res.stderr || "").slice(-300)}` };
   const srt = path.join(workDir, `${path.basename(master, path.extname(master))}.srt`);
   const srtAlt = path.join(workDir, "master.srt");

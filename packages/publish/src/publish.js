@@ -28,13 +28,15 @@ export async function publish(argv) {
   const publishAt = atIdx !== -1 ? argv[atIdx + 1] : null;
 
   const which = flags.has("--wide") ? "wide.mp4" : "short.mp4";
-  const file = path.join(rendersDir, id, which);
+  let file = path.join(rendersDir, id, which);
   if (!existsSync(file)) {
     const alt = path.join(rendersDir, id, which === "short.mp4" ? "wide.mp4" : "short.mp4");
     if (!existsSync(alt)) {
       console.error(`no video for ${id} in renders/ — render it first`);
       return false;
     }
+    console.log(`(${which} not found — using ${path.basename(alt)})`);
+    file = alt;
   }
 
   // 1 — compliance gate
