@@ -8,6 +8,8 @@ export default function FootagePage() {
   const { job, start, running } = useJob();
   const [file, setFile] = useState("");
   const [noPunch, setNoPunch] = useState(false);
+  const [noDenoise, setNoDenoise] = useState(false);
+  const [noFillers, setNoFillers] = useState(false);
   const [noise, setNoise] = useState("-35dB");
 
   useEffect(() => {
@@ -19,16 +21,16 @@ export default function FootagePage() {
     }
   }, [job, router]);
 
-  const go = () => file.trim() && start("/api/autoedit", { file: file.trim(), noPunch, noise });
+  const go = () => file.trim() && start("/api/autoedit", { file: file.trim(), noPunch, noDenoise, noFillers, noise });
 
   return (
     <div>
       <h1>Footage</h1>
       <p className="sub">
-        Auto-edit filmed talking-head footage (the makeup channel): every pause becomes a jump cut, alternating
-        punch-ins keep it kinetic, audio is loudness-normalized, and both aspect ratios land in Renders. 100% local —
-        your footage never leaves this machine. Captions burn in automatically once whisper is installed
-        (<span className="mono">factory doctor</span> has the options).
+        AI Cut for filmed talking-head footage: pauses and filler words (“um”, “uh”) become jump cuts, self-corrections
+        get backtracked (with an LLM key), audio is noise-cancelled + loudness-normalized, the picture gets a subtle
+        grade/vignette/punch-ins, and karaoke captions burn in per aspect ratio. Your jargon spells right via{" "}
+        <span className="mono">data/dictionary.json</span>. 100% local — footage never leaves this machine.
       </p>
 
       <div className="panel">
@@ -46,7 +48,15 @@ export default function FootagePage() {
         <div style={{ display: "flex", gap: 18, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
           <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
             <input type="checkbox" checked={noPunch} onChange={(e) => setNoPunch(e.target.checked)} />
-            no punch-ins (keep framing static)
+            no punch-ins
+          </label>
+          <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
+            <input type="checkbox" checked={noDenoise} onChange={(e) => setNoDenoise(e.target.checked)} />
+            no noise cancellation
+          </label>
+          <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
+            <input type="checkbox" checked={noFillers} onChange={(e) => setNoFillers(e.target.checked)} />
+            keep “um” / “uh”
           </label>
           <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5 }}>
             silence threshold

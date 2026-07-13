@@ -32,8 +32,13 @@ node packages/cli/bin/factory.js math gauss-sum --demo    # bundled demo, no key
 node packages/cli/bin/factory.js math "why 0! = 1"        # LLM writes the scene
 node packages/cli/bin/factory.js shorts <rendered-id>     # cut 1-3 clips from an episode
 
-# auto-edit filmed footage (silence cuts + punch-ins + loudnorm, 100% local):
+# AI Cut filmed footage — 100% local:
+#   silence + filler-word ("um"/"uh") jump cuts, LLM backtracking of
+#   self-corrections, noise cancellation, loudnorm, grade/vignette/fades,
+#   punch-ins, karaoke captions per aspect, personal dictionary
 node packages/cli/bin/factory.js edit "D:\footage\my-tutorial.mp4"
+#   opt-outs: --no-punch --no-captions --no-denoise --no-fillers --no-backtrack
+#   jargon spelling: copy data/dictionary.example.json -> data/dictionary.json
 ```
 
 Math shorts need Manim in the project venv (kept off C: on purpose):

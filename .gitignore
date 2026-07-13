@@ -10,7 +10,8 @@ node_modules/
 
 # generated output
 renders/
-data/
+data/*
+!data/dictionary.example.json
 dist/
 out/
 renderers/code-report/public/audio/

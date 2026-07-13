@@ -30,7 +30,10 @@ Node ESM monorepo, plain JavaScript, no TypeScript, no test framework.
   by whichever key exists. EVERY caller must degrade gracefully keyless
   (heuristic/template fallback) — never hard-require an API key.
 - `packages/pipeline` — voice (ElevenLabs w/ per-scene cache, SAPI
-  fallback), render, math (Manim), clips, autoedit.
+  fallback), render, math (Manim), clips, autoedit ("AI Cut": whisper
+  word timestamps drive filler/backtrack cuts + karaoke ASS captions;
+  keep transcription on the ORIGINAL file and remap word times through
+  the keep-segments — never re-transcribe the edited master).
 - `packages/publish` — compliance gate, YouTube upload, analytics.
 - `renderers/code-report` — Remotion project (own package.json). Scene
   timeline lives in data/build/<id>/props.json; clips.js cuts by it —

@@ -1,0 +1,9 @@
+{
+  "_readme": "Personal dictionary for the auto-editor. Copy to data/dictionary.json. 'jargon' biases whisper toward your terms (brand names, acronyms); 'corrections' fixes recurring misspellings in captions (case-insensitive find -> replace).",
+  "jargon": ["CoderFact", "Next.js", "Remotion", "Manim", "ffmpeg", "ElevenLabs"],
+  "corrections": {
+    "coder fact": "CoderFact",
+    "next js": "Next.js",
+    "eleven labs": "ElevenLabs"
+  }
+}
