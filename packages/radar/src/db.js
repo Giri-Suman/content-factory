@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { paths } from "../../shared/src/config.js";
+import { collection, newId } from "../../shared/src/store.js";
 
 /**
  * Trend store: a single JSON file, atomic writes, zero native deps.
@@ -41,6 +42,7 @@ export const trendId = (str) => {
   return h.toString(36).padStart(7, "0");
 };
 
+/** Upsert one collected item. Returns { id, isNew } for run summaries. */
 export function upsertTrend(item) {
   const { trends } = load();
   const id = trendId((item.url || `${item.source}:${item.title}`).toLowerCase());
@@ -62,8 +64,52 @@ export function upsertTrend(item) {
     score_reason: existing?.score_reason ?? null,
     alerted: existing?.alerted || 0,
     used: existing?.used || 0,
+    velocity: existing?.velocity ?? null,
   };
-  return id;
+  return { id, isNew: !existing };
+}
+
+/**
+ * Content OS snapshots: one row per seen item per run (data/os/snapshots.json).
+ * velocity = Δpoints/Δhours vs the item's previous snapshot; null on first
+ * sighting. Stored back onto the trend row. Keeps the newest 10 per item.
+ */
+export function recordSnapshots(ids) {
+  const { trends } = load();
+  const snaps = collection("snapshots");
+  const rows = snaps.all();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const byItem = new Map();
+  for (const s of rows) {
+    if (!byItem.has(s.itemId)) byItem.set(s.itemId, []);
+    byItem.get(s.itemId).push(s);
+  }
+  for (const list of byItem.values()) list.sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
+
+  const velocities = new Map();
+  for (const id of ids) {
+    const t = trends[id];
+    if (!t) continue;
+    const prev = byItem.get(id)?.[0];
+    let v = null;
+    if (prev) {
+      const dh = (nowMs - new Date(prev.capturedAt).getTime()) / 36e5;
+      if (dh > 0.005) v = Math.round(((t.points - prev.score) / dh) * 10) / 10;
+    }
+    velocities.set(id, v);
+    t.velocity = v;
+    const snap = { id: newId(), itemId: id, score: t.points, comments: t.comments, capturedAt: nowIso };
+    rows.push(snap);
+    if (!byItem.has(id)) byItem.set(id, []);
+    byItem.get(id).unshift(snap);
+  }
+
+  const pruned = [];
+  for (const list of byItem.values()) pruned.push(...list.slice(0, 10));
+  snaps.save(pruned);
+  return velocities;
 }
 
 export function getByIds(ids) {

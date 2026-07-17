@@ -119,8 +119,8 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
 ### Phase-1 build checklist (one milestone per prompt; acceptance → commit)
 
 - [x] P0 spec (this section) · P1 audit → GAP_PLAN.md (done at foundation)
-- [ ] P2 collectors: EXISTS (packages/radar) — add per-item snapshots +
-      velocity; summary table `source | fetched | new | updated | errors`
+- [x] P2 collectors: snapshots + velocity (Δpts/h, newest-10 pruned),
+      per-source run summary, JobRun logging via withJobRun
 - [ ] P3 YouTube radar: cached+batched client, trending + niche heat,
       watchlist outliers, saturation(topic), quota counter
 - [ ] P4 scoring engine: LLM clustering + 4-component scoreBreakdown +

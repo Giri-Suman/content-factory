@@ -1,5 +1,6 @@
 import { loadEnv, ensureDirs } from "../../shared/src/config.js";
-import { upsertTrend, getByIds, updateScore, topTrends, hotUnalerted, markAlerted, save } from "./db.js";
+import { withJobRun } from "../../shared/src/jobs.js";
+import { upsertTrend, getByIds, updateScore, topTrends, hotUnalerted, markAlerted, recordSnapshots, save } from "./db.js";
 import { ingestAll } from "./sources.js";
 import { heuristicScore, llmScore } from "./score.js";
 import { sendAlert } from "./alert.js";
@@ -16,18 +17,50 @@ const age = (iso) => {
   return h < 1 ? "now" : h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
 };
 
-export async function runRadar() {
+export const runRadar = () => withJobRun("collect", runRadarInner);
+
+async function runRadarInner() {
   loadEnv();
   ensureDirs();
 
   console.log("\nscanning sources...");
   const { items, failures, enabled } = await ingestAll();
-  for (const f of failures) console.error(`  ! ${f}`);
-  console.log(
-    `  ${items.length} items from ${new Set(items.map((i) => i.source)).size} sources (categories: ${enabled.join(", ") || "none"})`
-  );
+  console.log(`  categories: ${enabled.join(", ") || "none"}`);
 
-  const ids = [...new Set(items.map(upsertTrend))];
+  // upsert + per-source run summary (P2 acceptance: source|fetched|new|updated|errors)
+  const stats = new Map();
+  const statFor = (source) => {
+    if (!stats.has(source)) stats.set(source, { fetched: 0, new: 0, updated: 0, errors: 0 });
+    return stats.get(source);
+  };
+  const idSet = new Set();
+  for (const item of items) {
+    const s = statFor(item.source);
+    s.fetched++;
+    const { id, isNew } = upsertTrend(item);
+    if (!idSet.has(id)) {
+      idSet.add(id);
+      s[isNew ? "new" : "updated"]++;
+    }
+  }
+  for (const f of failures) statFor(f.split(":")[0]).errors++;
+
+  console.log("\n  SOURCE         FETCHED  NEW  UPDATED  ERRORS");
+  console.log("  " + "-".repeat(46));
+  for (const [source, s] of [...stats.entries()].sort()) {
+    console.log(
+      `  ${source.padEnd(14)} ${String(s.fetched).padStart(7)} ${String(s.new).padStart(4)} ${String(s.updated).padStart(8)} ${String(s.errors).padStart(7)}`
+    );
+  }
+  for (const f of failures) console.error(`  ! ${f}`);
+
+  const ids = [...idSet];
+  const velocities = recordSnapshots(ids);
+  const seenVel = [...velocities.values()].filter((v) => v !== null);
+  console.log(
+    `\n  snapshots: ${velocities.size} written, velocity known for ${seenVel.length}` +
+      (seenVel.length ? ` (max ${Math.max(...seenVel).toFixed(1)} pts/h)` : " (first sighting run)")
+  );
   const fresh = getByIds(ids);
 
   console.log(`scoring ${fresh.length} trends...`);
@@ -43,11 +76,12 @@ export async function runRadar() {
   save();
 
   const top = topTrends(15);
-  console.log("\n  ID       SCORE  AGE  CATEGORY  SOURCE        TITLE");
-  console.log("  " + "-".repeat(100));
+  console.log("\n  ID       SCORE  VEL/H  AGE  CATEGORY  SOURCE        TITLE");
+  console.log("  " + "-".repeat(104));
   for (const t of top) {
+    const vel = t.velocity === null || t.velocity === undefined ? "  —" : String(t.velocity).padStart(3);
     console.log(
-      `  ${t.id.padEnd(8)} ${String(t.score).padStart(3)}   ${age(t.published_at).padEnd(4)} ${(t.category || "?").padEnd(9)} ${t.source.padEnd(13)} ${t.title.slice(0, 54)}`
+      `  ${t.id.padEnd(8)} ${String(t.score).padStart(3)}   ${vel}   ${age(t.published_at).padEnd(4)} ${(t.category || "?").padEnd(9)} ${t.source.padEnd(13)} ${t.title.slice(0, 50)}`
     );
   }
 
