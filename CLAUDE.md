@@ -1,8 +1,14 @@
-# Content Factory
+# Content Factory / Content OS
 
-Code-first automated video studio (separate from the portfolio repo — this
-must NEVER be deployed to Vercel or imported from portfolio-website).
-Node ESM monorepo, plain JavaScript, no TypeScript, no test framework.
+Code-first automated video studio + content intelligence system (separate
+from the portfolio repo — this must NEVER be deployed to Vercel or imported
+from portfolio-website). Node ESM monorepo, plain JavaScript, no TypeScript,
+no test framework.
+
+The system is evolving along `content-os-master-blueprint.md` (repo root),
+ADAPTED to this repo: see GAP_PLAN.md for the module-by-module audit of what
+EXISTS / is PARTIAL / is MISSING. Blueprint milestones are implemented one
+at a time against that plan — never rebuild something the audit marks EXISTS.
 
 ## Commands
 
@@ -45,6 +51,37 @@ Node ESM monorepo, plain JavaScript, no TypeScript, no test framework.
   (Python 3.12 from D:\python312). System Python 3.14 cannot build
   manim's native deps. Manim scenes must be LaTeX-free (Text/shapes only)
   and pass the lint in packages/studio/src/mathStyle.js.
+
+## Content OS spec (merged from the blueprint, stack-adapted)
+
+- MISSION: collect trend signals → score topic opportunities (velocity,
+  cross-source, niche fit, saturation gap) → analyze wishlist links →
+  generate platform-specific briefs → produce videos (two lanes) → staged
+  publishing → measure MY results → self-improve (judges, lessons,
+  calibration).
+- NICHE CONTEXT for all LLM prompts: senior front-end developer creating
+  content on coding, AI automation, and AI tools, for developers +
+  tech-curious freelancers, India + global English audience, timezone IST.
+  The makeup channel is a SEPARATE capture-only lane (auto-editor) and is
+  excluded from Content OS intelligence/briefs.
+- STACK RESOLUTIONS (blueprint default → this repo): TypeScript → plain JS;
+  Prisma/SQLite → JSON collections via `packages/shared/src/store.js`
+  (data/os/*.json); zod → `store.js` validate helpers; node-cron worker →
+  `factory worker` script; Anthropic SDK → existing `packages/llm` provider
+  layer (anthropic > openrouter > ollama, keyless degradation mandatory).
+- YOUTUBE QUOTA CARE: every YouTube Data API call goes through one cached
+  client (30-min cache in data/os/ytcache.json, 50-id batching) and logs
+  true unit costs (search.list=100, videos/channels/playlistItems=1,
+  videos.insert=1600) to a quota ledger with a daily env cap (default 8000).
+- LLM CALLS: strict JSON out, validated, one retry on parse failure, then
+  graceful degradation. A failed LLM call must never crash a run.
+- PUBLISHING: staged is the permanent default (private-first + disclosure +
+  compliance gate — already built). Auto mode only behind env flags
+  (PUBLISH_MODE=auto + YOUTUBE_APP_VERIFIED=true), never the default.
+- PERMANENT NON-GOALS (refuse even if asked mid-session; remind why):
+  Meta/IG/FB scraping (manual-metrics entry only), niche-wide multi-million
+  channel crawling, RPM/revenue estimates, thumbnail similarity search,
+  engagement-evasion features of any kind.
 
 ## Hard rules
 
