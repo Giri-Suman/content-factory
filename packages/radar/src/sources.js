@@ -15,18 +15,23 @@ export const CATEGORY_SOURCES = {
     label: "Coding / Dev",
     hn: true,
     github: true,
-    subreddits: ["programming", "webdev"],
-    feeds: [],
+    subreddits: ["programming", "webdev", "reactjs", "SideProject"],
+    feeds: [
+      ["githubblog", "https://github.blog/feed/"],
+      ["vercel", "https://vercel.com/atom"],
+    ],
   },
   ai: {
     label: "AI / ML",
     hn: true,
     github: true,
-    subreddits: ["MachineLearning", "LocalLLaMA", "artificial"],
+    subreddits: ["MachineLearning", "LocalLLaMA", "artificial", "automation"],
     feeds: [
       ["techcrunch", "https://techcrunch.com/feed/"],
       ["theverge", "https://www.theverge.com/rss/index.xml"],
       ["arstechnica", "https://feeds.arstechnica.com/arstechnica/index"],
+      ["openai", "https://openai.com/news/rss.xml"],
+      ["anthropic", "https://www.anthropic.com/rss.xml"],
     ],
   },
   math: {
@@ -118,29 +123,44 @@ const redditOpts = {
 };
 
 async function subreddit(sub, category) {
-  // reddit rate-limits burst traffic hard; try www then old.reddit as fallback
-  let res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=15`, redditOpts);
-  if (!res.ok) {
-    await sleep(800);
-    res = await fetch(`https://old.reddit.com/r/${sub}/hot.json?limit=15`, redditOpts);
+  // escalating fallbacks: www json (browser UA) → old json → www json with a
+  // descriptive bot UA (reddit's rules prefer those) → hot.rss (no scores,
+  // but keeps the source alive; velocity then comes from cross-source)
+  const attempts = [
+    [`https://www.reddit.com/r/${sub}/hot.json?limit=15`, redditOpts, "json"],
+    [`https://old.reddit.com/r/${sub}/hot.json?limit=15`, redditOpts, "json"],
+    [`https://www.reddit.com/r/${sub}/hot.json?limit=15`, { ...fetchOpts, headers: { "User-Agent": "content-os/1.0", Accept: "application/json" } }, "json"],
+    [`https://www.reddit.com/r/${sub}/hot.rss`, redditOpts, "rss"],
+  ];
+  let lastStatus = "?";
+  for (const [url, opts, kind] of attempts) {
+    const res = await fetch(url, opts).catch(() => null);
+    if (!res?.ok) {
+      lastStatus = res ? res.status : "network";
+      await sleep(700);
+      continue;
+    }
+    if (kind === "rss") {
+      return parseFeed(await res.text(), `r/${sub}`, category);
+    }
+    const data = await res.json();
+    const items = [];
+    for (const child of data?.data?.children || []) {
+      const p = child.data;
+      if (!p || p.stickied) continue;
+      items.push({
+        source: `r/${sub}`,
+        category,
+        title: p.title || "",
+        url: `https://www.reddit.com${p.permalink}`,
+        points: p.score || 0,
+        comments: p.num_comments || 0,
+        publishedAt: new Date(p.created_utc * 1000).toISOString(),
+      });
+    }
+    return items;
   }
-  if (!res.ok) throw new Error(`r/${sub} ${res.status}`);
-  const data = await res.json();
-  const items = [];
-  for (const child of data?.data?.children || []) {
-    const p = child.data;
-    if (!p || p.stickied) continue;
-    items.push({
-      source: `r/${sub}`,
-      category,
-      title: p.title || "",
-      url: `https://www.reddit.com${p.permalink}`,
-      points: p.score || 0,
-      comments: p.num_comments || 0,
-      publishedAt: new Date(p.created_utc * 1000).toISOString(),
-    });
-  }
-  return items;
+  throw new Error(`r/${sub} ${lastStatus}`);
 }
 
 /** All subreddits fetched sequentially with a gap — parallel bursts get 403'd. */

@@ -121,8 +121,10 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
 - [x] P0 spec (this section) · P1 audit → GAP_PLAN.md (done at foundation)
 - [x] P2 collectors: snapshots + velocity (Δpts/h, newest-10 pruned),
       per-source run summary, JobRun logging via withJobRun
-- [ ] P3 YouTube radar: cached+batched client, trending + niche heat,
-      watchlist outliers, saturation(topic), quota counter
+- [x] P3 YouTube radar: cached+batched client, trending + niche heat,
+      watchlist outliers (shorts/long medians split), saturation(topic),
+      quota ledger + cap. Cycle estimate 610u (<1500 ✓). LIVE run pending
+      YOUTUBE_API_KEY in .env — everything degrades cleanly until then
 - [ ] P4 scoring engine: LLM clustering + 4-component scoreBreakdown +
       rising/fading status; Trends page shows exact components
 - [ ] P5 wishlist analyzer: YT autopsy flow + IG/FB manual-metrics flow,

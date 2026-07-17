@@ -42,10 +42,27 @@ export const trendId = (str) => {
   return h.toString(36).padStart(7, "0");
 };
 
+/** Dedupe key: normalized URL — tracking params, fragments, and trailing
+ *  slashes stripped so rotated feed URLs don't create duplicate trends. */
+export function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    for (const p of [...u.searchParams.keys()]) {
+      if (/^(utm_|fbclid|gclid|ref|source$|cmpid)/i.test(p)) u.searchParams.delete(p);
+    }
+    u.hash = "";
+    let s = u.toString();
+    if (s.endsWith("/")) s = s.slice(0, -1);
+    return s.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
 /** Upsert one collected item. Returns { id, isNew } for run summaries. */
 export function upsertTrend(item) {
   const { trends } = load();
-  const id = trendId((item.url || `${item.source}:${item.title}`).toLowerCase());
+  const id = trendId(item.url ? normalizeUrl(item.url) : `${item.source}:${item.title}`.toLowerCase());
   const now = new Date().toISOString();
   const existing = trends[id];
   trends[id] = {

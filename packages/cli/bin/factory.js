@@ -67,6 +67,12 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "yt": {
+    const { ytCommand } = await import("../../radar/src/ytCli.js");
+    const ok = await ytCommand(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
   case "publish": {
     const { publish } = await import("../../publish/src/publish.js");
     const ok = await publish(rest);
