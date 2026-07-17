@@ -54,11 +54,20 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
 
 ## Content OS spec (merged from the blueprint, stack-adapted)
 
-- MISSION: collect trend signals → score topic opportunities (velocity,
-  cross-source, niche fit, saturation gap) → analyze wishlist links →
-  generate platform-specific briefs → produce videos (two lanes) → staged
-  publishing → measure MY results → self-improve (judges, lessons,
+- MISSION (Content OS v1): a locally running system that (1) collects
+  trend signals from multiple sources, (2) scores topic opportunities for
+  MY niche, (3) analyzes wishlist video links I paste, (4) generates
+  platform-specific content briefs with timing + a manual publish
+  checklist, (5) refreshes itself automatically. Later phases extend into
+  production + staged publishing + self-improvement (judges, lessons,
   calibration).
+- PHASE-1 SCOPE FENCE (P1–P9): new Content OS work must NOT add or extend
+  publishing/upload integration, video rendering, whisper, embeddings,
+  Meta APIs, or auth — refuse this scope creep even if asked mid-session.
+  The repo's EXISTING publish/render/autoedit modules are grandfathered:
+  they stay as-is (staged, private-first) and are re-scoped by the P0.1
+  spec patch at the start of Phase 2. Phase-1 briefs end in a MANUAL
+  publish checklist, nothing else.
 - NICHE CONTEXT for all LLM prompts: senior front-end developer creating
   content on coding, AI automation, and AI tools, for developers +
   tech-curious freelancers, India + global English audience, timezone IST.
@@ -82,6 +91,49 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
   Meta/IG/FB scraping (manual-metrics entry only), niche-wide multi-million
   channel crawling, RPM/revenue estimates, thumbnail similarity search,
   engagement-evasion features of any kind.
+
+### Data models (JSON collections via store.js — data/os/<name>.json)
+
+- `items` — id, source, sourceType(reddit|hn|github|rss|youtube),
+  externalId, title, url, author?, score, comments, publishedAt,
+  fetchedAt, clusterId?, raw
+- `snapshots` — id, itemId, score, comments, capturedAt
+  (velocity = Δscore/Δhours between an item's last two snapshots)
+- `clusters` — id, label, summary, opportunityScore, scoreBreakdown
+  {velocity 0-40, crossSource 0-25, nicheFit 0-20, saturationGap 0-15},
+  status(new|rising|fading), memberCount, updatedAt
+- `watchlist` — channels: id, channelId, handle, title, subscriberCount,
+  medianViews, shortsMedianViews; videos: per-video views/likes/comments,
+  durationSec, outlierRatio
+- `wishlist` — id, platform(youtube|instagram|facebook), url,
+  mode(api|manual), metrics, contentAnalysis, verdict,
+  predictedTier(S|A|B|C), createdAt
+- `briefs` — id, topicClusterId?, wishlistEntryId?, kind(trend|evergreen),
+  deadline?, payload, status(draft|approved|killed), createdAt
+- `jobruns` — id, job, startedAt, ok, error?
+- Env keys (all via .env, never hardcoded): YOUTUBE_API_KEY,
+  YT_DAILY_UNIT_CAP (default 8000), LLM keys via the existing packages/llm
+  provider chain (ANTHROPIC_API_KEY + ANTHROPIC_MODEL honored; openrouter/
+  ollama fallbacks keep everything degradable keyless).
+
+### Phase-1 build checklist (one milestone per prompt; acceptance → commit)
+
+- [x] P0 spec (this section) · P1 audit → GAP_PLAN.md (done at foundation)
+- [ ] P2 collectors: EXISTS (packages/radar) — add per-item snapshots +
+      velocity; summary table `source | fetched | new | updated | errors`
+- [ ] P3 YouTube radar: cached+batched client, trending + niche heat,
+      watchlist outliers, saturation(topic), quota counter
+- [ ] P4 scoring engine: LLM clustering + 4-component scoreBreakdown +
+      rising/fading status; Trends page shows exact components
+- [ ] P5 wishlist analyzer: YT autopsy flow + IG/FB manual-metrics flow,
+      9-hook-pattern classification, transparent S/A/B/C rubric
+- [ ] P6 brief studio: multi-platform payload + timing_ist + manual
+      publish checklist (tickable, persisted)
+- [ ] P7 dashboard wiring: Today command center + Settings job log
+- [ ] P8 worker: 30min/60min/6h/daily cadences, JobRun logging,
+      self-updating timestamps
+- [ ] P9 hardening: keyless failure drills, quota-cap drill, README,
+      E2E walkthrough, tag
 
 ## Hard rules
 
