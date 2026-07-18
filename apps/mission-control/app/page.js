@@ -56,12 +56,14 @@ export default function TrendsPage() {
   };
 
   const generateBriefs = async (clusterId) => {
-    const res = await fetch("/api/clusters", {
+    setBriefNote("generating brief…");
+    const res = await fetch("/api/briefs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ clusterId }),
     }).then((r) => r.json());
-    setBriefNote(res.error || "queued");
+    if (res.ok) router.push("/briefs");
+    else setBriefNote(res.error || "brief generation failed");
   };
 
   const draft = async (input) => {

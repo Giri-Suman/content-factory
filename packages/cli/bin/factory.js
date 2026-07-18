@@ -79,6 +79,32 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "brief": {
+    const { generateBrief } = await import("../../studio/src/briefs.js");
+    const { collection } = await import("../../shared/src/store.js");
+    const target = rest.filter((a) => !a.startsWith("--"))[0];
+    try {
+      let args;
+      if (!target || target === "top") {
+        const top = collection("clusters").all().sort((a, b) => b.opportunityScore - a.opportunityScore)[0];
+        if (!top) throw new Error("no clusters — run: factory score");
+        args = { clusterId: top.id };
+        console.log(`briefing #1 cluster: ${top.label} (${top.opportunityScore})`);
+      } else if (collection("clusters").get(target)) args = { clusterId: target };
+      else if (collection("wishlist").get(target)) args = { wishlistId: target };
+      else throw new Error(`${target} matches no cluster or wishlist entry`);
+      const b = await generateBrief(args);
+      console.log(`\n[${b.kind}] ${b.topic}`);
+      console.log(`  status ${b.status}${b.deadline ? ` · deadline ${b.deadline}` : ""}${b.scheduledDate ? ` · slot ${b.scheduledDate}` : ""}`);
+      console.log(`  hooks: ${b.payload.yt_short.hook_variants.map((h) => h.slice(0, 60)).join(" | ")}`);
+      if (b.payload.template) console.log("  (template mode — add an LLM key for full generation)");
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "wishlist": {
     const { analyzeYouTube, pollTracked } = await import("../../studio/src/wishlist.js");
     const { collection } = await import("../../shared/src/store.js");

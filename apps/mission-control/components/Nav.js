@@ -6,6 +6,7 @@ const LINKS = [
   ["/", "Trends"],
   ["/youtube", "YouTube"],
   ["/wishlist", "Wishlist"],
+  ["/briefs", "Briefs"],
   ["/scripts", "Scripts"],
   ["/math", "Math"],
   ["/footage", "Footage"],

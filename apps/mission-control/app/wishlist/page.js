@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 
 const TIER_ORDER = { S: 0, A: 1, B: 2, C: 3 };
@@ -12,6 +13,7 @@ const EMPTY_MANUAL = {
 };
 
 export default function WishlistPage() {
+  const router = useRouter();
   const [data, setData] = useState(null);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,6 +75,19 @@ export default function WishlistPage() {
   const del = async (id) => {
     await fetch(`/api/wishlist?id=${id}`, { method: "DELETE" });
     load();
+  };
+
+  const briefIt = async (id) => {
+    setBusy(true);
+    setNote("generating brief from this autopsy…");
+    const res = await fetch("/api/briefs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wishlistId: id }),
+    }).then((r) => r.json());
+    setBusy(false);
+    if (res.ok) router.push("/briefs");
+    else setNote(res.error);
   };
 
   const entries = data
@@ -172,6 +187,7 @@ export default function WishlistPage() {
                 <strong style={{ flex: 1 }}>
                   {e.url ? <a href={e.url} target="_blank" rel="noreferrer">{e.title}</a> : e.title}
                 </strong>
+                <button className="btn ghost sm" disabled={busy} onClick={() => briefIt(e.id)}>Brief it</button>
                 <button className="btn ghost sm" onClick={() => del(e.id)}>✕</button>
               </div>
               <div className="mono muted" style={{ fontSize: 12 }}>
