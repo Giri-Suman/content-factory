@@ -272,6 +272,69 @@ export async function saturation(topicPhrase, job = "yt-saturation") {
   };
 }
 
+/* ---------------- wishlist support (P5) ---------------- */
+
+export function parseVideoId(url) {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : /^[\w-]{11}$/.test(url.trim()) ? url.trim() : null;
+}
+
+/** Everything Flow A needs in one shot: video + channel + last-25 medians. */
+export async function videoContext(videoId, job = "wishlist") {
+  const vres = await yt("videos", { part: "snippet,statistics,contentDetails", id: videoId }, job);
+  const video = vres.items?.[0];
+  if (!video) throw new Error(`video not found: ${videoId}`);
+
+  const channelId = video.snippet.channelId;
+  const cres = await yt("channels", { part: "snippet,statistics,contentDetails", id: channelId }, job);
+  const channel = cres.items?.[0];
+  const uploadsId = channel?.contentDetails?.relatedPlaylists?.uploads;
+
+  let uploads = [];
+  if (uploadsId) {
+    const pl = await yt("playlistItems", { part: "contentDetails", playlistId: uploadsId, maxResults: "25" }, job);
+    const ids = (pl.items || []).map((i) => i.contentDetails?.videoId).filter(Boolean);
+    uploads = await videosByIds(ids, job);
+  }
+  const uploadStats = uploads.map((v) => {
+    const views = parseInt(v.statistics?.viewCount || "0", 10);
+    const eng = views > 0 ? (parseInt(v.statistics?.likeCount || "0", 10) + parseInt(v.statistics?.commentCount || "0", 10)) / views : 0;
+    return { views, eng };
+  });
+
+  return {
+    video: {
+      id: video.id,
+      title: video.snippet.title,
+      description: (video.snippet.description || "").slice(0, 500),
+      publishedAt: video.snippet.publishedAt,
+      durationSec: iso8601ToSec(video.contentDetails?.duration),
+      views: parseInt(video.statistics?.viewCount || "0", 10),
+      likes: parseInt(video.statistics?.likeCount || "0", 10),
+      comments: parseInt(video.statistics?.commentCount || "0", 10),
+    },
+    channel: {
+      id: channelId,
+      title: channel?.snippet?.title || "?",
+      subscriberCount: parseInt(channel?.statistics?.subscriberCount || "0", 10),
+    },
+    channelMedianViews: median(uploadStats.map((u) => u.views)),
+    channelEngagementNorm: median(uploadStats.map((u) => u.eng)),
+  };
+}
+
+/** Cheap tracking re-poll: current stats only (1 unit, 30-min cached). */
+export async function videoStats(videoId, job = "wishlist-track") {
+  const res = await yt("videos", { part: "statistics", id: videoId }, job);
+  const v = res.items?.[0];
+  if (!v) return null;
+  return {
+    views: parseInt(v.statistics?.viewCount || "0", 10),
+    likes: parseInt(v.statistics?.likeCount || "0", 10),
+    comments: parseInt(v.statistics?.commentCount || "0", 10),
+  };
+}
+
 /* ---------------- quota estimate (blueprint acceptance) ---------------- */
 
 export function estimateCycleUnits() {

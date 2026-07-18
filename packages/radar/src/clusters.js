@@ -206,6 +206,16 @@ async function runScoreInner() {
   for (const t of items) {
     if (!grouped.has(t.id)) groups.push({ label: t.title.slice(0, 80), summary: "", members: [t] });
   }
+  // same-label groups collapse into one (e.g. identical titles from two URLs)
+  const byLabel = new Map();
+  for (const g of groups) {
+    const key = g.label.toLowerCase();
+    const prev = byLabel.get(key);
+    if (prev) prev.members.push(...g.members.filter((m) => !prev.members.some((p) => p.id === m.id)));
+    else byLabel.set(key, g);
+  }
+  groups.length = 0;
+  groups.push(...byLabel.values());
 
   const baselines = velocityBaselines(trends);
   const fits = await nicheFitScores(groups);

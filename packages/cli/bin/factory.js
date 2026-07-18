@@ -79,6 +79,46 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "wishlist": {
+    const { analyzeYouTube, pollTracked } = await import("../../studio/src/wishlist.js");
+    const { collection } = await import("../../shared/src/store.js");
+    const [action, ...wargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "manual" && wargs[0]) {
+        const { analyzeManual } = await import("../../studio/src/wishlist.js");
+        const { readFileSync, unlinkSync } = await import("node:fs");
+        const form = JSON.parse(readFileSync(wargs[0], "utf8").replace(/^﻿/, ""));
+        if (wargs[0].endsWith(".tmp.json")) unlinkSync(wargs[0]);
+        const e = await analyzeManual(form);
+        console.log(`\n[${e.predictedTier}] manual ${e.platform} entry — ${e.verdict.rubric}`);
+        if (e.contentAnalysis) console.log(`  hook: ${e.contentAnalysis.hookPattern} · steal: ${e.contentAnalysis.stealThis}`);
+        else console.log("  (no LLM key — structural analysis skipped)");
+      } else if (action === "add" && wargs[0]) {
+        const e = await analyzeYouTube(wargs[0]);
+        console.log(`\n[${e.predictedTier}] ${e.title}`);
+        console.log(`  ${e.verdict.rubric}`);
+        if (e.contentAnalysis) {
+          console.log(`  hook: ${e.contentAnalysis.hookPattern} · topic: ${e.contentAnalysis.topic}`);
+          console.log(`  steal: ${e.contentAnalysis.stealThis}`);
+        } else console.log("  (no LLM key — structural analysis skipped)");
+      } else if (action === "poll") {
+        const r = await pollTracked();
+        console.log(`tracking poll: ${r.polled} entr${r.polled === 1 ? "y" : "ies"} updated${r.note ? ` (${r.note})` : ""}`);
+      } else if (action === "list") {
+        for (const e of collection("wishlist").all()) {
+          console.log(`  [${e.predictedTier}] ${e.platform.padEnd(9)} ${(e.title || "").slice(0, 60)}`);
+        }
+      } else {
+        console.error("usage: factory wishlist add <youtube-url> | manual <form.json> | poll | list");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "publish": {
     const { publish } = await import("../../publish/src/publish.js");
     const ok = await publish(rest);

@@ -130,8 +130,10 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       status; auto-runs after collect; Opportunities cards on Trends page
       expand into exact components. LLM clustering + saturation lookups
       activate when keys land
-- [ ] P5 wishlist analyzer: YT autopsy flow + IG/FB manual-metrics flow,
-      9-hook-pattern classification, transparent S/A/B/C rubric
+- [x] P5 wishlist analyzer: YT autopsy flow (API mode + 48h tracking via
+      pollTracked) + IG/FB manual-metrics flow, 9-hook-pattern LLM
+      analysis, transparent coded S/A/B/C rubric, Wishlist page w/ tier
+      sort + tracking badges. YT flow live-check pending YOUTUBE_API_KEY
 - [ ] P6 brief studio: multi-platform payload + timing_ist + manual
       publish checklist (tickable, persisted)
 - [ ] P7 dashboard wiring: Today command center + Settings job log

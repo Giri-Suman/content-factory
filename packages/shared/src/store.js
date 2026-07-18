@@ -48,12 +48,12 @@ export function collection(name) {
       const key = keyFn(row);
       const i = rows.findIndex((r) => keyFn(r) === key);
       if (i === -1) {
-        const stored = { id: row.id || newId(), ...row };
+        const stored = { ...row, id: row.id || newId() };
         rows.push(stored);
         write(rows);
         return stored;
       }
-      rows[i] = { ...rows[i], ...row, id: rows[i].id };
+      rows[i] = { ...rows[i], ...row, id: rows[i].id || row.id || newId() };
       write(rows);
       return rows[i];
     },

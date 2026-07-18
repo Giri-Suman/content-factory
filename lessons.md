@@ -60,3 +60,14 @@ once; append after every failed attempt or surprise.
   between sessions (reverted with other working-tree changes) → **if
   `preview_start mission-control` says "no server named", re-add the entry
   pointing at scripts/mission-control.cmd.**
+
+- Piped `node ... | Select-Object -First N` (P5 debug) → PowerShell closes
+  the pipe after N lines, node dies on EPIPE (exit 255) BEFORE its final
+  file writes — data looked mysteriously unwritten → **never truncate a
+  state-writing command's output; capture fully, or filter with
+  Select-String/-Last which consume the whole stream.**
+
+- store.js upsert spread order `{ id: newId(), ...row }` silently restored
+  row's explicit `id: undefined` (P4/P5) → every cluster row lacked ids,
+  React keys broke downstream → **when a spread and a default share a key,
+  the default must come AFTER the spread.**
