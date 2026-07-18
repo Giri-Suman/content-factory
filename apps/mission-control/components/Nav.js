@@ -3,7 +3,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  ["/", "Trends"],
+  ["/", "Today"],
+  ["/trends", "Trends"],
   ["/youtube", "YouTube"],
   ["/wishlist", "Wishlist"],
   ["/briefs", "Briefs"],

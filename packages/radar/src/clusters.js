@@ -1,4 +1,4 @@
-import { loadEnv, NICHE_CONTEXT } from "../../shared/src/config.js";
+import { loadEnv, loadUserConfig, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection } from "../../shared/src/store.js";
 import { withJobRun } from "../../shared/src/jobs.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
@@ -231,12 +231,20 @@ async function runScoreInner() {
   const now = new Date().toISOString();
   const out = [];
 
+  // user-tunable component weights from Settings (0.5-1.5, default 1)
+  const weights = { velocity: 1, crossSource: 1, nicheFit: 1, saturationGap: 1, ...(loadUserConfig().scoreWeights || {}) };
+  const w = (component, name) => {
+    const mult = Math.max(0.5, Math.min(1.5, Number(weights[name]) || 1));
+    const value = Math.round(component.value * mult);
+    return { ...component, value, detail: mult !== 1 ? `${component.detail} ×${mult} weight` : component.detail };
+  };
+
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
-    const vel = velocityScore(g.members, baselines);
-    const cross = crossSourceScore(g.members);
-    const fit = fits[i];
-    const gap = await saturationGapScore(g.label, rankOf.get(i));
+    const vel = w(velocityScore(g.members, baselines), "velocity");
+    const cross = w(crossSourceScore(g.members), "crossSource");
+    const fit = w(fits[i], "nicheFit");
+    const gap = w(await saturationGapScore(g.label, rankOf.get(i)), "saturationGap");
     const opportunityScore = vel.value + cross.value + fit.value + gap.value;
 
     const existing = prior.get(g.label.toLowerCase());

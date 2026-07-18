@@ -3,242 +3,190 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 
-const CATEGORY_LABELS = { coding: "Coding", ai: "AI", math: "Math", makeup: "Makeup" };
-
 const age = (iso) => {
-  if (!iso) return "—";
-  const h = Math.round((Date.now() - new Date(iso).getTime()) / 36e5);
-  return h < 1 ? "now" : h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
+  if (!iso) return "never";
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
 };
 
-const scoreClass = (s) => (s >= 80 ? "hot" : s >= 60 ? "warm" : "cool");
+const countdown = (iso) => {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "OVERDUE";
+  return `${Math.floor(ms / 36e5)}h ${Math.floor((ms % 36e5) / 6e4)}m`;
+};
 
-export default function TrendsPage() {
+const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n ?? 0));
+
+const Skeleton = () => (
+  <div className="panel" style={{ marginBottom: 10, opacity: 0.4 }}>
+    <div style={{ height: 14, width: "60%", background: "var(--border)", borderRadius: 4, marginBottom: 8 }} />
+    <div style={{ height: 10, width: "85%", background: "var(--border)", borderRadius: 4 }} />
+  </div>
+);
+
+export default function TodayPage() {
   const router = useRouter();
-  const [trends, setTrends] = useState(null);
-  const [config, setConfig] = useState(null);
-  const [clusters, setClusters] = useState([]);
-  const [expanded, setExpanded] = useState(null);
-  const [briefNote, setBriefNote] = useState(null);
-  const [filter, setFilter] = useState("all");
-  const [scanning, setScanning] = useState(false);
-  const [drafting, setDrafting] = useState(null);
-  const [topic, setTopic] = useState("");
-  const [error, setError] = useState(null);
+  const [d, setD] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [note, setNote] = useState(null);
 
-  const load = async () => {
-    const res = await fetch("/api/trends");
-    const data = await res.json();
-    setTrends(data.trends);
-    setConfig(data.config);
-    const cl = await fetch("/api/clusters").then((r) => r.json());
-    setClusters(cl.clusters || []);
-  };
+  const load = () => fetch("/api/today").then((r) => r.json()).then(setD);
   useEffect(() => {
     load();
   }, []);
 
-  const scan = async () => {
-    setScanning(true);
-    setError(null);
+  const refresh = async () => {
+    setRefreshing(true);
+    setNote("collecting all sources + rescoring — ~30-60s…");
     try {
-      const res = await fetch("/api/trends", { method: "POST" });
-      const data = await res.json();
-      setTrends(data.trends);
-      setConfig(data.config);
-      if (!data.ok) setError("scan finished with errors — see terminal log");
-      const cl = await fetch("/api/clusters").then((r) => r.json());
-      setClusters(cl.clusters || []);
+      await fetch("/api/trends", { method: "POST" });
+      setNote(null);
+      await load();
     } catch (e) {
-      setError(String(e));
+      setNote(`refresh failed: ${e}`);
     }
-    setScanning(false);
+    setRefreshing(false);
   };
 
-  const generateBriefs = async (clusterId) => {
-    setBriefNote("generating brief…");
+  const brief = async (clusterId) => {
+    setNote("generating brief…");
     const res = await fetch("/api/briefs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ clusterId }),
     }).then((r) => r.json());
     if (res.ok) router.push("/briefs");
-    else setBriefNote(res.error || "brief generation failed");
+    else setNote(res.error);
   };
 
-  const draft = async (input) => {
-    setDrafting(input);
-    setError(null);
-    try {
-      const res = await fetch("/api/draft", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input }),
-      });
-      const data = await res.json();
-      if (data.ok) router.push(`/scripts/${data.id}`);
-      else setError(data.error || "draft failed");
-    } catch (e) {
-      setError(String(e));
-    }
-    setDrafting(null);
+  const tick = async (b, i) => {
+    const st = [...(b.checklistState || [])];
+    st[i] = !st[i];
+    await fetch("/api/briefs", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: b.id, checklistState: st }),
+    });
+    load();
   };
-
-  const enabledCats = config ? Object.keys(config.categories).filter((c) => config.categories[c]) : [];
-  const shown = (trends || []).filter((t) => filter === "all" || t.category === filter);
 
   return (
     <div>
-      <h1>Trend Radar</h1>
-      <p className="sub">What the internet is talking about right now, in your niches — scored for viral video potential.</p>
-
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
-        <button className="btn" onClick={scan} disabled={scanning}>
-          {scanning ? (
-            <>
-              <span className="spin" />
-              scanning…
-            </>
-          ) : (
-            "Scan now"
-          )}
-        </button>
-        <span className="chip static" style={{ marginLeft: 6 }}>
-          filter:
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <h1 style={{ marginBottom: 0 }}>Today</h1>
+        <div style={{ flex: 1 }} />
+        <span className="muted" style={{ fontSize: 12 }}>
+          last scan: {d ? age(d.lastCollect?.at) : "…"}
         </span>
-        <button className={`chip${filter === "all" ? " on" : ""}`} onClick={() => setFilter("all")}>
-          all
-        </button>
-        {enabledCats.map((c) => (
-          <button key={c} className={`chip${filter === c ? " on" : ""}`} onClick={() => setFilter(c)}>
-            {CATEGORY_LABELS[c] || c}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <input
-          type="text"
-          placeholder='Or draft from any topic: "why everyone is switching to Bun"'
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && topic.trim() && draft(topic.trim())}
-          style={{ maxWidth: 520 }}
-        />
-        <button className="btn ghost" disabled={!topic.trim() || drafting} onClick={() => draft(topic.trim())}>
-          {drafting === topic.trim() ? <span className="spin" /> : null}Draft topic
+        <button className="btn sm" disabled={refreshing} onClick={refresh}>
+          {refreshing ? <span className="spin" /> : null}Refresh now
         </button>
       </div>
+      <p className="sub" style={{ marginTop: 6 }}>
+        The daily command center — what's moving, what needs your call, what ships today.
+      </p>
+      {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{note}</div>}
 
-      {error && (
-        <div className="panel" style={{ borderColor: "var(--red)", marginBottom: 16, color: "var(--red)", fontSize: 13 }}>
-          {error}
-        </div>
-      )}
-
-      {clusters.length > 0 && (
-        <div style={{ marginBottom: 26 }}>
-          <h2 style={{ fontSize: 17, marginBottom: 4 }}>Opportunities</h2>
-          <p className="sub" style={{ marginBottom: 12 }}>
-            Topic clusters ranked by opportunity score — click a score to see exactly how it was computed.
-          </p>
-          {briefNote && (
-            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
-              {briefNote}
-            </div>
-          )}
-          {clusters.slice(0, 10).map((c) => (
-            <div key={c.id} className="panel" style={{ marginBottom: 10, padding: "12px 16px" }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <button
-                  className={`badge ${c.opportunityScore >= 70 ? "hot" : c.opportunityScore >= 45 ? "warm" : "ok"}`}
-                  style={{ minWidth: 44, cursor: "pointer", border: "none", fontSize: 14 }}
-                  title="expand score breakdown"
-                  onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                >
-                  {c.opportunityScore}
-                </button>
-                <span className={`chip static ${c.status === "rising" ? "on" : ""}`} style={{ fontSize: 11 }}>
-                  {c.status}
-                </span>
-                <strong style={{ flex: 1 }}>{c.label}</strong>
-                {c.memberCount > 1 && <span className="muted" style={{ fontSize: 12 }}>{c.memberCount} sources</span>}
-                <button className="btn ghost sm" onClick={() => generateBriefs(c.id)}>
-                  Generate Briefs
-                </button>
-              </div>
-              {c.summary && <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{c.summary}</div>}
-              {expanded === c.id && (
-                <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
-                  {Object.entries(c.scoreBreakdown || {}).map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", gap: 10, fontSize: 12.5, padding: "2px 0" }}>
-                      <span className="mono" style={{ minWidth: 110 }}>{k}</span>
-                      <span className="mono" style={{ minWidth: 52 }}>{v.value}/{v.max}</span>
-                      <span className="muted">{v.detail}</span>
-                    </div>
-                  ))}
-                  <div style={{ marginTop: 8 }}>
-                    {(c.members || []).map((m) => (
-                      <div key={m.id} style={{ fontSize: 12.5, padding: "2px 0" }}>
-                        <span className="mono muted" style={{ marginRight: 8 }}>{m.source}</span>
-                        <a href={m.url} target="_blank" rel="noreferrer">{m.title}</a>
-                        {m.velocity != null && <span className="muted"> · {m.velocity > 0 ? "+" : ""}{m.velocity}/h</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!trends ? (
-        <div className="empty">loading…</div>
-      ) : shown.length === 0 ? (
-        <div className="empty">no trends yet — hit “Scan now”</div>
+      {!d ? (
+        <>
+          <Skeleton />
+          <Skeleton />
+          <Skeleton />
+        </>
       ) : (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-          <table className="list">
-            <thead>
-              <tr>
-                <th style={{ width: 52 }}>score</th>
-                <th style={{ width: 44 }}>age</th>
-                <th style={{ width: 76 }}>category</th>
-                <th style={{ width: 110 }}>source</th>
-                <th>title</th>
-                <th style={{ width: 90 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {shown.slice(0, 60).map((t) => (
-                <tr key={t.id}>
-                  <td>
-                    <span className={`badge ${scoreClass(t.score ?? 0)}`}>{t.score ?? "—"}</span>
-                  </td>
-                  <td className="muted mono" style={{ fontSize: 12 }}>
-                    {age(t.published_at)}
-                  </td>
-                  <td className="muted" style={{ fontSize: 12.5 }}>
-                    {CATEGORY_LABELS[t.category] || t.category || "—"}
-                  </td>
-                  <td className="muted mono" style={{ fontSize: 12 }}>
-                    {t.source}
-                  </td>
-                  <td>
-                    <a href={t.url || "#"} target="_blank" rel="noreferrer" title={t.score_reason || ""}>
-                      {t.title}
-                    </a>
-                  </td>
-                  <td>
-                    <button className="btn sm ghost" disabled={Boolean(drafting)} onClick={() => draft(t.id)}>
-                      {drafting === t.id ? <span className="spin" /> : null}Draft
-                    </button>
-                  </td>
-                </tr>
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ display: "grid", gap: 18 }}>
+          {/* To Post Today */}
+          {d.toPost.length > 0 && (
+            <section>
+              <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>To Post Today</h2>
+              {d.toPost.map((b) => (
+                <div key={b.id} className="panel" style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
+                    <span className="badge ok">approved</span>
+                    {b.kind === "trend" && b.deadline && <span className="badge hot">{countdown(b.deadline)}</span>}
+                    {b.scheduledDate && <span className="chip static" style={{ fontSize: 11 }}>slot {b.scheduledDate}</span>}
+                    <strong>{b.topic}</strong>
+                  </div>
+                  {(b.payload?.manual_publish_checklist || []).map((step, i) => (
+                    <label key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, padding: "2px 0", cursor: "pointer" }}>
+                      <input type="checkbox" checked={Boolean(b.checklistState?.[i])} onChange={() => tick(b, i)} style={{ marginTop: 2 }} />
+                      <span style={{ opacity: b.checklistState?.[i] ? 0.5 : 1, textDecoration: b.checklistState?.[i] ? "line-through" : "none" }}>{step}</span>
+                    </label>
+                  ))}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </section>
+          )}
+
+          {/* Awaiting approval */}
+          <section>
+            <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>Briefs awaiting approval</h2>
+            {d.awaiting.length === 0 ? (
+              <div className="empty">none — generate one from an opportunity below</div>
+            ) : (
+              d.awaiting.map((b) => (
+                <div key={b.id} className="panel" style={{ marginBottom: 8, display: "flex", gap: 10, alignItems: "center" }}>
+                  <span className="badge warm">draft</span>
+                  {b.kind === "trend" && b.deadline && <span className="badge hot">{countdown(b.deadline)}</span>}
+                  <span style={{ flex: 1 }}>{b.topic}</span>
+                  <button className="btn ghost sm" onClick={() => router.push("/briefs")}>Review</button>
+                </div>
+              ))
+            )}
+          </section>
+
+          {/* Rising fast */}
+          {d.rising.length > 0 && (
+            <section>
+              <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>Rising fast</h2>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {d.rising.map((c) => (
+                  <span key={c.id} className="chip static" title={c.label}>
+                    +{c.delta} · {c.label.slice(0, 40)}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Top opportunities */}
+          <section>
+            <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>Top 10 opportunities</h2>
+            {d.top.length === 0 ? (
+              <div className="empty">no clusters yet — hit “Refresh now” above</div>
+            ) : (
+              d.top.map((c) => (
+                <div key={c.id} className="panel" style={{ marginBottom: 8, display: "flex", gap: 10, alignItems: "center", padding: "10px 14px" }}>
+                  <span className={`badge ${c.opportunityScore >= 70 ? "hot" : c.opportunityScore >= 45 ? "warm" : "ok"}`} style={{ minWidth: 38, textAlign: "center" }}>
+                    {c.opportunityScore}
+                  </span>
+                  <span className={`chip static${c.status === "rising" ? " on" : ""}`} style={{ fontSize: 10.5 }}>{c.status}</span>
+                  <span style={{ flex: 1, fontSize: 13.5 }}>{c.label}</span>
+                  <button className="btn ghost sm" onClick={() => brief(c.id)}>Generate Briefs</button>
+                </div>
+              ))
+            )}
+          </section>
+
+          {/* Watchlist outliers */}
+          <section>
+            <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>Watchlist outliers this week</h2>
+            {d.outliers.length === 0 ? (
+              <div className="empty">
+                none — add competitor channels on the <a href="/youtube">YouTube page</a>
+                {" "}(needs YOUTUBE_API_KEY in .env)
+              </div>
+            ) : (
+              d.outliers.map((v) => (
+                <div key={v.id} className="panel" style={{ marginBottom: 6, display: "flex", gap: 10, alignItems: "center", padding: "8px 14px" }}>
+                  <span className="badge hot">{v.outlierRatio}x</span>
+                  <span className="mono muted" style={{ minWidth: 54, textAlign: "right", fontSize: 12 }}>{fmt(v.views)}</span>
+                  <a href={`https://youtube.com/watch?v=${v.id}`} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 13 }}>{v.title}</a>
+                  <span className="muted" style={{ fontSize: 11.5 }}>{v.channelTitle}{v.isShort ? " · short" : ""}</span>
+                </div>
+              ))
+            )}
+          </section>
         </motion.div>
       )}
     </div>

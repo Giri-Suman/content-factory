@@ -139,7 +139,11 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       (trend same-day / evergreen daily-slot queue) + checklist builder,
       Briefs page w/ platform tabs, inline hook/caption edit, Approve/Kill,
       deadline countdown, persisted tickable checklist
-- [ ] P7 dashboard wiring: Today command center + Settings job log
+- [x] P7 dashboard wiring: Today = home (top-10 w/ one-click briefs,
+      rising-fast deltas, outlier strip, awaiting-approval, To Post Today
+      w/ inline checklists, Refresh now); Trends moved to /trends;
+      Settings gains keyword editor, weight sliders (applied in scorer),
+      quota meter, JobRun table
 - [ ] P8 worker: 30min/60min/6h/daily cadences, JobRun logging,
       self-updating timestamps
 - [ ] P9 hardening: keyless failure drills, quota-cap drill, README,
