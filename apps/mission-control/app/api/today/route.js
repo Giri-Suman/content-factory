@@ -39,8 +39,11 @@ export async function GET() {
     .slice(0, 8);
 
   const lastCollect = jobruns.filter((j) => j.job === "collect").sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  const today = new Date().toISOString().slice(0, 10);
+  const digest = os("digests").find((r) => r.date === today) || null;
 
   return NextResponse.json({
+    digest,
     top: clusters.slice(0, 10),
     rising,
     outliers,

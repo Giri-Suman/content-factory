@@ -17,14 +17,14 @@ const age = (iso) => {
   return h < 1 ? "now" : h < 24 ? `${h}h` : `${Math.round(h / 24)}d`;
 };
 
-export const runRadar = () => withJobRun("collect", runRadarInner);
+export const runRadar = (opts = {}) => withJobRun("collect", () => runRadarInner(opts));
 
-async function runRadarInner() {
+async function runRadarInner({ github = true } = {}) {
   loadEnv();
   ensureDirs();
 
   console.log("\nscanning sources...");
-  const { items, failures, enabled } = await ingestAll();
+  const { items, failures, enabled } = await ingestAll({ github });
   console.log(`  categories: ${enabled.join(", ") || "none"}`);
 
   // upsert + per-source run summary (P2 acceptance: source|fetched|new|updated|errors)

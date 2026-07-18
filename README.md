@@ -27,6 +27,9 @@ node packages/cli/bin/factory.js render data/scripts/<id>.json
 # or use the portal — everything above in one UI:
 npm run dev --prefix apps/mission-control       # -> http://localhost:4600
 
+# keep it fresh automatically (collect 30m / youtube 60m / deep 6h / digest 08:00 IST):
+node packages/cli/bin/factory.js worker
+
 # math shorts (Manim) + clip mining:
 node packages/cli/bin/factory.js math gauss-sum --demo    # bundled demo, no key
 node packages/cli/bin/factory.js math "why 0! = 1"        # LLM writes the scene

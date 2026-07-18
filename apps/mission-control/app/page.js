@@ -33,6 +33,9 @@ export default function TodayPage() {
   const load = () => fetch("/api/today").then((r) => r.json()).then(setD);
   useEffect(() => {
     load();
+    // P8: the worker keeps data fresh server-side; poll so the page follows without reload
+    const t = setInterval(load, 60e3);
+    return () => clearInterval(t);
   }, []);
 
   const refresh = async () => {
@@ -86,6 +89,28 @@ export default function TodayPage() {
         The daily command center — what's moving, what needs your call, what ships today.
       </p>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{note}</div>}
+
+      {d?.digest && (
+        <div className="panel" style={{ marginBottom: 16, borderColor: "var(--accent, #ffb224)" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
+            <span className="badge warm">☀ morning digest</span>
+            <span className="muted" style={{ fontSize: 12 }}>{d.digest.date}</span>
+          </div>
+          <div style={{ fontSize: 13 }}>
+            {d.digest.overnightRisers.length > 0 && (
+              <div>overnight risers: {d.digest.overnightRisers.map((r) => `${r.label.slice(0, 36)} (+${r.delta})`).join(" · ")}</div>
+            )}
+            {d.digest.outliers.length > 0 && (
+              <div>watchlist outliers: {d.digest.outliers.map((o) => `${o.ratio}x ${o.title.slice(0, 30)}`).join(" · ")}</div>
+            )}
+            <div>
+              {d.digest.unposted.length > 0
+                ? `${d.digest.unposted.length} approved brief${d.digest.unposted.length > 1 ? "s" : ""} still unposted — checklists below`
+                : "nothing waiting to post — generate from today's opportunities"}
+            </div>
+          </div>
+        </div>
+      )}
 
       {!d ? (
         <>

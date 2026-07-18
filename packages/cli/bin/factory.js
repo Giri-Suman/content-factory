@@ -15,6 +15,8 @@ ${c.bold("factory")} — content-factory command line
       --template                       skeleton to hand-fill (no API key needed)
   ${c.cyan("factory math \"<topic>\"")}               LLM-written manim math short (9:16)
       factory math <demo-name> --demo  render a bundled demo (no key needed)
+  ${c.cyan("factory worker")}                       long-running heartbeat: collect/score 30m, youtube 60m,
+                                       deep 6h, digest 08:00 IST  (--fast for test cadences)
   ${c.cyan("factory shorts <id>")}                  cut 1-3 standalone clips from a rendered episode
   ${c.cyan("factory edit <footage.mp4>")}           auto-edit filmed footage: silence cuts + punch-ins
       --noise=-35dB --min-silence=0.45 --no-punch --no-captions
@@ -76,6 +78,18 @@ switch (cmd) {
   case "score": {
     const { runScore } = await import("../../radar/src/clusters.js");
     await runScore();
+    process.exit(0);
+    break;
+  }
+  case "worker": {
+    const { runWorker } = await import("../src/worker.js");
+    await runWorker(rest);
+    break;
+  }
+  case "digest": {
+    const { buildDigest } = await import("../../studio/src/digest.js");
+    const d = buildDigest();
+    console.log(`digest ${d.date}: top ${d.top10.length} · risers ${d.overnightRisers.length} · outliers ${d.outliers.length} · unposted ${d.unposted.length}`);
     process.exit(0);
     break;
   }

@@ -202,7 +202,7 @@ async function rssFeed(name, feedUrl, category) {
   return parseFeed(await res.text(), name, category);
 }
 
-export async function ingestAll() {
+export async function ingestAll({ github = true } = {}) {
   const config = loadUserConfig();
   const enabled = Object.entries(config.categories)
     .filter(([, on]) => on)
@@ -215,7 +215,7 @@ export async function ingestAll() {
 
   const tasks = [];
   const wantHn = enabled.some((c) => CATEGORY_SOURCES[c].hn);
-  const wantGithub = enabled.some((c) => CATEGORY_SOURCES[c].github);
+  const wantGithub = github && enabled.some((c) => CATEGORY_SOURCES[c].github);
   if (wantHn) tasks.push(["hn", () => hackerNews(enabled)]);
   if (wantGithub) tasks.push(["github", () => githubTrending(enabled)]);
 

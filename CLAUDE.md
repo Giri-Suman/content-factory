@@ -144,8 +144,10 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       w/ inline checklists, Refresh now); Trends moved to /trends;
       Settings gains keyword editor, weight sliders (applied in scorer),
       quota meter, JobRun table
-- [ ] P8 worker: 30min/60min/6h/daily cadences, JobRun logging,
-      self-updating timestamps
+- [x] P8 worker: `factory worker` — collect+score 30m (github excluded),
+      youtube+tracking 60m, deep refresh 6h, Morning Digest 08:00 IST
+      (banner on Today); every tick guarded + JobRun-logged; Today polls
+      60s so timestamps self-update. `--fast` = test cadences
 - [ ] P9 hardening: keyless failure drills, quota-cap drill, README,
       E2E walkthrough, tag
 
