@@ -72,6 +72,48 @@ options) → Math (Manim shorts + demos) → Approve & render (live job log) →
 Renders (in-browser preview + “Cut shorts”) → Settings (radar categories +
 provider status).
 
+## Content OS (Phase 1 — Intelligence Core, v1)
+
+Trend intelligence layered on the factory: collect → score → autopsy →
+brief → publish checklist, refreshed automatically.
+
+```mermaid
+flowchart LR
+  subgraph collect [every 30m]
+    R[reddit/hn/rss] --> DB[(trends + snapshots)]
+    G[github 6h] --> DB
+    Y[yt trending+heat 60m] --> DB
+  end
+  DB --> S[score: velocity + crossSource + nicheFit + saturationGap]
+  S --> C[(clusters)]
+  W[wishlist autopsies] --> B[Brief Studio]
+  C --> B
+  YW[(watchlist outliers)] --> T[Today page]
+  B --> T
+  C --> T
+  D[08:00 IST digest] --> T
+  T --> M[manual publish checklist + Golden 60]
+```
+
+- **Setup:** `npm install` once; everything runs keyless with visible
+  degradation (heuristic scoring, template briefs). Full power needs two
+  free-tier keys in `.env`:
+  `YOUTUBE_API_KEY` (Google Cloud Console → YouTube Data API v3) and one
+  LLM key (`ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OLLAMA_MODEL`).
+  `YT_DAILY_UNIT_CAP` (default 8000) hard-gates YouTube spend; every call
+  is 30-min cached, 50-id batched, and unit-logged to `data/os/quota.json`.
+- **Commands:** `factory radar` (collect+score) · `factory score` ·
+  `factory yt trending|heat|watch <handle>|outliers|saturation|quota` ·
+  `factory wishlist add <url>|manual <form.json>|poll|list` ·
+  `factory brief [top|<id>]` · `factory digest` · `factory worker [--fast]`
+- **Portal:** Today (command center) · Trends · YouTube · Wishlist ·
+  Briefs · Settings (keywords, score weights, quota, job log) at :4600.
+- **Day-2+ roadmap:** wire briefs into the EXISTING Remotion production
+  line + AI-Cut capture lane (blueprint P17/P20); prediction calibration —
+  predictedTier vs actual 48h results once ~20 posts exist (P15); timing
+  self-tuning from MY analytics replacing the public-research defaults;
+  Title/Hook Lab + Idea Bank + judge network (Phase 2/3 of the blueprint).
+
 ## AI providers (pick one in .env)
 
 | Provider | Cost | Quality | Setup |

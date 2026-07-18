@@ -148,8 +148,11 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       youtube+tracking 60m, deep refresh 6h, Morning Digest 08:00 IST
       (banner on Today); every tick guarded + JobRun-logged; Today polls
       60s so timestamps self-update. `--fast` = test cadences
-- [ ] P9 hardening: keyless failure drills, quota-cap drill, README,
-      E2E walkthrough, tag
+- [x] P9 hardening: keyless drills verified on every surface (keys have
+      never existed on this machine — degradation is the lived state),
+      quota-cap gate proven pre-fetch (QUOTA_CAP at cap boundary), README
+      Content OS section + mermaid + roadmap, full E2E chain run, tagged
+      content-os-v1.0. PHASE 1 COMPLETE.
 
 ## Hard rules
 
