@@ -17,6 +17,9 @@ export default function TrendsPage() {
   const router = useRouter();
   const [trends, setTrends] = useState(null);
   const [config, setConfig] = useState(null);
+  const [clusters, setClusters] = useState([]);
+  const [expanded, setExpanded] = useState(null);
+  const [briefNote, setBriefNote] = useState(null);
   const [filter, setFilter] = useState("all");
   const [scanning, setScanning] = useState(false);
   const [drafting, setDrafting] = useState(null);
@@ -28,6 +31,8 @@ export default function TrendsPage() {
     const data = await res.json();
     setTrends(data.trends);
     setConfig(data.config);
+    const cl = await fetch("/api/clusters").then((r) => r.json());
+    setClusters(cl.clusters || []);
   };
   useEffect(() => {
     load();
@@ -42,10 +47,21 @@ export default function TrendsPage() {
       setTrends(data.trends);
       setConfig(data.config);
       if (!data.ok) setError("scan finished with errors — see terminal log");
+      const cl = await fetch("/api/clusters").then((r) => r.json());
+      setClusters(cl.clusters || []);
     } catch (e) {
       setError(String(e));
     }
     setScanning(false);
+  };
+
+  const generateBriefs = async (clusterId) => {
+    const res = await fetch("/api/clusters", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clusterId }),
+    }).then((r) => r.json());
+    setBriefNote(res.error || "queued");
   };
 
   const draft = async (input) => {
@@ -115,6 +131,63 @@ export default function TrendsPage() {
       {error && (
         <div className="panel" style={{ borderColor: "var(--red)", marginBottom: 16, color: "var(--red)", fontSize: 13 }}>
           {error}
+        </div>
+      )}
+
+      {clusters.length > 0 && (
+        <div style={{ marginBottom: 26 }}>
+          <h2 style={{ fontSize: 17, marginBottom: 4 }}>Opportunities</h2>
+          <p className="sub" style={{ marginBottom: 12 }}>
+            Topic clusters ranked by opportunity score — click a score to see exactly how it was computed.
+          </p>
+          {briefNote && (
+            <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+              {briefNote}
+            </div>
+          )}
+          {clusters.slice(0, 10).map((c) => (
+            <div key={c.id} className="panel" style={{ marginBottom: 10, padding: "12px 16px" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <button
+                  className={`badge ${c.opportunityScore >= 70 ? "hot" : c.opportunityScore >= 45 ? "warm" : "ok"}`}
+                  style={{ minWidth: 44, cursor: "pointer", border: "none", fontSize: 14 }}
+                  title="expand score breakdown"
+                  onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                >
+                  {c.opportunityScore}
+                </button>
+                <span className={`chip static ${c.status === "rising" ? "on" : ""}`} style={{ fontSize: 11 }}>
+                  {c.status}
+                </span>
+                <strong style={{ flex: 1 }}>{c.label}</strong>
+                {c.memberCount > 1 && <span className="muted" style={{ fontSize: 12 }}>{c.memberCount} sources</span>}
+                <button className="btn ghost sm" onClick={() => generateBriefs(c.id)}>
+                  Generate Briefs
+                </button>
+              </div>
+              {c.summary && <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{c.summary}</div>}
+              {expanded === c.id && (
+                <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                  {Object.entries(c.scoreBreakdown || {}).map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", gap: 10, fontSize: 12.5, padding: "2px 0" }}>
+                      <span className="mono" style={{ minWidth: 110 }}>{k}</span>
+                      <span className="mono" style={{ minWidth: 52 }}>{v.value}/{v.max}</span>
+                      <span className="muted">{v.detail}</span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 8 }}>
+                    {(c.members || []).map((m) => (
+                      <div key={m.id} style={{ fontSize: 12.5, padding: "2px 0" }}>
+                        <span className="mono muted" style={{ marginRight: 8 }}>{m.source}</span>
+                        <a href={m.url} target="_blank" rel="noreferrer">{m.title}</a>
+                        {m.velocity != null && <span className="muted"> · {m.velocity > 0 ? "+" : ""}{m.velocity}/h</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

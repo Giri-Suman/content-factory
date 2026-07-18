@@ -99,5 +99,13 @@ async function runRadarInner() {
   }
 
   console.log(`\nnext: factory script <ID>   (drafts a video script from a trend)\n`);
+
+  // P4: opportunity scoring auto-runs after every collect
+  try {
+    const { runScore } = await import("./clusters.js");
+    await runScore();
+  } catch (e) {
+    console.error(`  cluster scoring failed (collect itself succeeded): ${e.message}`);
+  }
   return true;
 }

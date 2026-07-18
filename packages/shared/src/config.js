@@ -42,6 +42,11 @@ export function ensureDirs() {
   }
 }
 
+/** Injected into every Content OS LLM prompt (CLAUDE.md: niche context). */
+export const NICHE_CONTEXT =
+  "senior front-end developer creating content on coding, AI automation, and AI tools, " +
+  "for developers and tech-curious freelancers, India + global English audience, timezone IST";
+
 /* ---------- user config (data/config.json — the portal's settings) ---------- */
 
 const CONFIG_PATH = path.join(paths.data, "config.json");

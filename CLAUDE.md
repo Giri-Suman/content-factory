@@ -125,8 +125,11 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       watchlist outliers (shorts/long medians split), saturation(topic),
       quota ledger + cap. Cycle estimate 610u (<1500 ✓). LIVE run pending
       YOUTUBE_API_KEY in .env — everything degrades cleanly until then
-- [ ] P4 scoring engine: LLM clustering + 4-component scoreBreakdown +
-      rising/fading status; Trends page shows exact components
+- [x] P4 scoring engine: LLM clustering (singleton fallback keyless) +
+      4-component scoreBreakdown w/ stored inputs + new/rising/fading
+      status; auto-runs after collect; Opportunities cards on Trends page
+      expand into exact components. LLM clustering + saturation lookups
+      activate when keys land
 - [ ] P5 wishlist analyzer: YT autopsy flow + IG/FB manual-metrics flow,
       9-hook-pattern classification, transparent S/A/B/C rubric
 - [ ] P6 brief studio: multi-platform payload + timing_ist + manual

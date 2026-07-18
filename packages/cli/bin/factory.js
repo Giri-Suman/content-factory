@@ -73,6 +73,12 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "score": {
+    const { runScore } = await import("../../radar/src/clusters.js");
+    await runScore();
+    process.exit(0);
+    break;
+  }
   case "publish": {
     const { publish } = await import("../../publish/src/publish.js");
     const ok = await publish(rest);

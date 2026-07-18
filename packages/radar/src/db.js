@@ -134,6 +134,15 @@ export function getByIds(ids) {
   return ids.map((id) => trends[id]).filter(Boolean);
 }
 
+export function getAllTrends() {
+  return load().trends;
+}
+
+export function setClusterId(id, clusterId) {
+  const t = load().trends[id];
+  if (t) t.clusterId = clusterId;
+}
+
 export function updateScore(id, score, source, reason) {
   const t = load().trends[id];
   if (t) {
