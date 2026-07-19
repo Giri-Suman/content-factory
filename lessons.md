@@ -71,3 +71,10 @@ once; append after every failed attempt or surprise.
   row's explicit `id: undefined` (P4/P5) → every cluster row lacked ids,
   React keys broke downstream → **when a spread and a default share a key,
   the default must come AFTER the spread.**
+
+- Tried `/^\s*KEY\s*=\s*\S/m` to detect a filled .env key (P10) → `\s`
+  matches NEWLINES, so an empty `KEY=` line matched the next line's text
+  and reported the key as set → **never use \s around = in multiline env
+  regexes; parse line-by-line (lib/factory.js envSet) — the .env here is
+  the template with EMPTY placeholder values, so presence-of-line checks
+  always lie.**

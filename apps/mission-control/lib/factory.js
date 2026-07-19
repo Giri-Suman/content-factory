@@ -44,6 +44,18 @@ export function writeConfig(cfg) {
   return cfg;
 }
 
+/** True only if .env has an UNcommented KEY= line with a non-empty value. */
+export function envSet(name) {
+  const envPath = path.join(repoRoot, ".env");
+  if (!existsSync(envPath)) return false;
+  for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    if (line.trim().startsWith("#")) continue;
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && m[1] === name && m[2]) return true;
+  }
+  return false;
+}
+
 export function readEnvKeys() {
   const envPath = path.join(repoRoot, ".env");
   const vals = {};

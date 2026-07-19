@@ -177,9 +177,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
 ### Phase-2 build checklist (parity + publishing)
 
 - [x] P0.1 spec patch (this edit)
-- [ ] P10 Publish Center: PublishItems from approved briefs, staged
-      YouTube upload via the existing publish engine, Golden-60 toggle,
-      MyPost rows on publish
+- [x] P10 Publish Center: PublishItems per platform from approved briefs
+      (assets prefilled, scheduledFor from timing_ist), staged YT upload
+      via existing engine + thumbnails.set (1600/50 units ledgered),
+      flag-gated Meta container flow, copy-flows for X/LinkedIn/IG,
+      Golden-60 countdown+toggle, MyPost rows on publish. Live YT upload
+      pending OAuth (factory auth-youtube)
 - [ ] P11 Title & Hook Lab: nightly pattern extraction (outlierRatio>=2),
       title/hook scorer wired into Brief Studio
 - [ ] P12 Niche Explorer: budgeted channel discovery, 300-channel rotating

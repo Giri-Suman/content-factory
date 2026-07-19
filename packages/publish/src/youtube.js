@@ -52,6 +52,30 @@ export function buildInsertBody(meta, { publishAt } = {}) {
   };
 }
 
+/** P0.1 hard rule: uploads log true unit costs to the quota ledger. */
+async function logUnits(endpoint, units, job) {
+  const { collection, newId } = await import("../../shared/src/store.js");
+  const quota = collection("quota");
+  const rows = quota.all();
+  rows.push({ id: newId(), date: new Date().toISOString().slice(0, 10), endpoint, units, job, at: new Date().toISOString() });
+  quota.save(rows.slice(-2000));
+}
+
+/** thumbnails.set for an uploaded video (50 units). */
+export async function setThumbnail(videoId, thumbPath) {
+  const accessToken = await getAccessToken();
+  const { readFileSync } = await import("node:fs");
+  const body = readFileSync(thumbPath);
+  const res = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "image/png", "content-length": String(body.length) },
+    body,
+  });
+  if (!res.ok) throw new Error(`thumbnails.set failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  await logUnits("thumbnails.set", 50, "publish");
+  return true;
+}
+
 /** Resumable upload of a local MP4. Returns { videoId, url }. */
 export async function uploadVideo(filePath, meta, { publishAt } = {}) {
   const accessToken = await getAccessToken();
@@ -85,5 +109,6 @@ export async function uploadVideo(filePath, meta, { publishAt } = {}) {
   });
   if (!putRes.ok) throw new Error(`upload failed ${putRes.status}: ${(await putRes.text()).slice(0, 300)}`);
   const result = await putRes.json();
+  await logUnits("videos.insert", 1600, "publish");
   return { videoId: result.id, url: `https://youtu.be/${result.id}` };
 }

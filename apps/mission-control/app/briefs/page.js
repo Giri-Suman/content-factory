@@ -108,6 +108,22 @@ export default function BriefsPage() {
                       <button className="btn ghost sm" onClick={() => patch(b.id, { status: "killed" })}>Kill</button>
                     </>
                   )}
+                  {b.status === "approved" && (
+                    <button
+                      className="btn sm"
+                      onClick={async () => {
+                        const res = await fetch("/api/center", {
+                          method: "POST",
+                          headers: { "content-type": "application/json" },
+                          body: JSON.stringify({ action: "send", briefId: b.id }),
+                        }).then((r) => r.json());
+                        setNote(res.out || res.error || null);
+                        if (res.ok) window.location.href = "/publish";
+                      }}
+                    >
+                      Send to Publish Center
+                    </button>
+                  )}
                 </div>
                 {p.core_idea && <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{p.core_idea}</div>}
 

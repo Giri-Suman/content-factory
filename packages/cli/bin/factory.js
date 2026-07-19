@@ -81,6 +81,41 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "center": {
+    const center = await import("../../publish/src/center.js");
+    const [action, ...cargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "send" && cargs[0]) {
+        const r = center.sendToCenter(cargs[0]);
+        console.log(`publish center: ${r.created} item(s) created${r.skipped ? `, ${r.skipped} already existed` : ""}`);
+      } else if (action === "attach" && cargs[0] && cargs[1]) {
+        const item = center.attachFile(cargs[0], cargs[1], rest.includes("--thumb") ? "thumb" : "video");
+        console.log(`attached ${rest.includes("--thumb") ? "thumbnail" : "video"} to ${item.platform} item ${item.id}`);
+      } else if (action === "publish" && cargs[0]) {
+        const { item, note } = await center.publishItem(cargs[0]);
+        console.log(`[${item.status}] ${item.platform} — ${note}`);
+        if (item.studioUrl) console.log(`  studio: ${item.studioUrl}`);
+      } else if (action === "live" && cargs[0]) {
+        const item = center.markPublished(cargs[0], cargs[1] || null);
+        console.log(`[published] ${item.platform} ${item.externalUrl || ""} — MyPost recorded`);
+      } else if (action === "golden" && cargs[0]) {
+        center.setGolden60(cargs[0], true);
+        console.log("golden 60 done ✓");
+      } else if (action === "list" || !action) {
+        for (const i of center.centerQueue()) {
+          console.log(`  [${i.status.padEnd(9)}] ${i.platform.padEnd(9)} ${i.scheduledText.padEnd(28)} ${i.topic.slice(0, 40)}${i.golden60Done ? " ·g60✓" : ""}`);
+        }
+      } else {
+        console.error("usage: factory center send <briefId> | attach <itemId> <file> [--thumb] | publish <itemId> | live <itemId> [url] | golden <itemId> | list");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "worker": {
     const { runWorker } = await import("../src/worker.js");
     await runWorker(rest);

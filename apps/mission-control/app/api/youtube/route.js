@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { startJob, runCli, repoRoot } from "../../../lib/factory.js";
+import { startJob, runCli, repoRoot, envSet } from "../../../lib/factory.js";
 
 const os = (name) => {
   const p = path.join(repoRoot, "data", "os", `${name}.json`);
@@ -15,8 +15,7 @@ const os = (name) => {
 
 // GET -> everything the YouTube page needs, read straight from the OS stores
 export async function GET() {
-  const envPath = path.join(repoRoot, ".env");
-  const hasKey = existsSync(envPath) && /^\s*YOUTUBE_API_KEY\s*=\s*\S/m.test(readFileSync(envPath, "utf8"));
+  const hasKey = envSet("YOUTUBE_API_KEY");
 
   const trends = (() => {
     const p = path.join(repoRoot, "data", "trends.json");

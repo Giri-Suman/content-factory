@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+import { repoRoot, runCli, envSet } from "../../../lib/factory.js";
 
 const STORE = path.join(repoRoot, "data", "os", "wishlist.json");
 
@@ -16,11 +16,9 @@ const read = () => {
 
 export async function GET() {
   const rows = read().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  const envPath = path.join(repoRoot, ".env");
-  const env = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   return NextResponse.json({
     entries: rows,
-    hasYtKey: /^\s*YOUTUBE_API_KEY\s*=\s*\S/m.test(env),
+    hasYtKey: envSet("YOUTUBE_API_KEY"),
   });
 }
 
