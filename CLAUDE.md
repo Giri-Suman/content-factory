@@ -189,8 +189,13 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       auto-fail, per-dimension rewrites) upgraded by LLM, scores embedded
       in every new brief + chips/Improve on Briefs page, Lab page w/
       pattern table + score box
-- [ ] P12 Niche Explorer: budgeted channel discovery, 300-channel rotating
-      cohorts, Shorts outliers tab (medians already split)
+- [x] P12 Niche Explorer: budgeted discovery (≤5 search calls/500u,
+      relevance×size-fit×recency rank), cohort watchlist refresh (4
+      rotating cohorts on the 6h tick → ~2u/channel/day at 300), Shorts
+      Outliers tab (Analyze/Brief-it, separate shorts median), weekly
+      niche map, Settings quota projection (2213/8000 ✓). FIXED: hourly
+      niche-heat blew 2× the cap → now daily-gated. Live discovery pends
+      YOUTUBE_API_KEY
 - [ ] P13 Keyword Gap Finder: autocomplete + LLM expansion, demand-proxy
       vs supply cards, no revenue estimates anywhere
 - [ ] P14 Idea Bank & Series Planner: pillar/effort ranking, dedupe guard,

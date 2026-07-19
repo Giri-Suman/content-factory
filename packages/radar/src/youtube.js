@@ -39,7 +39,7 @@ function logQuota(endpoint, units, job) {
 }
 
 /** The single API gateway: 30-min cache, quota cap, unit ledger. */
-async function yt(endpoint, params, job = "adhoc") {
+export async function yt(endpoint, params, job = "adhoc") {
   loadEnv();
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) throw new Error("NO_KEY: set YOUTUBE_API_KEY in .env (free — Google Cloud Console, YouTube Data API v3)");
@@ -71,7 +71,7 @@ async function yt(endpoint, params, job = "adhoc") {
 }
 
 /** videos.list in 50-id batches. parts: snippet,statistics,contentDetails */
-async function videosByIds(ids, job) {
+export async function videosByIds(ids, job) {
   const out = [];
   for (let i = 0; i < ids.length; i += 50) {
     const data = await yt(
@@ -230,9 +230,25 @@ export async function refreshChannel(channelId, job = "yt-watchlist") {
   return { channelId, videos: parsed.length, medianViews: overallMedian };
 }
 
-export async function refreshWatchlist(job = "yt-watchlist") {
+/**
+ * P12 cohort scaling: with {cohort:true} (the worker's 6h deep tick) each
+ * channel refreshes once per ~24h in 4 rotating cohorts — 300 channels
+ * stay ≈2 units/channel/day. Manual refresh (no flag) does everything.
+ */
+export async function refreshWatchlist(job = "yt-watchlist", { cohort = false } = {}) {
+  const all = collection("watchchannels").all();
+  const cohortIndex = Math.floor(new Date().getUTCHours() / 6); // 0-3, rotates with the 6h tick
+  const hash = (s) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0);
+  const due = cohort
+    ? all.filter(
+        (ch) =>
+          hash(ch.id) % 4 === cohortIndex &&
+          (!ch.refreshedAt || Date.now() - new Date(ch.refreshedAt).getTime() > 20 * 36e5)
+      )
+    : all;
+
   const results = [];
-  for (const ch of collection("watchchannels").all()) {
+  for (const ch of due) {
     try {
       results.push(await refreshChannel(ch.id, job));
     } catch (e) {
@@ -240,6 +256,21 @@ export async function refreshWatchlist(job = "yt-watchlist") {
     }
   }
   return results;
+}
+
+/** Projected daily unit spend at current settings (P12 acceptance). */
+export function estimateDailyUnits() {
+  const keywords = (loadUserConfig().youtubeKeywords || DEFAULT_KEYWORDS).length;
+  const channels = collection("watchchannels").count();
+  const est = {
+    trending: 4 * 24, // hourly tick, 4 one-unit calls (30-min cache absorbs half in practice)
+    nicheHeat: keywords * 100 + Math.ceil((keywords * 10) / 50), // ONCE daily (worker-paced)
+    watchlist: channels * 2, // cohort rotation = each channel ~once/day
+    saturation: 15 * 101, // top-15 clusters per scoring day, worst case
+  };
+  est.total = est.trending + est.nicheHeat + est.watchlist + est.saturation;
+  est.at300Channels = est.total - est.watchlist + 300 * 2;
+  return est;
 }
 
 /* ---------------- 4. outliers ---------------- */

@@ -78,3 +78,15 @@ once; append after every failed attempt or surprise.
   regexes; parse line-by-line (lib/factory.js envSet) — the .env here is
   the template with EMPTY placeholder values, so presence-of-line checks
   always lie.**
+
+- The P8 worker's hourly YouTube tick called nicheHeat() every 60min =
+  ~600 units × 24 = 14,400/day, DOUBLE the 8000 cap (found in P12) →
+  **niche heat is a daily-cost job, not hourly; worker now gates it with
+  ranToday("yt-heat"). Any per-hour job that spends >100 units/call needs
+  a once-daily gate or it blows the quota. P16 formalizes this in the
+  allocator.**
+
+- setState is async: `onClick={() => { setHandle(c.id); watch(); }}`
+  (P12 discover→watchlist) reads the STALE handle inside watch() →
+  **pass the value directly (`watch(c.id)`), never setState-then-read in
+  the same handler.**

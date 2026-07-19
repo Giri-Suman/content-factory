@@ -27,6 +27,13 @@ export async function GET() {
     env: readEnvKeys(),
     quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
     jobruns: os("jobruns").slice(-30).reverse(),
+    dailyProjection: (() => {
+      // mirrors packages/radar estimateDailyUnits (routes never import factory packages)
+      const kw = (config.youtubeKeywords || ["a", "b", "c", "d", "e", "f"]).length;
+      const channels = os("watchchannels").length;
+      const t = 96 + kw * 100 + Math.ceil((kw * 10) / 50) + channels * 2 + 15 * 101;
+      return { total: t, channels, at300: t - channels * 2 + 600 };
+    })(),
   });
 }
 

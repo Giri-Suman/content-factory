@@ -205,6 +205,7 @@ switch (cmd) {
           console.log(`  hook: ${e.contentAnalysis.hookPattern} · topic: ${e.contentAnalysis.topic}`);
           console.log(`  steal: ${e.contentAnalysis.stealThis}`);
         } else console.log("  (no LLM key — structural analysis skipped)");
+        console.log(`RESULT ${JSON.stringify({ id: e.id, tier: e.predictedTier })}`);
       } else if (action === "poll") {
         const r = await pollTracked();
         console.log(`tracking poll: ${r.polled} entr${r.polled === 1 ? "y" : "ies"} updated${r.note ? ` (${r.note})` : ""}`);

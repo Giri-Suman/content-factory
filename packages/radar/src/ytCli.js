@@ -19,7 +19,8 @@ export async function ytCommand(argv) {
     return true;
   }
 
-  if (!hasKey()) {
+  if (!hasKey() && sub !== "map" && sub !== "outliers") {
+    // map + outliers read stored data only — they degrade on their own terms
     console.error("YOUTUBE_API_KEY missing in .env — get one free in Google Cloud Console (YouTube Data API v3)");
     return false;
   }
@@ -63,6 +64,28 @@ export async function ytCommand(argv) {
           return true;
         }
         for (const v of rows.slice(0, 15)) console.log(`  ${String(v.outlierRatio).padStart(5)}x  ${fmt(v.views).padStart(7)}  [${v.channelTitle.slice(0, 18)}] ${v.title.slice(0, 52)}${v.isShort ? " (short)" : ""}`);
+        return true;
+      }
+      case "discover": {
+        if (!args[0]) {
+          console.error('usage: factory yt discover "<seed keyword or channel>"');
+          return false;
+        }
+        const { discoverChannels } = await import("./explorer.js");
+        const r = await withJobRun("yt-discover", () => discoverChannels(args.join(" ")));
+        console.log(`\n${r.candidates.length} candidates from ${r.searches} search calls (${r.searches * 100} units):`);
+        for (const c of r.candidates.slice(0, 15)) {
+          console.log(`  ${String(c.score).padEnd(5)} ${fmt(c.subscriberCount).padStart(7)}  ${c.title.slice(0, 40)}${c.watched ? "  (watched)" : ""}`);
+        }
+        return true;
+      }
+      case "map": {
+        const { buildNicheMap } = await import("./explorer.js");
+        const m = await withJobRun("niche-map", () => buildNicheMap());
+        if (m.skipped) console.log(`skipped: ${m.skipped}`);
+        else {
+          console.log(`\nrising: ${m.rising.join(" · ")}\nfading: ${m.fading.join(" · ")}\ngaps:   ${m.gaps.join(" · ")}`);
+        }
         return true;
       }
       case "saturation": {

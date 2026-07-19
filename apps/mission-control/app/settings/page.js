@@ -21,6 +21,7 @@ export default function SettingsPage() {
   const [quotaToday, setQuotaToday] = useState(0);
   const [jobruns, setJobruns] = useState([]);
   const [keywords, setKeywords] = useState("");
+  const [projection, setProjection] = useState(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -31,6 +32,7 @@ export default function SettingsPage() {
         setQuotaToday(d.quotaToday || 0);
         setJobruns(d.jobruns || []);
         setKeywords((d.config.youtubeKeywords || []).join(", "));
+        setProjection(d.dailyProjection || null);
       });
   }, []);
 
@@ -118,6 +120,11 @@ export default function SettingsPage() {
         </div>
         <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
           each keyword costs 100 quota units per heat scan · used today: <span className="mono">{quotaToday}</span> units
+          {projection && (
+            <>
+              {" "}· projected daily: <span className="mono">{projection.total}</span>/{8000} units ({projection.channels} channels; at 300 channels: <span className="mono">{projection.at300}</span>)
+            </>
+          )}
         </div>
       </div>
 

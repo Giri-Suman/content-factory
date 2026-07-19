@@ -41,13 +41,23 @@ export async function runWorker(argv = []) {
     await runRadar({ github: false });
   };
 
+  const ranToday = async (jobName) => {
+    const { collection } = await import("../../shared/src/store.js");
+    const today = new Date().toISOString().slice(0, 10);
+    return collection("jobruns").all().some((j) => j.job === jobName && j.ok && j.startedAt.slice(0, 10) === today);
+  };
+
   const youtubeTick = async () => {
     console.log(`[${stamp()}] tick: youtube + wishlist tracking`);
     const { hasKey, trending, nicheHeat } = await import("../../radar/src/youtube.js");
     const { pollTracked } = await import("../../studio/src/wishlist.js");
     if (hasKey()) {
       await guard("yt-trending", () => withJobRun("yt-trending", () => trending()));
-      await guard("yt-heat", () => withJobRun("yt-heat", () => nicheHeat()));
+      // P12 budget pacing: niche heat costs ~600 units/pass — ONCE daily,
+      // not hourly (hourly would burn 14k/day against the 8k cap). P16's
+      // allocator formalizes this.
+      if (await ranToday("yt-heat")) console.log("  (niche heat already ran today — budget pacing)");
+      else await guard("yt-heat", () => withJobRun("yt-heat", () => nicheHeat()));
     } else {
       console.log("  (no YOUTUBE_API_KEY — youtube ticks idle)");
     }
@@ -56,11 +66,32 @@ export async function runWorker(argv = []) {
   };
 
   const deepTick = async () => {
-    console.log(`[${stamp()}] tick: deep refresh (github + watchlist)`);
+    console.log(`[${stamp()}] tick: deep refresh (github + watchlist cohort)`);
     const { runRadar } = await import("../../radar/src/radar.js");
     await runRadar({ github: true });
     const { hasKey, refreshWatchlist } = await import("../../radar/src/youtube.js");
-    if (hasKey()) await guard("yt-watchlist", () => withJobRun("yt-watchlist", () => refreshWatchlist()));
+    if (hasKey()) {
+      await guard("yt-watchlist", () =>
+        withJobRun("yt-watchlist", async () => {
+          const r = await refreshWatchlist("yt-watchlist", { cohort: true });
+          console.log(`  watchlist cohort: ${r.length} channel(s) refreshed`);
+          return { refreshed: r.length };
+        })
+      );
+    }
+    // weekly niche map (runs when the current one is 6+ days old)
+    const { collection } = await import("../../shared/src/store.js");
+    const current = collection("nichemap").all()[0];
+    if (!current || Date.now() - new Date(current.at).getTime() > 6 * 864e5) {
+      const { buildNicheMap } = await import("../../radar/src/explorer.js");
+      await guard("niche-map", () =>
+        withJobRun("niche-map", async () => {
+          const m = await buildNicheMap();
+          console.log(`  niche map: ${m.skipped || `${m.rising?.length} rising / ${m.gaps?.length} gaps`}`);
+          return m;
+        })
+      );
+    }
   };
 
   const digestTick = async () => {
