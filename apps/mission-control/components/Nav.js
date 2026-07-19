@@ -9,6 +9,7 @@ const LINKS = [
   ["/wishlist", "Wishlist"],
   ["/briefs", "Briefs"],
   ["/publish", "Publish"],
+  ["/lab", "Lab"],
   ["/scripts", "Scripts"],
   ["/math", "Math"],
   ["/footage", "Footage"],

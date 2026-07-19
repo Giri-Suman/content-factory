@@ -81,6 +81,35 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "lab": {
+    const lab = await import("../../studio/src/titleLab.js");
+    const [action, ...largs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "extract") {
+        const r = await lab.extractPatterns();
+        console.log(r.skipped ? `skipped: ${r.skipped}` : `patterns: +${r.added} new, ${r.merged} merged (from ${r.samples} outlier titles)`);
+      } else if (action === "score" && largs[0]) {
+        const r = await lab.scoreTitle(largs.join(" "));
+        console.log(`\n"${r.title}"`);
+        console.log(`  overall ${r.overall}/10 (${r.mode})${r.banned ? "  ⚠ BANNED GENERIC OPENER" : ""}`);
+        for (const [k, v] of Object.entries(r.subScores)) console.log(`  ${k.padEnd(13)} ${v}/10${r.rewrites[k] ? `  → ${r.rewrites[k]}` : ""}`);
+        for (const m of r.matches) console.log(`  ~ ${m.template} (${m.avgOutlierRatio}x, n=${m.sampleSize})`);
+        console.log(`RESULT ${JSON.stringify(r)}`);
+      } else if (action === "hook" && largs[0]) {
+        const r = await lab.scoreHook(largs.join(" "));
+        console.log(`\n"${r.hook}"\n  ${r.pattern} · ${r.score}/10 (${r.mode})${r.banned ? " ⚠ BANNED" : ""}${r.rewrite ? `\n  → ${r.rewrite}` : ""}`);
+        console.log(`RESULT ${JSON.stringify(r)}`);
+      } else {
+        console.error('usage: factory lab extract | score "<title>" | hook "<hook>"');
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "center": {
     const center = await import("../../publish/src/center.js");
     const [action, ...cargs] = rest.filter((a) => !a.startsWith("--"));

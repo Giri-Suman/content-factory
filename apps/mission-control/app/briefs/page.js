@@ -60,6 +60,23 @@ export default function BriefsPage() {
     });
   };
 
+  const improveTitle = async (b) => {
+    setNote("re-scoring title…");
+    const res = await fetch("/api/lab", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: b.payload.yt_short.title }),
+    }).then((r) => r.json());
+    if (!res.ok) return setNote(res.error);
+    const payload = structuredClone(b.payload);
+    const best = Object.values(res.result.rewrites || {})[0];
+    // LLM rewrites are replacement titles; heuristic rewrites are advice — only swap in real titles
+    if (res.result.mode === "llm" && best) payload.yt_short.title = best;
+    payload._scores = { ...(payload._scores || {}), title: res.result };
+    await patch(b.id, { payload });
+    setNote(res.result.mode === "llm" ? "title improved + re-scored" : "re-scored (heuristic mode — rewrites shown as advice; LLM key enables auto-improve)");
+  };
+
   const tick = (b, i) => {
     const st = [...(b.checklistState || b.payload.manual_publish_checklist.map(() => false))];
     st[i] = !st[i];
@@ -139,16 +156,42 @@ export default function BriefsPage() {
                   {t === "YT Short" && p.yt_short && (
                     <div>
                       <div className="muted" style={{ fontSize: 11.5, marginBottom: 4 }}>hooks — click into a field to edit, blur to save</div>
-                      {p.yt_short.hook_variants.map((h, i) => (
-                        <input
-                          key={i}
-                          value={edits[`${b.id}-hook${i}`] ?? h}
-                          onChange={(e) => setEdits({ ...edits, [`${b.id}-hook${i}`]: e.target.value })}
-                          onBlur={() => saveHook(b, i)}
-                          style={{ width: "100%", marginBottom: 6 }}
-                        />
-                      ))}
-                      <div><strong>{p.yt_short.title}</strong> · {p.yt_short.length_sec}s</div>
+                      {p.yt_short.hook_variants.map((h, i) => {
+                        const hs = p._scores?.hooks?.[i];
+                        return (
+                          <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                            <input
+                              value={edits[`${b.id}-hook${i}`] ?? h}
+                              onChange={(e) => setEdits({ ...edits, [`${b.id}-hook${i}`]: e.target.value })}
+                              onBlur={() => saveHook(b, i)}
+                              style={{ flex: 1 }}
+                            />
+                            {hs && (
+                              <span
+                                className={`badge ${hs.score >= 7 ? "ok" : hs.score >= 4 ? "warm" : "hot"}`}
+                                style={{ fontSize: 10.5 }}
+                                title={`${hs.pattern}${hs.rewrite ? ` — ${hs.rewrite}` : ""}${hs.banned ? " · BANNED OPENER" : ""}`}
+                              >
+                                {hs.score}/10
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <strong>{p.yt_short.title}</strong>
+                        <span className="muted">· {p.yt_short.length_sec}s</span>
+                        {p._scores?.title && (
+                          <span
+                            className={`badge ${p._scores.title.overall >= 7 ? "ok" : p._scores.title.overall >= 4 ? "warm" : "hot"}`}
+                            style={{ fontSize: 10.5 }}
+                            title={Object.entries(p._scores.title.subScores).map(([k, v]) => `${k} ${v}/10`).join(" · ")}
+                          >
+                            title {p._scores.title.overall}/10
+                          </span>
+                        )}
+                        <button className="btn ghost sm" onClick={() => improveTitle(b)}>Improve</button>
+                      </div>
                       <div className="muted" style={{ whiteSpace: "pre-wrap" }}>{p.yt_short.description}</div>
                       <div style={{ marginTop: 4 }}>{(p.yt_short.beats || []).map((be, i) => <div key={i}>▸ {be}</div>)}</div>
                       <div className="mono muted" style={{ fontSize: 11.5, marginTop: 4 }}>{(p.yt_short.tags || []).join(", ")}</div>

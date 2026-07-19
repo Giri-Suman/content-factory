@@ -165,6 +165,17 @@ export async function generateBrief({ clusterId, wishlistId }) {
   payload.timing_ist = timing;
   payload.manual_publish_checklist = checklistFor(finalKind, timing);
 
+  // P11: every brief carries its title + hook scores (Lab re-rolls update them)
+  try {
+    const { scoreTitle, scoreHook } = await import("./titleLab.js");
+    payload._scores = {
+      title: await scoreTitle(payload.yt_short.title),
+      hooks: await Promise.all(payload.yt_short.hook_variants.map((h) => scoreHook(h))),
+    };
+  } catch {
+    payload._scores = null; // scoring must never block brief generation
+  }
+
   return collection("briefs").upsert({
     id: newId(),
     ...source,

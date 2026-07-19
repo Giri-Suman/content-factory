@@ -183,8 +183,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       flag-gated Meta container flow, copy-flows for X/LinkedIn/IG,
       Golden-60 countdown+toggle, MyPost rows on publish. Live YT upload
       pending OAuth (factory auth-youtube)
-- [ ] P11 Title & Hook Lab: nightly pattern extraction (outlierRatio>=2),
-      title/hook scorer wired into Brief Studio
+- [x] P11 Title & Hook Lab: nightly pattern extraction on the worker's
+      daily tick (outlierRatio>=2, near-dupe merge; needs data+LLM),
+      title/hook scorer w/ CODED heuristics keyless (banned-opener
+      auto-fail, per-dimension rewrites) upgraded by LLM, scores embedded
+      in every new brief + chips/Improve on Briefs page, Lab page w/
+      pattern table + score box
 - [ ] P12 Niche Explorer: budgeted channel discovery, 300-channel rotating
       cohorts, Shorts outliers tab (medians already split)
 - [ ] P13 Keyword Gap Finder: autocomplete + LLM expansion, demand-proxy

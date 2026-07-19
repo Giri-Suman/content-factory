@@ -70,6 +70,13 @@ export async function runWorker(argv = []) {
       console.log(`[${stamp()}] morning digest for ${d.date}: top ${d.top10.length}, risers ${d.overnightRisers.length}, unposted ${d.unposted.length}`);
       return d;
     });
+    // P11: nightly title-pattern extraction rides the daily tick
+    const { extractPatterns } = await import("../../studio/src/titleLab.js");
+    await withJobRun("lab-extract", async () => {
+      const r = await extractPatterns();
+      console.log(`[${stamp()}] title patterns: ${r.skipped || `+${r.added} new, ${r.merged} merged`}`);
+      return r;
+    });
   };
 
   // fire the fast lanes immediately so the system is warm from minute one
