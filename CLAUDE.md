@@ -61,13 +61,20 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
   checklist, (5) refreshes itself automatically. Later phases extend into
   production + staged publishing + self-improvement (judges, lessons,
   calibration).
-- PHASE-1 SCOPE FENCE (P1–P9): new Content OS work must NOT add or extend
-  publishing/upload integration, video rendering, whisper, embeddings,
-  Meta APIs, or auth — refuse this scope creep even if asked mid-session.
-  The repo's EXISTING publish/render/autoedit modules are grandfathered:
-  they stay as-is (staged, private-first) and are re-scoped by the P0.1
-  spec patch at the start of Phase 2. Phase-1 briefs end in a MANUAL
-  publish checklist, nothing else.
+- PUBLISHING PIPELINE (P0.1 lifted the Phase-1 fence; Phase 2 module):
+  two modes. STAGED (default, permanent fallback): the system prepares
+  everything — video file slot, title, description, tags, thumbnail,
+  target time — as PublishItems; a human taps Publish per platform in the
+  Publish Center. YouTube uploads go up private/unlisted with metadata set
+  (the EXISTING packages/publish engine: compliance gate, disclosure,
+  private-first) and the human flips them live. AUTO (env
+  PUBLISH_MODE=auto, ships OFF): only after the YouTube API project
+  passes Google verification (YOUTUBE_APP_VERIFIED=true) and the Meta app
+  passes review (META_APP_REVIEWED=true); the code checks the flags at
+  RUNTIME and staged is always the fallback.
+- PHASE-2 MODULES: Publish Center, Title & Hook Lab, Niche Explorer,
+  Keyword Gap Finder, Idea Bank & Series Planner, Calibration Loop,
+  Quota Budget Manager, My Channel analytics ingestion.
 - NICHE CONTEXT for all LLM prompts: senior front-end developer creating
   content on coding, AI automation, and AI tools, for developers +
   tech-curious freelancers, India + global English audience, timezone IST.
@@ -78,10 +85,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
   (data/os/*.json); zod → `store.js` validate helpers; node-cron worker →
   `factory worker` script; Anthropic SDK → existing `packages/llm` provider
   layer (anthropic > openrouter > ollama, keyless degradation mandatory).
-- YOUTUBE QUOTA CARE: every YouTube Data API call goes through one cached
-  client (30-min cache in data/os/ytcache.json, 50-id batching) and logs
-  true unit costs (search.list=100, videos/channels/playlistItems=1,
-  videos.insert=1600) to a quota ledger with a daily env cap (default 8000).
+- YOUTUBE QUOTA CARE (hard rule): every YouTube Data API call goes
+  through the one cached client (30-min cache, 50-id batching) and MUST
+  log true unit costs to the quota ledger (search.list=100,
+  videos/channels/playlistItems=1, videos.insert=1600). Jobs must consult
+  the daily budget allocator (P16; until it lands, the global
+  YT_DAILY_UNIT_CAP pre-call gate, default 8000) before running.
 - LLM CALLS: strict JSON out, validated, one retry on parse failure, then
   graceful degradation. A failed LLM call must never crash a run.
 - PUBLISHING: staged is the permanent default (private-first + disclosure +
@@ -111,6 +120,17 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
 - `briefs` — id, topicClusterId?, wishlistEntryId?, kind(trend|evergreen),
   deadline?, payload, status(draft|approved|killed), createdAt
 - `jobruns` — id, job, startedAt, ok, error?
+- `titlepatterns` — id, template, exampleTitles, avgOutlierRatio,
+  sampleSize, updatedAt
+- `ideabank` — id, briefId?, title, pillar, effort(S|M|L),
+  status(backlog|scheduled|made|retired), score, createdAt
+- `publishitems` — id, briefId, platform, mode(staged|auto), assets,
+  scheduledFor, publishedAt?, externalUrl?,
+  status(preparing|ready|published|failed), golden60Done(bool)
+- `myposts` — id, publishItemId?, platform, externalId, postedAt,
+  hookPattern, pillar, lengthSec, title, statsSnapshots
+- `quota` — id, date, endpoint, units, job (EXISTS since P3 as the
+  YouTube gateway's ledger)
 - Env keys (all via .env, never hardcoded): YOUTUBE_API_KEY,
   YT_DAILY_UNIT_CAP (default 8000), LLM keys via the existing packages/llm
   provider chain (ANTHROPIC_API_KEY + ANTHROPIC_MODEL honored; openrouter/
@@ -153,6 +173,26 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       quota-cap gate proven pre-fetch (QUOTA_CAP at cap boundary), README
       Content OS section + mermaid + roadmap, full E2E chain run, tagged
       content-os-v1.0. PHASE 1 COMPLETE.
+
+### Phase-2 build checklist (parity + publishing)
+
+- [x] P0.1 spec patch (this edit)
+- [ ] P10 Publish Center: PublishItems from approved briefs, staged
+      YouTube upload via the existing publish engine, Golden-60 toggle,
+      MyPost rows on publish
+- [ ] P11 Title & Hook Lab: nightly pattern extraction (outlierRatio>=2),
+      title/hook scorer wired into Brief Studio
+- [ ] P12 Niche Explorer: budgeted channel discovery, 300-channel rotating
+      cohorts, Shorts outliers tab (medians already split)
+- [ ] P13 Keyword Gap Finder: autocomplete + LLM expansion, demand-proxy
+      vs supply cards, no revenue estimates anywhere
+- [ ] P14 Idea Bank & Series Planner: pillar/effort ranking, dedupe guard,
+      Make Next card
+- [ ] P15 Calibration Loop: my-channel ingestion, performance joins,
+      weekly memo, guarded auto-tuning (N>=20, max ±10%/week), prediction
+      scorecard
+- [ ] P16 Quota Budget Manager: per-module allocator, live dashboard,
+      failure-drill rerun, tag v2.0
 
 ## Hard rules
 
