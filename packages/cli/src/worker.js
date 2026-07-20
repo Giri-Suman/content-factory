@@ -108,6 +108,13 @@ export async function runWorker(argv = []) {
       console.log(`[${stamp()}] title patterns: ${r.skipped || `+${r.added} new, ${r.merged} merged`}`);
       return r;
     });
+    // P13: keyword gap pass (autocomplete free; supply scoring self-budgets to 2200u/day)
+    const { keywordGapPass } = await import("../../radar/src/keywords.js");
+    await withJobRun("yt-kwgap", async () => {
+      const r = await keywordGapPass();
+      console.log(`[${stamp()}] keyword gap: ${r.scored} scored, ${r.unitsUsed}u used`);
+      return r;
+    });
   };
 
   // fire the fast lanes immediately so the system is warm from minute one

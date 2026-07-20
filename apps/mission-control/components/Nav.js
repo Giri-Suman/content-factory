@@ -10,6 +10,7 @@ const LINKS = [
   ["/briefs", "Briefs"],
   ["/publish", "Publish"],
   ["/lab", "Lab"],
+  ["/keywords", "Keywords"],
   ["/scripts", "Scripts"],
   ["/math", "Math"],
   ["/footage", "Footage"],

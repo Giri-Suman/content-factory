@@ -129,10 +129,15 @@ function templatePayload(topic, kind) {
 
 /* ---------------- generation ---------------- */
 
-export async function generateBrief({ clusterId, wishlistId }) {
+export async function generateBrief({ clusterId, wishlistId, topic: rawTopic }) {
   loadEnv();
   let topic, context, source, kind;
-  if (clusterId) {
+  if (rawTopic) {
+    topic = rawTopic;
+    source = { keyword: rawTopic };
+    context = `KEYWORD/TOPIC: ${rawTopic}\n(an opportunity keyword — weak YouTube supply, real demand signals for my niche)`;
+    kind = "evergreen";
+  } else if (clusterId) {
     const c = collection("clusters").get(clusterId);
     if (!c) throw new Error(`no cluster ${clusterId}`);
     topic = c.label;
@@ -156,7 +161,7 @@ export async function generateBrief({ clusterId, wishlistId }) {
         : "no structural analysis (keyless) — adapt the title directly") ;
     kind = "evergreen";
   } else {
-    throw new Error("generateBrief needs clusterId or wishlistId");
+    throw new Error("generateBrief needs clusterId, wishlistId, or topic");
   }
 
   const payload = (await llmPayload(context, kind)) || templatePayload(topic, kind);

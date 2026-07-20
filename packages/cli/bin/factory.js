@@ -81,6 +81,30 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "keywords": {
+    const { keywordGapPass, topOpportunities } = await import("../../radar/src/keywords.js");
+    const { withJobRun } = await import("../../shared/src/jobs.js");
+    const [action] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "list") {
+        for (const k of topOpportunities()) {
+          console.log(`  ${String(k.opportunity).padStart(5)}  d${k.demand.score}/s${k.supply.score}  ${k.keyword}`);
+        }
+      } else {
+        const r = await withJobRun("yt-kwgap", () => keywordGapPass());
+        console.log(`\ntop opportunities:`);
+        for (const k of topOpportunities(12)) {
+          console.log(`  ${String(k.opportunity).padStart(5)}  demand ${k.demand.score} / supply ${k.supply.score}  ${k.keyword}`);
+          console.log(`         ${k.demand.detail}`);
+        }
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "lab": {
     const lab = await import("../../studio/src/titleLab.js");
     const [action, ...largs] = rest.filter((a) => !a.startsWith("--"));
@@ -160,10 +184,14 @@ switch (cmd) {
   case "brief": {
     const { generateBrief } = await import("../../studio/src/briefs.js");
     const { collection } = await import("../../shared/src/store.js");
-    const target = rest.filter((a) => !a.startsWith("--"))[0];
+    const noflag = rest.filter((a) => !a.startsWith("--"));
+    const target = noflag[0];
     try {
       let args;
-      if (!target || target === "top") {
+      if (target === "topic" && noflag[1]) {
+        args = { topic: noflag.slice(1).join(" ") };
+        console.log(`briefing keyword/topic: ${args.topic}`);
+      } else if (!target || target === "top") {
         const top = collection("clusters").all().sort((a, b) => b.opportunityScore - a.opportunityScore)[0];
         if (!top) throw new Error("no clusters — run: factory score");
         args = { clusterId: top.id };

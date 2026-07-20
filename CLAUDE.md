@@ -196,8 +196,11 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       niche map, Settings quota projection (2213/8000 ✓). FIXED: hourly
       niche-heat blew 2× the cap → now daily-gated. Live discovery pends
       YOUTUBE_API_KEY
-- [ ] P13 Keyword Gap Finder: autocomplete + LLM expansion, demand-proxy
-      vs supply cards, no revenue estimates anywhere
+- [x] P13 Keyword Gap Finder: public autocomplete (free, fragile-by-
+      design) + LLM expansion, demand PROXY (autocomplete + collected-item
+      mentions, sqrt-scaled) vs live saturation supply, budget-gated to
+      2200u/day, /keywords page + Brief-it (topic briefs), zero revenue/
+      RPM anywhere. Demand half works keyless; supply pends YOUTUBE_API_KEY
 - [ ] P14 Idea Bank & Series Planner: pillar/effort ranking, dedupe guard,
       Make Next card
 - [ ] P15 Calibration Loop: my-channel ingestion, performance joins,
