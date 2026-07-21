@@ -23,6 +23,7 @@ export async function GET() {
       ...config,
       youtubeKeywords: config.youtubeKeywords || ["ai automation", "claude code", "cursor ai", "n8n workflow", "python automation", "ai agents"],
       scoreWeights: { ...DEFAULT_WEIGHTS, ...(config.scoreWeights || {}) },
+      availableHoursPerWeek: config.availableHoursPerWeek || 6,
     },
     env: readEnvKeys(),
     quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
@@ -47,6 +48,10 @@ export async function PUT(request) {
   }
   if (Array.isArray(body.youtubeKeywords)) {
     config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
+  }
+  if (body.availableHoursPerWeek !== undefined) {
+    const h = Number(body.availableHoursPerWeek);
+    config.availableHoursPerWeek = Number.isFinite(h) ? Math.max(1, Math.min(60, h)) : 6;
   }
   if (body.scoreWeights && typeof body.scoreWeights === "object") {
     config.scoreWeights = {};

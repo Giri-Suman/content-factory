@@ -129,7 +129,7 @@ function templatePayload(topic, kind) {
 
 /* ---------------- generation ---------------- */
 
-export async function generateBrief({ clusterId, wishlistId, topic: rawTopic }) {
+export async function generateBrief({ clusterId, wishlistId, topic: rawTopic, series }) {
   loadEnv();
   let topic, context, source, kind;
   if (rawTopic) {
@@ -164,6 +164,22 @@ export async function generateBrief({ clusterId, wishlistId, topic: rawTopic }) 
     throw new Error("generateBrief needs clusterId, wishlistId, or topic");
   }
 
+  // P14: series briefs inherit numbering + continuity notes
+  if (series) {
+    context += `\n\nSERIES: "${series.name}" — this is episode ${series.episodeNum}. Continuity notes: ${series.continuityNotes || "(none)"}. Reference earlier episodes naturally; keep the running format.`;
+    topic = `${series.name} #${series.episodeNum}: ${topic}`;
+  }
+
+  // P14 dedupe guard: warn (never block) on near-duplicate ideas
+  let duplicateWarning = null;
+  try {
+    const { dedupeCheck } = await import("./ideaBank.js");
+    const dupe = dedupeCheck(topic);
+    if (dupe) duplicateWarning = dupe;
+  } catch {
+    /* guard must never block generation */
+  }
+
   const payload = (await llmPayload(context, kind)) || templatePayload(topic, kind);
   const finalKind = payload.kind === "trend" || payload.kind === "evergreen" ? payload.kind : kind;
   const timing = timingFor(finalKind);
@@ -184,6 +200,9 @@ export async function generateBrief({ clusterId, wishlistId, topic: rawTopic }) 
   return collection("briefs").upsert({
     id: newId(),
     ...source,
+    seriesId: series?.id || null,
+    episodeNum: series?.episodeNum || null,
+    duplicateWarning,
     kind: finalKind,
     deadline: finalKind === "trend" ? new Date(Date.now() + 24 * 36e5).toISOString() : null,
     scheduledDate: timing.scheduledDate || null,

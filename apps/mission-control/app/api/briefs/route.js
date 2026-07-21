@@ -36,10 +36,13 @@ export async function PATCH(request) {
   const rows = read();
   const i = rows.findIndex((r) => r.id === id);
   if (i === -1) return NextResponse.json({ ok: false, error: "unknown brief" }, { status: 404 });
+  const becameApproved = status === "approved" && rows[i].status !== "approved";
   if (status && ["draft", "approved", "killed"].includes(status)) rows[i].status = status;
   if (payload && typeof payload === "object") rows[i].payload = payload;
   if (Array.isArray(checklistState)) rows[i].checklistState = checklistState.map(Boolean);
   rows[i].updatedAt = new Date().toISOString();
   write(rows);
+  // P14: approval auto-enters the Idea Bank (via CLI — routes never import factory packages)
+  if (becameApproved) await runCli(["ideabank", "enter", id], 120000).catch(() => {});
   return NextResponse.json({ ok: true, brief: rows[i] });
 }

@@ -81,6 +81,57 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "ideabank": {
+    const bank = await import("../../studio/src/ideaBank.js");
+    const { collection } = await import("../../shared/src/store.js");
+    const [action, ...bargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "sync") {
+        const r = await bank.syncApproved();
+        console.log(`idea bank: ${r.entered} entered (${r.approved} approved briefs total)`);
+      } else if (action === "enter" && bargs[0]) {
+        const r = await bank.enterIdeaBank(bargs[0]);
+        console.log(`${r.existed ? "already in bank" : "entered"}: [${r.idea.pillar}/${r.idea.effort}] ${r.idea.title.slice(0, 60)}`);
+      } else if (action === "rank" || action === "list") {
+        const ranked = bank.rankIdeas();
+        if (rest.includes("--json")) {
+          console.log(`RESULT ${JSON.stringify(ranked)}`);
+        } else {
+          for (const i of ranked.slice(0, 15)) {
+            console.log(
+              `  ${String(i.rank).padStart(6)}  [${i.pillar.padEnd(12)} ${i.effort}] ${i.title.slice(0, 46)}  (base ${i.score} × p${i.factors.pillarBalance} × e${i.factors.effortFit} × f${i.factors.freshness})`
+            );
+          }
+        }
+      } else if (action === "series" && bargs[0] === "create" && bargs[1]) {
+        const s = bank.createSeries(bargs.slice(1).join(" "));
+        console.log(`series: ${s.name} (${s.id})`);
+      } else if (action === "series" && bargs[0] === "add" && bargs[1] && bargs[2]) {
+        const i = bank.assignToSeries(bargs[2], bargs[1]);
+        console.log(`assigned as episode ${i.episodeNum}`);
+      } else if (action === "brief" && bargs[0]) {
+        const idea = collection("ideabank").get(bargs[0]);
+        if (!idea) throw new Error(`no idea ${bargs[0]}`);
+        const { generateBrief } = await import("../../studio/src/briefs.js");
+        let series = null;
+        if (idea.seriesId) {
+          const s = collection("series").get(idea.seriesId);
+          if (s) series = { ...s, episodeNum: idea.episodeNum };
+        }
+        const b = await generateBrief({ topic: idea.title, series });
+        collection("ideabank").update(idea.id, { status: "scheduled" });
+        console.log(`[${b.kind}] ${b.topic}${b.duplicateWarning ? `\n  ⚠ near-duplicate of: ${b.duplicateWarning.title} (${b.duplicateWarning.sim})` : ""}`);
+      } else {
+        console.error("usage: factory ideabank sync | enter <briefId> | rank | series create <name> | series add <seriesId> <ideaId> | brief <ideaId>");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "keywords": {
     const { keywordGapPass, topOpportunities } = await import("../../radar/src/keywords.js");
     const { withJobRun } = await import("../../shared/src/jobs.js");
@@ -201,6 +252,7 @@ switch (cmd) {
       else throw new Error(`${target} matches no cluster or wishlist entry`);
       const b = await generateBrief(args);
       console.log(`\n[${b.kind}] ${b.topic}`);
+      if (b.duplicateWarning) console.log(`  ⚠ near-duplicate (${b.duplicateWarning.sim}) of idea: ${b.duplicateWarning.title}`);
       console.log(`  status ${b.status}${b.deadline ? ` · deadline ${b.deadline}` : ""}${b.scheduledDate ? ` · slot ${b.scheduledDate}` : ""}`);
       console.log(`  hooks: ${b.payload.yt_short.hook_variants.map((h) => h.slice(0, 60)).join(" | ")}`);
       if (b.payload.template) console.log("  (template mode — add an LLM key for full generation)");

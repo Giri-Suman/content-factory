@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { repoRoot } from "../../../lib/factory.js";
+import { repoRoot, runCli } from "../../../lib/factory.js";
 
 const os = (name) => {
   const p = path.join(repoRoot, "data", "os", `${name}.json`);
@@ -42,8 +42,19 @@ export async function GET() {
   const today = new Date().toISOString().slice(0, 10);
   const digest = os("digests").find((r) => r.date === today) || null;
 
+  // P14 Make Next: top-3 ranked ideas (ranking math lives in ideaBank.js via the CLI)
+  let makeNext = [];
+  try {
+    const { code, out } = await runCli(["ideabank", "rank", "--json"], 30000);
+    const line = out.split(/\r?\n/).reverse().find((l) => l.startsWith("RESULT "));
+    if (code === 0 && line) makeNext = JSON.parse(line.slice(7)).slice(0, 3);
+  } catch {
+    /* card hides when empty */
+  }
+
   return NextResponse.json({
     digest,
+    makeNext,
     top: clusters.slice(0, 10),
     rising,
     outliers,

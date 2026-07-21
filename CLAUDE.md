@@ -201,8 +201,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       mentions, sqrt-scaled) vs live saturation supply, budget-gated to
       2200u/day, /keywords page + Brief-it (topic briefs), zero revenue/
       RPM anywhere. Demand half works keyless; supply pends YOUTUBE_API_KEY
-- [ ] P14 Idea Bank & Series Planner: pillar/effort ranking, dedupe guard,
-      Make Next card
+- [x] P14 Idea Bank & Series Planner: approval auto-enters bank (pillar +
+      effort, LLM w/ heuristic fallback), explainable rank = base ×
+      pillarBalance(MyPost 14d) × effortFit(Settings hours) × freshness
+      (expired trends ×0.3), series w/ episode numbering + continuity into
+      briefs, dedupe guard (warn ≥0.6 sim, persisted + surfaced), Make
+      Next card on Today, /ideas page
 - [ ] P15 Calibration Loop: my-channel ingestion, performance joins,
       weekly memo, guarded auto-tuning (N>=20, max ±10%/week), prediction
       scorecard

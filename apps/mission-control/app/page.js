@@ -143,6 +143,22 @@ export default function TodayPage() {
             </section>
           )}
 
+          {/* Make Next (P14) */}
+          {d.makeNext?.length > 0 && (
+            <section>
+              <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>Make Next</h2>
+              {d.makeNext.map((i) => (
+                <div key={i.id} className="panel" style={{ marginBottom: 8, display: "flex", gap: 10, alignItems: "center", padding: "10px 14px" }}>
+                  <span className="badge warm" style={{ minWidth: 44, textAlign: "center" }}>{i.rank}</span>
+                  <span className="chip static" style={{ fontSize: 10.5 }}>{i.pillar}</span>
+                  <span className="chip static" style={{ fontSize: 10.5 }}>{i.effort}</span>
+                  <span style={{ flex: 1, fontSize: 13.5 }}>{i.title}</span>
+                  <button className="btn ghost sm" onClick={() => router.push("/ideas")}>Open bank</button>
+                </div>
+              ))}
+            </section>
+          )}
+
           {/* Awaiting approval */}
           <section>
             <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>Briefs awaiting approval</h2>

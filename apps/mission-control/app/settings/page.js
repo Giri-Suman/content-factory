@@ -130,6 +130,24 @@ export default function SettingsPage() {
 
       <div className="panel" style={{ marginBottom: 20 }}>
         <label className="field" style={{ marginTop: 0 }}>
+          available hours per week — drives the Idea Bank's effort-fit ranking
+        </label>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
+          <input
+            type="number" min="1" max="60"
+            value={config.availableHoursPerWeek ?? 6}
+            onChange={(e) => setConfig({ ...config, availableHoursPerWeek: e.target.value })}
+            onBlur={() => put({ availableHoursPerWeek: config.availableHoursPerWeek })}
+            style={{ width: 90 }}
+          />
+          <span className="muted" style={{ fontSize: 12 }}>
+            under 5h: M-effort ideas sink · under 6h: L-effort ideas sink hard
+          </span>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 20 }}>
+        <label className="field" style={{ marginTop: 0 }}>
           scoring weights — multipliers on the four opportunity components (0.5–1.5, effective next run)
         </label>
         <div style={{ display: "flex", gap: 18, marginTop: 8, flexWrap: "wrap" }}>

@@ -142,6 +142,11 @@ export default function BriefsPage() {
                     </button>
                   )}
                 </div>
+                {b.duplicateWarning && (
+                  <div className="badge hot" style={{ fontSize: 11, marginTop: 6 }}>
+                    ⚠ near-duplicate ({Math.round(b.duplicateWarning.sim * 100)}%) of: {b.duplicateWarning.title}
+                  </div>
+                )}
                 {p.core_idea && <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{p.core_idea}</div>}
 
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
