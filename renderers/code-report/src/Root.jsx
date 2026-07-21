@@ -37,6 +37,26 @@ export const Root = () => (
       calculateMetadata={calc}
     />
     <Composition
+      id="CodeReportLinkedIn"
+      component={CodeReportVideo}
+      durationInFrames={300}
+      fps={FPS}
+      width={1080}
+      height={1350}
+      defaultProps={{}}
+      calculateMetadata={calc}
+    />
+    <Composition
+      id="CodeReportSquare"
+      component={CodeReportVideo}
+      durationInFrames={300}
+      fps={FPS}
+      width={1080}
+      height={1080}
+      defaultProps={{}}
+      calculateMetadata={calc}
+    />
+    <Composition
       id="ShortOverlay"
       component={ShortOverlay}
       durationInFrames={300}

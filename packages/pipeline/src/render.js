@@ -1,10 +1,30 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../../shared/src/config.js";
 import { prepare } from "./prepare.js";
 
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
+
+/** P17 platform profiles — config, not code. One RenderSpec, any profile. */
+export const PROFILES = {
+  yt_short: { comp: "CodeReportVertical", file: "short.mp4", w: 1080, h: 1920 },
+  ig_reel: { comp: "CodeReportVertical", file: "short.mp4", w: 1080, h: 1920, cover: "cover.png" },
+  linkedin: { comp: "CodeReportLinkedIn", file: "linkedin.mp4", w: 1080, h: 1350 },
+  x: { comp: "CodeReportSquare", file: "x.mp4", w: 1080, h: 1080 },
+  wide: { comp: "CodeReport", file: "wide.mp4", w: 1920, h: 1080 },
+};
+
+/** Broadcast loudness on the finished file (audio-only re-encode). */
+function loudnorm(file) {
+  const tmp = file.replace(/\.mp4$/, ".ln.mp4");
+  const res = spawnSync(
+    "ffmpeg",
+    ["-y", "-v", "error", "-i", file, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", tmp],
+    { encoding: "utf8", windowsHide: true, timeout: 300000 }
+  );
+  if (res.status === 0 && existsSync(tmp)) renameSync(tmp, file);
+}
 
 export async function renderScript(argv) {
   const args = argv.filter((a) => !a.startsWith("--"));
@@ -43,5 +63,94 @@ export async function renderScript(argv) {
   }
 
   console.log(`\ndone -> ${outDir}`);
+  return true;
+}
+
+/**
+ * P17: full chain — brief -> compile -> render every requested profile ->
+ * loudnorm -> cover png -> attach files onto the brief's PublishItems.
+ * Concurrency 1 by construction (profiles render sequentially).
+ */
+export async function renderBrief(argv) {
+  const args = argv.filter((a) => !a.startsWith("--"));
+  const briefId = args[0];
+  if (!briefId) {
+    console.error("usage: factory render brief <briefId> [--profiles=yt_short,ig_reel,linkedin,x]");
+    return false;
+  }
+  const profFlag = argv.find((a) => a.startsWith("--profiles="));
+  const wanted = profFlag ? profFlag.split("=")[1].split(",") : ["yt_short", "ig_reel", "linkedin", "x"];
+  const invalid = wanted.filter((p) => !PROFILES[p]);
+  if (invalid.length) {
+    console.error(`unknown profile(s): ${invalid.join(", ")} — valid: ${Object.keys(PROFILES).join(", ")}`);
+    return false;
+  }
+
+  const { compileBrief } = await import("../../studio/src/compileBrief.js");
+  console.log(`compiling brief ${briefId}...`);
+  const { script, file } = await compileBrief(briefId);
+  console.log(`  ${script.scenes.length} scenes -> ${file}`);
+
+  const { propsPath, props } = await prepare(file);
+  const seconds = (props.timeline.totalFrames / props.timeline.fps).toFixed(1);
+  console.log(`  timeline: ${seconds}s`);
+
+  const outDir = path.join(repoRoot, "renders", props.id);
+  mkdirSync(outDir, { recursive: true });
+
+  // dedupe comps (yt_short + ig_reel share one vertical render)
+  const jobs = new Map();
+  for (const p of wanted) jobs.set(PROFILES[p].comp, PROFILES[p]);
+
+  const made = {};
+  for (const prof of jobs.values()) {
+    const out = path.join(outDir, prof.file);
+    console.log(`\nrendering ${prof.comp} (${prof.w}x${prof.h}) -> ${prof.file}`);
+    const res = spawnSync(`npx remotion render src/index.jsx ${prof.comp} "${out}" --props="${propsPath}"`, {
+      cwd: RENDERER,
+      shell: true,
+      stdio: "inherit",
+      timeout: 1000 * 60 * 30,
+    });
+    if (res.status !== 0 || !existsSync(out)) {
+      console.error(`render FAILED for ${prof.comp}`);
+      return false;
+    }
+    loudnorm(out);
+    made[prof.comp] = out;
+  }
+
+  // ig cover frame (t=0 still)
+  let cover = null;
+  if (wanted.includes("ig_reel")) {
+    cover = path.join(outDir, "cover.png");
+    const still = spawnSync(`npx remotion still src/index.jsx CodeReportVertical "${cover}" --frame=0 --props="${propsPath}"`, {
+      cwd: RENDERER,
+      shell: true,
+      stdio: "inherit",
+      timeout: 1000 * 60 * 10,
+    });
+    if (still.status !== 0) cover = null;
+  }
+
+  /* attach onto the brief's PublishItems */
+  const { collection } = await import("../../shared/src/store.js");
+  const { attachFile } = await import("../../publish/src/center.js");
+  const items = collection("publishitems").find((i) => i.briefId === briefId);
+  const attached = [];
+  for (const item of items) {
+    const prof = PROFILES[item.platform === "youtube" ? "yt_short" : item.platform === "instagram" ? "ig_reel" : item.platform];
+    if (!prof || !wanted.includes(item.platform === "youtube" ? "yt_short" : item.platform === "instagram" ? "ig_reel" : item.platform)) continue;
+    const video = made[prof.comp];
+    if (!video) continue;
+    attachFile(item.id, video, "video");
+    if (item.platform === "instagram" && cover) attachFile(item.id, cover, "thumb");
+    attached.push(`${item.platform}<-${path.basename(video)}`);
+  }
+  if (!items.length) console.log(`\n(no PublishItems for this brief yet — "Send to Publish Center" first to auto-attach)`);
+  else console.log(`\nattached: ${attached.join(", ") || "none (profiles/platforms mismatch)"}`);
+
+  console.log(`\ndone -> ${outDir}`);
+  console.log(`RESULT ${JSON.stringify({ id: props.id, briefId, seconds: Number(seconds), outputs: Object.values(made).map((m) => path.basename(m)), cover: Boolean(cover), attached })}`);
   return true;
 }

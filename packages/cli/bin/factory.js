@@ -34,9 +34,15 @@ switch (cmd) {
     break;
   }
   case "render": {
-    const { renderScript } = await import("../../pipeline/src/render.js");
-    const ok = await renderScript(rest);
-    process.exit(ok ? 0 : 1);
+    if (rest[0] === "brief") {
+      const { renderBrief } = await import("../../pipeline/src/render.js");
+      const ok = await renderBrief(rest.slice(1));
+      process.exit(ok ? 0 : 1);
+    } else {
+      const { renderScript } = await import("../../pipeline/src/render.js");
+      const ok = await renderScript(rest);
+      process.exit(ok ? 0 : 1);
+    }
     break;
   }
   case "radar": {

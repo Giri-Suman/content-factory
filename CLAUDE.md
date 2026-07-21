@@ -220,6 +220,22 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       architecture + competitor map + ops runbook, tagged content-os-v2.0.
       PHASE 2 COMPLETE.
 
+### Phase-3 build checklist (production + self-improvement)
+
+- [x] P17 render engine (EXTENDED per GAP_PLAN, not rebuilt): compileBrief
+      (brief -> validated script.json; LLM scene-mapping + deterministic
+      fallback), linkedin 1080x1350 + x 1080x1080 comps, PROFILES config,
+      loudnorm post-pass, ig cover.png still, auto-attach onto
+      PublishItems, factory render brief <id>. Whisper obsolete (voice
+      returns timestamps). Verified: 24.2s brief video in 3 comps + cover,
+      all 4 items attached, SAPI fallback graceful
+- [ ] P18 QC Judge Network: 5 judges + regeneration protocol
+- [ ] P19 Lesson memory + prompt evolution
+- [ ] P20 two-lane orchestrator (capture lane EXISTS = AI Cut)
+- [ ] P21 thumbnail studio
+- [ ] P22 platform playbooks
+- [ ] P23 full-auto dry run + v3
+
 ## Hard rules
 
 - No native Node modules (better-sqlite3 etc.) — no VS C++ toolchain on
