@@ -40,7 +40,7 @@ function heuristicScenes(brief) {
   ];
 }
 
-async function llmScenes(brief) {
+async function llmScenes(brief, lessonBlock = "") {
   if (!providerStatus().active) return null;
   const p = brief.payload;
   try {
@@ -48,7 +48,7 @@ async function llmScenes(brief) {
       task: "script",
       maxTokens: 4000,
       system:
-        `You compile a video brief into renderer scenes for: ${NICHE_CONTEXT}. Scene types: ` +
+        `You compile a video brief into renderer scenes for: ${NICHE_CONTEXT}.${lessonBlock} Scene types: ` +
         'kinetic {voiceover, emphasis[]}, code {voiceover, lang, code, focus[2]}, terminal {voiceover, lines[]}, ' +
         "stat {voiceover, label, stats[{name,value,suffix}]}, quote {voiceover, quote, attribution}, meme {voiceover, emoji, text}. " +
         'Open with a kinetic hook; 3-5 scenes total; voiceover conversational, ~8s each. Reply ONLY JSON: {"scenes":[...]}',
@@ -67,7 +67,12 @@ export async function compileBrief(briefId) {
   const brief = collection("briefs").get(briefId);
   if (!brief) throw new Error(`no brief ${briefId}`);
 
-  const scenes = (await llmScenes(brief)) || heuristicScenes(brief);
+  // P19: inject the top lessons for the "script" scope into generation
+  const { lessonsFor } = await import("./lessons.js");
+  const injected = lessonsFor("script");
+  if (injected.lessons.length) console.log(`  injecting ${injected.lessons.length} script lesson(s) into generation`);
+
+  const scenes = (await llmScenes(brief, injected.block)) || heuristicScenes(brief);
   const script = {
     id: `brief-${briefId.slice(0, 10)}`,
     title: brief.payload?.yt_short?.title || brief.topic,

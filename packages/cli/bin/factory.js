@@ -87,6 +87,71 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "lessons": {
+    const L = await import("../../studio/src/lessons.js");
+    const { collection } = await import("../../shared/src/store.js");
+    const [action, ...largs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "seed") {
+        const { seedCritiques } = await import("../../studio/src/seedCritiques.js");
+        const r = seedCritiques();
+        console.log(`seeded ${r.seeded} critiques (${r.total} total)`);
+      } else if (action === "distill") {
+        const { withJobRun } = await import("../../shared/src/jobs.js");
+        const r = await withJobRun("distill", () => L.distillLessons());
+        console.log(`distilled: +${r.added} new, ${r.merged} merged from ${r.candidates} candidates (${r.total} lessons)`);
+      } else if (action === "preview" && largs[0]) {
+        const { block, lessons } = L.lessonsFor(largs[0]);
+        console.log(`\ntop ${lessons.length} lessons injected into "${largs[0]}" generation:`);
+        console.log(block || "  (none yet)");
+      } else if (action === "pin" && largs[0]) {
+        L.pinLesson(largs[0], true);
+        console.log("pinned");
+      } else if (action === "kill" && largs[0]) {
+        L.killLesson(largs[0]);
+        console.log("killed");
+      } else if (action === "list" || !action) {
+        const rows = collection("lessons").all().filter((l) => l.active).map((l) => ({ ...l, w: L.lessonWeight(l) })).sort((a, b) => b.w - a.w);
+        for (const l of rows) console.log(`  [${l.scope.padEnd(8)}] w${String(l.w).padStart(5)} n${l.evidenceCount} ${l.pinned ? "📌 " : ""}${l.text.slice(0, 70)}`);
+      } else {
+        console.error("usage: factory lessons seed | distill | list | preview <scope> | pin <id> | kill <id>");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "prompts": {
+    const P = await import("../../studio/src/prompts.js");
+    const [action, ...pargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      P.ensureBaseVersions();
+      if (action === "list" || !action) {
+        for (const task of P.TASKS) {
+          const vs = P.versionsFor(task);
+          console.log(`  ${task.padEnd(9)} ${vs.map((v) => `v${v.version}${v.active ? "*" : v.proposed ? "?" : ""}`).join(" ")}`);
+        }
+        console.log("  (* active, ? proposed-awaiting-approval)");
+      } else if (action === "propose" && pargs[0]) {
+        const v = P.proposeVersion(pargs[0], pargs.slice(1).join(" ") || "(proposed template)");
+        console.log(`proposed ${pargs[0]} v${v.version} — approve with: factory prompts approve ${v.id}`);
+      } else if (action === "approve" && pargs[0]) {
+        const v = P.approveVersion(pargs[0]);
+        console.log(v ? `approved ${v.task} v${v.version} (now active)` : "no such version");
+      } else {
+        console.error("usage: factory prompts list | propose <task> <template> | approve <versionId>");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "qc": {
     const { qcBrief } = await import("../../judges/src/qc.js");
     const { qcStats } = await import("../../judges/src/runner.js");

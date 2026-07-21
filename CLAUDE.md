@@ -235,7 +235,13 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       queue, Critique persistence for P19), coded script regen (banned->
       concrete hook), captionScale threaded for the VisualJudge readability
       check, /qc page. factory qc brief|stats
-- [ ] P19 Lesson memory + prompt evolution
+- [x] P19 Lesson memory + prompt evolution: coded distiller (critique
+      reason-patterns + P15 calibration joins -> cited lessons, LLM
+      phrasing upgrade), lessonsFor(scope) injection into compileBrief +
+      briefs (K=8, weight=evidence×recency, 60d stale-off, pin/kill),
+      PromptVersion registry w/ manual propose->approve, /lessons page
+      (trend charts + versions + cited lessons), self-improve card on
+      Today, weekly distill on worker. factory lessons/prompts CLI
 - [ ] P20 two-lane orchestrator (capture lane EXISTS = AI Cut)
 - [ ] P21 thumbnail studio
 - [ ] P22 platform playbooks

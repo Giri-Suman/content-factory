@@ -68,12 +68,14 @@ const PAYLOAD_SHAPE = {
 
 async function llmPayload(context, kind) {
   if (!providerStatus().active) return null;
+  const { lessonsFor } = await import("./lessons.js");
+  const lessonBlock = lessonsFor("metadata").block + lessonsFor("script").block;
   const ask = async () => {
     const res = await chat({
       task: "script",
       maxTokens: 6000,
       system:
-        `You write multi-platform content briefs for this creator: ${NICHE_CONTEXT}. ` +
+        `You write multi-platform content briefs for this creator: ${NICHE_CONTEXT}.${lessonBlock} ` +
         "Every hook must be concrete and specific — generic openers ('you won't believe') are banned. Reply ONLY JSON:\n" +
         '{"kind":"trend|evergreen","core_idea":"...","yt_short":{"hook_variants":["3 different hooks"],"beats":["scene beats"],' +
         '"length_sec":30,"title":"...","description":"keyword-rich, 2 lines","tags":["..."]},' +

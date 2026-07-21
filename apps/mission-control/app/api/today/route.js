@@ -56,9 +56,19 @@ export async function GET() {
   const memoRow = os("memos")[0] || null;
   const memo = memoRow && Date.now() - new Date(memoRow.at).getTime() < 8 * 864e5 ? memoRow : null;
 
+  // P19: self-improvement snapshot
+  const crits = os("critiques");
+  const recentCrits = crits.filter((c) => Date.now() - new Date(c.createdAt).getTime() < 14 * 864e5);
+  const selfImprove = {
+    activeLessons: os("lessons").filter((l) => l.active).length,
+    passRate: recentCrits.length ? Math.round((recentCrits.filter((c) => c.verdict === "pass").length / recentCrits.length) * 100) : null,
+    escalations: os("escalations").filter((e) => !e.resolved).length,
+  };
+
   return NextResponse.json({
     digest,
     memo,
+    selfImprove,
     makeNext,
     top: clusters.slice(0, 10),
     rising,

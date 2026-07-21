@@ -143,6 +143,22 @@ export default function TodayPage() {
             </section>
           )}
 
+          {/* Self-improvement (P19) */}
+          {d.selfImprove && d.selfImprove.activeLessons > 0 && (
+            <section>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5 }}>
+                <span className="badge ok">self-improving</span>
+                <span className="muted">
+                  {d.selfImprove.activeLessons} active lessons feeding generation ·{" "}
+                  {d.selfImprove.passRate != null ? `${d.selfImprove.passRate}% QC pass (14d)` : "no QC yet"}
+                  {d.selfImprove.escalations > 0 ? ` · ${d.selfImprove.escalations} in review` : ""}
+                </span>
+                <div style={{ flex: 1 }} />
+                <button className="btn ghost sm" onClick={() => router.push("/lessons")}>Lessons →</button>
+              </div>
+            </section>
+          )}
+
           {/* Weekly calibration memo (P15) */}
           {d.memo && (
             <div className="panel" style={{ borderColor: "var(--accent, #ffb224)" }}>

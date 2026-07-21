@@ -135,6 +135,13 @@ export async function runWorker(argv = []) {
         console.log(`[${stamp()}] auto-tune: ${r.skipped || `${r.tuned} change(s)`}`);
         return r;
       });
+      // P19: weekly lesson distillation (critiques + calibration -> lessons)
+      const { distillLessons } = await import("../../studio/src/lessons.js");
+      await withJobRun("distill", async () => {
+        const r = await distillLessons();
+        console.log(`[${stamp()}] lessons: +${r.added} new, ${r.merged} merged (${r.total} total)`);
+        return r;
+      });
     }
   };
 
