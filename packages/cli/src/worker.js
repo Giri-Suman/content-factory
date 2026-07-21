@@ -115,6 +115,27 @@ export async function runWorker(argv = []) {
       console.log(`[${stamp()}] keyword gap: ${r.scored} scored, ${r.unitsUsed}u used`);
       return r;
     });
+    // P15: nightly my-channel stats ingestion (1 unit/post)
+    const { ingestMyChannel } = await import("../../publish/src/calibration.js");
+    await withJobRun("my-channel", async () => {
+      const r = await ingestMyChannel();
+      console.log(`[${stamp()}] my-channel: ${r.polled} polled${r.note ? ` (${r.note})` : ""}`);
+      return r;
+    });
+    // P15: weekly memo + auto-tune, MONDAY only
+    if (istNow().getUTCDay() === 1) {
+      const cal = await import("../../publish/src/calibration.js");
+      await withJobRun("memo", async () => {
+        const m = await cal.weeklyMemo();
+        console.log(`[${stamp()}] weekly memo: ${m.skipped || `n=${m.n}`}`);
+        return m;
+      });
+      await withJobRun("auto-tune", async () => {
+        const r = await cal.autoTune();
+        console.log(`[${stamp()}] auto-tune: ${r.skipped || `${r.tuned} change(s)`}`);
+        return r;
+      });
+    }
   };
 
   // fire the fast lanes immediately so the system is warm from minute one

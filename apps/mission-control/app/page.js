@@ -143,6 +143,21 @@ export default function TodayPage() {
             </section>
           )}
 
+          {/* Weekly calibration memo (P15) */}
+          {d.memo && (
+            <div className="panel" style={{ borderColor: "var(--accent, #ffb224)" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                <span className="badge warm">weekly memo</span>
+                <span className="muted" style={{ fontSize: 11.5 }}>{d.memo.date} · from {d.memo.n} of your posts</span>
+                <div style={{ flex: 1 }} />
+                <button className="btn ghost sm" onClick={() => router.push("/analytics")}>Calibration →</button>
+              </div>
+              <div style={{ fontSize: 12.5 }}>
+                {(d.memo.recommendations || []).length > 0 && <div><strong>do next:</strong> {d.memo.recommendations.join(" · ")}</div>}
+              </div>
+            </div>
+          )}
+
           {/* Make Next (P14) */}
           {d.makeNext?.length > 0 && (
             <section>

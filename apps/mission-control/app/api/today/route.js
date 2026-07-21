@@ -52,8 +52,13 @@ export async function GET() {
     /* card hides when empty */
   }
 
+  // P15: this week's calibration memo (rendered on Today)
+  const memoRow = os("memos")[0] || null;
+  const memo = memoRow && Date.now() - new Date(memoRow.at).getTime() < 8 * 864e5 ? memoRow : null;
+
   return NextResponse.json({
     digest,
+    memo,
     makeNext,
     top: clusters.slice(0, 10),
     rising,

@@ -81,6 +81,61 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "calibrate": {
+    const cal = await import("../../publish/src/calibration.js");
+    const { withJobRun } = await import("../../shared/src/jobs.js");
+    const [action, ...cargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "seed") {
+        const { seedMyPosts } = await import("../../publish/src/seedMyPosts.js");
+        const r = seedMyPosts(Number(cargs[0]) || 25);
+        console.log(`seeded ${r.seeded} synthetic MyPosts (${r.total} total)`);
+      } else if (action === "ingest") {
+        const r = await withJobRun("my-channel", () => cal.ingestMyChannel());
+        console.log(`my-channel ingest: ${r.polled} polled${r.note ? ` (${r.note})` : ""}`);
+      } else if (action === "memo") {
+        const m = await withJobRun("memo", () => cal.weeklyMemo());
+        if (m.skipped) console.log(`skipped: ${m.skipped}`);
+        else {
+          console.log(`\nweekly memo (n=${m.n}, overall median ${m.joins.overallMedian} views):`);
+          console.log(`  outperformed: ${m.outperformed.join(" · ")}`);
+          console.log(`  underperformed: ${m.underperformed.join(" · ")}`);
+          console.log(`  recommendations: ${m.recommendations.join(" · ")}`);
+        }
+      } else if (action === "tune") {
+        const r = await withJobRun("auto-tune", () => cal.autoTune());
+        if (r.skipped) console.log(`skipped: ${r.skipped}`);
+        else {
+          console.log(`auto-tune: ${r.tuned} change(s) (N=${r.n})`);
+          for (const c of r.changes) console.log(`  · [${c.kind}] ${c.detail}`);
+        }
+      } else if (action === "scorecard") {
+        const s = cal.predictionScorecard();
+        console.log(`\nprediction scorecard (n=${s.n}):`);
+        for (const t of s.byTier) console.log(`  tier ${t.tier}: ${t.n} posts, median ${t.median ?? "—"} views`);
+        console.log(`  ${s.tierHonest}`);
+      } else if (action === "joins") {
+        const j = cal.performanceJoins();
+        for (const dim of ["byHook", "byPillar", "byLength", "bySlot"]) {
+          console.log(`\n${dim} (overall median ${j.overallMedian}):`);
+          for (const g of j[dim]) console.log(`  ${String(g.vsOverall).padStart(5)}×  ${g.key.padEnd(16)} median ${g.median} (n=${g.n})`);
+        }
+      } else if (action === "state") {
+        console.log(`RESULT ${JSON.stringify({ joins: cal.performanceJoins(), scorecard: cal.predictionScorecard() })}`);
+      } else if (action === "revert" && cargs[0]) {
+        const r = cal.revertTuning(cargs[0]);
+        console.log(r ? `reverted [${r.kind}] ${r.detail}` : "nothing to revert");
+      } else {
+        console.error("usage: factory calibrate seed [n] | ingest | joins | memo | tune | scorecard");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "ideabank": {
     const bank = await import("../../studio/src/ideaBank.js");
     const { collection } = await import("../../shared/src/store.js");

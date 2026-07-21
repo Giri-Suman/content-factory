@@ -207,9 +207,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       (expired trends ×0.3), series w/ episode numbering + continuity into
       briefs, dedupe guard (warn ≥0.6 sim, persisted + surfaced), Make
       Next card on Today, /ideas page
-- [ ] P15 Calibration Loop: my-channel ingestion, performance joins,
-      weekly memo, guarded auto-tuning (N>=20, max ±10%/week), prediction
-      scorecard
+- [x] P15 Calibration Loop: my-channel ingestion (nightly, 1u/post),
+      velocity curves + 5-dim performance joins, weekly memo (LLM from
+      joined data only / coded fallback, Monday 08:00 IST), guarded
+      auto-tune (N>=20: slot re-rank + weight nudge ≤10%/wk + winners to
+      Title Lab, all logged+reversible), prediction scorecard w/ honest
+      small-sample flags. /analytics = Calibration hub; seed script for 25
 - [ ] P16 Quota Budget Manager: per-module allocator, live dashboard,
       failure-drill rerun, tag v2.0
 
