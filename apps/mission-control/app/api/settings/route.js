@@ -1,7 +1,26 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { readConfig, writeConfig, readEnvKeys, repoRoot } from "../../../lib/factory.js";
+import { readConfig, writeConfig, readEnvKeys, repoRoot, envSet } from "../../../lib/factory.js";
+
+const MODULE_BUDGETS = {
+  watchlist: 800, trending: 200, nicheHeat: 600, keywordGap: 2200,
+  discovery: 500, wishlistTracking: 300, myChannel: 100, reserve: 1000,
+};
+const JOB_MODULE = {
+  "yt-watchlist": "watchlist", "yt-trending": "trending", "yt-heat": "nicheHeat",
+  "yt-kwgap": "keywordGap", "yt-discover": "discovery", "wishlist-track": "wishlistTracking",
+  wishlist: "wishlistTracking", "my-channel": "myChannel", "yt-saturation": "reserve", publish: "reserve",
+};
+
+function budgetDashboard() {
+  const today = new Date().toISOString().slice(0, 10);
+  const p = path.join(repoRoot, "data", "os", "quota.json");
+  const rows = existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")).rows || []).filter((r) => r.date === today) : [];
+  const spent = Object.fromEntries(Object.keys(MODULE_BUDGETS).map((m) => [m, 0]));
+  for (const r of rows) spent[JOB_MODULE[r.job] || "reserve"] += r.units;
+  return Object.entries(MODULE_BUDGETS).map(([name, budget]) => ({ name, budget, used: spent[name], remaining: budget - spent[name], pct: Math.round((spent[name] / budget) * 100) }));
+}
 
 const os = (name) => {
   const p = path.join(repoRoot, "data", "os", `${name}.json`);
@@ -27,6 +46,13 @@ export async function GET() {
     },
     env: readEnvKeys(),
     quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
+    budgets: budgetDashboard(),
+    flags: {
+      publishMode: envSet("PUBLISH_MODE") ? "auto" : "staged",
+      youtubeVerified: envSet("YOUTUBE_APP_VERIFIED"),
+      metaReviewed: envSet("META_APP_REVIEWED"),
+      autoTune: config.autoTune !== false,
+    },
     jobruns: os("jobruns").slice(-30).reverse(),
     dailyProjection: (() => {
       // mirrors packages/radar estimateDailyUnits (routes never import factory packages)
@@ -49,6 +75,7 @@ export async function PUT(request) {
   if (Array.isArray(body.youtubeKeywords)) {
     config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
   }
+  if (typeof body.autoTune === "boolean") config.autoTune = body.autoTune;
   if (body.availableHoursPerWeek !== undefined) {
     const h = Number(body.availableHoursPerWeek);
     config.availableHoursPerWeek = Number.isFinite(h) ? Math.max(1, Math.min(60, h)) : 6;

@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const [jobruns, setJobruns] = useState([]);
   const [keywords, setKeywords] = useState("");
   const [projection, setProjection] = useState(null);
+  const [budgets, setBudgets] = useState([]);
+  const [flags, setFlags] = useState(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -33,6 +35,8 @@ export default function SettingsPage() {
         setJobruns(d.jobruns || []);
         setKeywords((d.config.youtubeKeywords || []).join(", "));
         setProjection(d.dailyProjection || null);
+        setBudgets(d.budgets || []);
+        setFlags(d.flags || null);
       });
   }, []);
 
@@ -184,6 +188,53 @@ export default function SettingsPage() {
               hot-trend alerts (score ≥ 80) to your phone
             </span>
           </div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: 20, marginBottom: 20 }}>
+        <label className="field" style={{ marginTop: 0 }}>
+          YouTube quota budgets — per-module daily allocation (used / budget)
+        </label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          {budgets.map((b) => (
+            <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 130, fontSize: 12.5 }}>{b.name}</span>
+              <div style={{ flex: 1, height: 14, background: "var(--bg)", borderRadius: 7, overflow: "hidden" }}>
+                <div style={{ width: `${Math.min(100, b.pct)}%`, height: "100%", background: b.pct >= 90 ? "var(--red)" : b.pct >= 60 ? "var(--accent)" : "var(--green)", borderRadius: 7 }} />
+              </div>
+              <span className="mono muted" style={{ width: 92, textAlign: "right", fontSize: 11.5 }}>{b.used} / {b.budget}</span>
+            </div>
+          ))}
+        </div>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+          jobs skip with a warning when their module is exhausted — never a silent failure. Publishing draws from reserve at 1600/upload.
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginBottom: 20 }}>
+        <label className="field" style={{ marginTop: 0 }}>publishing & automation flags</label>
+        {flags && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, fontSize: 13 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span className={`badge ${flags.publishMode === "auto" ? "hot" : "ok"}`}>{flags.publishMode}</span>
+              <span className="muted">publish mode — {flags.publishMode === "auto" ? "uploads go public directly" : "private/unlisted drafts, you flip them live (default)"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span className={`badge ${flags.youtubeVerified ? "ok" : "cool"}`}>{flags.youtubeVerified ? "yes" : "no"}</span>
+              <span className="muted">YouTube API app verified (gates auto mode)</span>
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span className={`badge ${flags.metaReviewed ? "ok" : "cool"}`}>{flags.metaReviewed ? "yes" : "no"}</span>
+              <span className="muted">Meta app reviewed (gates IG/FB Graph publishing)</span>
+            </div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer", marginTop: 2 }}>
+              <input type="checkbox" checked={flags.autoTune} onChange={(e) => { setFlags({ ...flags, autoTune: e.target.checked }); put({ autoTune: e.target.checked }); }} />
+              <span>calibration auto-tune {flags.autoTune ? "ON" : "OFF"} — nudge weights/timing from my results (≤10%/week)</span>
+            </label>
+          </div>
+        )}
+        <div style={{ marginTop: 12 }}>
+          <a className="btn ghost sm" href="/api/backup" download>Export backup (all state + config)</a>
         </div>
       </div>
 

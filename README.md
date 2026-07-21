@@ -72,47 +72,90 @@ options) → Math (Manim shorts + demos) → Approve & render (live job log) →
 Renders (in-browser preview + “Cut shorts”) → Settings (radar categories +
 provider status).
 
-## Content OS (Phase 1 — Intelligence Core, v1)
+## Content OS (Phase 1 + 2 — Intelligence, Parity & Publishing, v2.0)
 
-Trend intelligence layered on the factory: collect → score → autopsy →
-brief → publish checklist, refreshed automatically.
+Trend intelligence + competitor parity + staged publishing + a
+self-calibration loop, layered on the factory. Collect → score → autopsy →
+brief → stage → publish (you tap) → measure MY results → self-tune.
 
 ```mermaid
-flowchart LR
-  subgraph collect [every 30m]
-    R[reddit/hn/rss] --> DB[(trends + snapshots)]
+flowchart TB
+  subgraph in [collectors]
+    R[reddit/hn/rss 30m] --> DB[(trends + snapshots)]
     G[github 6h] --> DB
-    Y[yt trending+heat 60m] --> DB
+    Y[yt trending+heat] --> DB
   end
   DB --> S[score: velocity + crossSource + nicheFit + saturationGap]
   S --> C[(clusters)]
-  W[wishlist autopsies] --> B[Brief Studio]
+  KW[keyword gap:\nautocomplete + demand proxy] --> B
+  WL[wishlist autopsies\n9 hook patterns] --> B[Brief Studio\n+ Title/Hook Lab scores]
   C --> B
-  YW[(watchlist outliers)] --> T[Today page]
-  B --> T
-  C --> T
-  D[08:00 IST digest] --> T
-  T --> M[manual publish checklist + Golden 60]
+  NE[niche explorer\ndiscovery + shorts outliers] --> WCH[(watchlist)]
+  WCH --> C
+  B --> IB[Idea Bank\npillar × effort × freshness]
+  IB --> B
+  B --> PC[Publish Center\nstaged, private-first]
+  PC --> MP[(MyPosts)]
+  MP --> CAL[Calibration loop\nmemo + guarded auto-tune]
+  CAL -.nudge weights/timing.-> S
+  CAL -.my winners.-> B
+  ALLOC[quota allocator\nper-module budgets] -.gates.-> Y
+  T[Today command center] --- B
 ```
+
+**Module map — what each replaces (and does better):**
+
+| Content OS module | Replaces | Edge |
+|---|---|---|
+| Watchlist + Shorts Outliers + Title Lab | 1of10 / TubeLab | shorts vs long medians split; your own winners fed back |
+| Hook Lab + Keyword Gap | OutlierKit | 9-pattern scoring; demand as honest **proxy**, no fake volume |
+| Idea Bank + Series Planner | Spotter | ranking tuned to YOUR pillar history + available hours |
+| Wishlist manual mode | Octupie | IG/FB metrics by hand — never scrapes Meta |
+| Saturation Gap + Calibration | *(nothing sells this)* | demand-vs-supply gap; predictions scored against your real results |
 
 - **Setup:** `npm install` once; everything runs keyless with visible
   degradation (heuristic scoring, template briefs). Full power needs two
-  free-tier keys in `.env`:
-  `YOUTUBE_API_KEY` (Google Cloud Console → YouTube Data API v3) and one
-  LLM key (`ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OLLAMA_MODEL`).
-  `YT_DAILY_UNIT_CAP` (default 8000) hard-gates YouTube spend; every call
-  is 30-min cached, 50-id batched, and unit-logged to `data/os/quota.json`.
-- **Commands:** `factory radar` (collect+score) · `factory score` ·
-  `factory yt trending|heat|watch <handle>|outliers|saturation|quota` ·
-  `factory wishlist add <url>|manual <form.json>|poll|list` ·
-  `factory brief [top|<id>]` · `factory digest` · `factory worker [--fast]`
-- **Portal:** Today (command center) · Trends · YouTube · Wishlist ·
-  Briefs · Settings (keywords, score weights, quota, job log) at :4600.
-- **Day-2+ roadmap:** wire briefs into the EXISTING Remotion production
-  line + AI-Cut capture lane (blueprint P17/P20); prediction calibration —
-  predictedTier vs actual 48h results once ~20 posts exist (P15); timing
-  self-tuning from MY analytics replacing the public-research defaults;
-  Title/Hook Lab + Idea Bank + judge network (Phase 2/3 of the blueprint).
+  free-tier keys in `.env`: `YOUTUBE_API_KEY` (Google Cloud → YouTube Data
+  API v3) and one LLM key (`ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` /
+  `OLLAMA_MODEL`). Publishing adds a one-time `factory auth-youtube` OAuth.
+- **Quota safety:** every YouTube call passes one 30-min-cached, 50-id-
+  batched gateway that logs true unit costs and consults a **per-module
+  daily allocator** (watchlist 800, trending 200, niche-heat 600, keyword-
+  gap 2200, discovery 500, wishlist-tracking 300, my-channel 100, reserve
+  1000; uploads draw reserve at 1600 each). Exhausted modules skip with a
+  warning — never a silent failure. `YT_DAILY_UNIT_CAP` (8000) is the
+  global backstop.
+- **Publishing:** staged is the permanent default — uploads go
+  private/unlisted with metadata + AI disclosure set; you flip them live.
+  Auto mode needs `PUBLISH_MODE=auto` **and** `YOUTUBE_APP_VERIFIED=true`
+  (+ `META_APP_REVIEWED=true` for IG/FB), checked at runtime.
+- **Commands:** `factory radar` · `factory yt trending|heat|watch|discover|
+  map|outliers` · `factory wishlist` · `factory brief` · `factory lab` ·
+  `factory keywords` · `factory ideabank` · `factory center` ·
+  `factory calibrate seed|memo|tune|scorecard` · `factory worker`
+- **Portal (:4600):** Today · Trends · YouTube · Wishlist · Briefs ·
+  Publish · Lab · Keywords · Ideas · Calibration · Settings.
+
+### Ops runbook
+
+- **Keep it fresh:** run `factory worker` in a terminal you leave open
+  (collect 30m, YouTube+tracking 60m, deep refresh 6h, digest + memo +
+  auto-tune Mon 08:00 IST). Do NOT run two workers — no singleton lock yet.
+- **Backup:** Settings → Export backup (one JSON of all `data/os/` +
+  config). `data/` is gitignored; back it up before big changes.
+- **Failure states:** missing keys → clear "add key" notices, heuristics
+  keep running. Module budget exhausted → that module skips with a
+  warning, others keep going. A collector breaking → its row shows the
+  error, the rest of the run proceeds.
+- **Approval queues (start now, run in parallel):** YouTube API app
+  verification + Meta app review. Auto mode flips on when they clear —
+  zero code changes.
+
+### Phase 3 roadmap (production + self-improvement)
+
+Wire approved briefs into the EXISTING Remotion engine + AI-Cut capture
+lane (P17/P20); QC judge network with regeneration (P18); lesson memory +
+prompt evolution (P19); thumbnail studio (P21); platform playbooks (P22).
 
 ## AI providers (pick one in .env)
 

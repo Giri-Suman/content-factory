@@ -52,9 +52,10 @@ export async function yt(endpoint, params, job = "adhoc") {
   if (hit && Date.now() - new Date(hit.at).getTime() < CACHE_TTL_MS) return hit.data;
 
   const units = UNITS[endpoint] ?? 1;
-  const cap = parseInt(process.env.YT_DAILY_UNIT_CAP || "8000", 10);
-  if (quotaUsedToday() + units > cap) {
-    throw new Error(`QUOTA_CAP: daily YouTube budget (${cap}) would be exceeded — job skipped`);
+  const { canSpend } = await import("./allocator.js");
+  const grant = canSpend(job, units);
+  if (!grant.ok) {
+    throw new Error(`QUOTA_CAP: ${grant.reason} — job "${job}" skipped`);
   }
 
   const res = await fetch(`${API}/${endpoint}?${new URLSearchParams({ ...params, key })}`, {

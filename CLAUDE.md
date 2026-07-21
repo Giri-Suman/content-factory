@@ -213,8 +213,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       auto-tune (N>=20: slot re-rank + weight nudge ≤10%/wk + winners to
       Title Lab, all logged+reversible), prediction scorecard w/ honest
       small-sample flags. /analytics = Calibration hub; seed script for 25
-- [ ] P16 Quota Budget Manager: per-module allocator, live dashboard,
-      failure-drill rerun, tag v2.0
+- [x] P16 Quota Budget Manager: central per-module allocator (allocator.js
+      gates the one gateway; module isolation), Settings live budget
+      dashboard + flags + auto-tune toggle + backup export, failure drills
+      rerun (keyless/budget-exhaust/broken-collector all survive), README
+      architecture + competitor map + ops runbook, tagged content-os-v2.0.
+      PHASE 2 COMPLETE.
 
 ## Hard rules
 

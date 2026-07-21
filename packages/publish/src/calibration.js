@@ -173,6 +173,8 @@ function logTuning(kind, detail, before, after) {
 
 export async function autoTune() {
   loadEnv();
+  const cfg0 = loadUserConfig();
+  if (cfg0.autoTune === false) return { skipped: "auto-tune is OFF in Settings" };
   const joins = performanceJoins();
   if (joins.n < MIN_N) return { skipped: `N=${joins.n} < ${MIN_N} — auto-tuning stays off until you've posted more` };
 

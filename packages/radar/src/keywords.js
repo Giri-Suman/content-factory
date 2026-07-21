@@ -114,8 +114,9 @@ export async function supplyFor(keyword) {
   if (!hasKey()) {
     return { score: 5, detail: "no YouTube key — supply unknown (neutral 5/10)", unknown: true };
   }
-  if (unitsTodayFor(JOB) + 102 > MODULE_BUDGET) {
-    return { score: 5, detail: `daily keyword budget (${MODULE_BUDGET}u) reached — scored tomorrow`, unknown: true };
+  const { canSpend } = await import("./allocator.js");
+  if (!canSpend(JOB, 102).ok) {
+    return { score: 5, detail: `keyword-gap budget reached — scored tomorrow`, unknown: true };
   }
   const publishedAfter = new Date(Date.now() - 48 * 36e5).toISOString();
   const data = await yt("search", { part: "snippet", q: keyword, type: "video", publishedAfter, maxResults: "25", order: "relevance" }, JOB);
