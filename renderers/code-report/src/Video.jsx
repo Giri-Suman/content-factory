@@ -23,7 +23,7 @@ const REGISTRY = {
   quote: QuoteCard,
 };
 
-export const CodeReportVideo = ({ title, brand, date, scenes = [], timeline, outro }) => {
+export const CodeReportVideo = ({ title, brand, date, scenes = [], timeline, outro, captionScale = 1 }) => {
   const { height, width } = useVideoConfig();
   const vertical = height > width;
 
@@ -60,7 +60,7 @@ export const CodeReportVideo = ({ title, brand, date, scenes = [], timeline, out
             {scene.audio ? <Audio src={staticFile(scene.audio)} /> : null}
             <Comp scene={scene} vertical={vertical} frames={t.frames} />
             {scene.type !== "kinetic" && scene.words?.length ? (
-              <Captions words={scene.words} vertical={vertical} />
+              <Captions words={scene.words} vertical={vertical} captionScale={captionScale} />
             ) : null}
           </Sequence>
         );

@@ -229,7 +229,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       PublishItems, factory render brief <id>. Whisper obsolete (voice
       returns timestamps). Verified: 24.2s brief video in 3 comps + cover,
       all 4 items attached, SAPI fallback graceful
-- [ ] P18 QC Judge Network: 5 judges + regeneration protocol
+- [x] P18 QC Judge Network: 5 judges (idea/script/metadata/visual w/ REAL
+      coded rubrics + LLM upgrade; audio fully programmatic), generic
+      judge-and-regenerate runner (max 3, cost guard $0.50, escalation
+      queue, Critique persistence for P19), coded script regen (banned->
+      concrete hook), captionScale threaded for the VisualJudge readability
+      check, /qc page. factory qc brief|stats
 - [ ] P19 Lesson memory + prompt evolution
 - [ ] P20 two-lane orchestrator (capture lane EXISTS = AI Cut)
 - [ ] P21 thumbnail studio

@@ -87,6 +87,36 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "qc": {
+    const { qcBrief } = await import("../../judges/src/qc.js");
+    const { qcStats } = await import("../../judges/src/runner.js");
+    const [action, ...qargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "brief" && qargs[0]) {
+        const r = await qcBrief(qargs[0], { rendered: !rest.includes("--no-render") });
+        console.log(`\nQC for brief ${qargs[0]} (cost $${r.costSpent.toFixed(2)}):`);
+        for (const [judge, res] of Object.entries(r.results)) {
+          const c = res.critique;
+          console.log(`  ${judge.padEnd(9)} ${res.status.padEnd(10)} ${c.score}/100 (${c.mode}, ${res.attempts} attempt${res.attempts > 1 ? "s" : ""})`);
+          for (const reason of c.reasons.slice(0, 3)) console.log(`      - ${reason}`);
+        }
+        if (r.escalated.length) console.log(`  ⚠ escalated: ${r.escalated.join(", ")} — Human Review queue`);
+      } else if (action === "stats" || !action) {
+        const s = qcStats();
+        console.log("\npass rates:");
+        for (const j of s.perJudge) console.log(`  ${j.judge.padEnd(9)} ${j.passRate ?? "—"}% (${j.passes}/${j.total})`);
+        console.log(`  escalations pending: ${s.escalations.length}`);
+      } else {
+        console.error("usage: factory qc brief <id> [--no-render] | stats");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "calibrate": {
     const cal = await import("../../publish/src/calibration.js");
     const { withJobRun } = await import("../../shared/src/jobs.js");

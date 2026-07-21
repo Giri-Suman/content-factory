@@ -129,6 +129,7 @@ export async function prepare(scriptPath) {
       year: "numeric",
     }),
     outro: script.outro || {},
+    captionScale: script.captionScale ?? 1, // P18: <1 = sabotage/red-flag for the VisualJudge
     scenes,
     timeline: { fps: FPS, intro, outro: outroFrames, scenes: sceneTimeline, totalFrames },
   };

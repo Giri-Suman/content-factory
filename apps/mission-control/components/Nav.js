@@ -12,6 +12,7 @@ const LINKS = [
   ["/lab", "Lab"],
   ["/keywords", "Keywords"],
   ["/ideas", "Ideas"],
+  ["/qc", "QC"],
   ["/scripts", "Scripts"],
   ["/math", "Math"],
   ["/footage", "Footage"],

@@ -1,0 +1,8 @@
+{
+  "name": "@factory/judges",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "QC Judge Network — 5 judges (coded rubrics + LLM upgrade), regeneration protocol, escalation queue",
+  "dependencies": {}
+}

@@ -3,7 +3,7 @@ import { useCurrentFrame, useVideoConfig } from "remotion";
 import { theme } from "../theme.js";
 
 // Word-karaoke captions driven by voice timestamps (relative to scene start).
-export const Captions = ({ words, vertical }) => {
+export const Captions = ({ words, vertical, captionScale = 1 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const tSec = frame / fps;
@@ -27,7 +27,7 @@ export const Captions = ({ words, vertical }) => {
         padding: "0 60px",
         fontFamily: theme.fonts.display,
         fontWeight: 800,
-        fontSize: vertical ? 54 : 44,
+        fontSize: (vertical ? 54 : 44) * captionScale,
         textShadow: "0 3px 14px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.9)",
       }}
     >
