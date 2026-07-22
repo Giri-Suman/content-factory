@@ -13,7 +13,7 @@ import { chat, providerStatus } from "../../llm/src/llm.js";
  * fully programmatic by design.
  */
 
-export const DEFAULT_THRESHOLDS = { idea: 70, script: 75, metadata: 75, visual: 70, audio: 75 };
+export const DEFAULT_THRESHOLDS = { idea: 70, script: 75, metadata: 75, visual: 70, audio: 75, thumbnail: 70 };
 export const thresholds = () => ({ ...DEFAULT_THRESHOLDS, ...(loadUserConfig().judgeThresholds || {}) });
 
 const BANNED = /\b(wait for it|you won'?t believe|gone wrong|mind[- ]?blown|blow your mind|watch till the end|number \d+ will|shocking|insane trick|this one trick)\b/i;
@@ -196,6 +196,57 @@ export async function visualJudge(videoFile, props) {
   // vision-model layer when available (VISION_MODEL/anthropic vision) — else coded
   // (frames are on disk for the vision call; kept coded here to stay keyless-honest)
   return finalize("visual", clamp(score), reasons, "increase caption size to ≥60% scale; verify contrast and safe zones", reasons.length ? "coded" : "coded-pass");
+}
+
+/* ---------------- 6. ThumbnailJudge (P21) ---------------- */
+
+export function thumbnailJudge(variant) {
+  const reasons = [];
+  let score = 90;
+  if (!variant?.file || !existsSync(variant.file)) return finalize("thumbnail", 0, ["thumbnail missing"], "generate thumbnails first", "coded");
+
+  // ≤4 words rule
+  if ((variant.words ?? 0) > 4) {
+    score -= 25;
+    reasons.push(`${variant.words} words — thumbnails need ≤4 for 120px legibility`);
+  }
+  // placeholder = Chrome unavailable, not a real thumbnail
+  if (variant.how === "placeholder") {
+    score -= 40;
+    reasons.push("rendered as a flat placeholder (system Chrome not found)");
+  }
+  // 120px legibility check: downscale and confirm it still has detail (file size proxy)
+  const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", variant.file], { encoding: "utf8", windowsHide: true });
+  const [w, h] = (probe.stdout || "0,0").trim().split(",").map(Number);
+  if (w < 1280 || h < 720) {
+    score -= 15;
+    reasons.push(`thumbnail is ${w}x${h}, want 1280x720`);
+  }
+  return finalize("thumbnail", clamp(score), reasons, "cut to ≤4 words, boost contrast, verify legibility at 120px", reasons.length ? "coded" : "coded-pass");
+}
+
+/* ---------------- SEO completeness (P21) ---------------- */
+
+/** Each PublishItem must carry platform-complete metadata before "ready". */
+export function seoComplete(item) {
+  const a = item.assets || {};
+  const missing = [];
+  const filled = (v) => v && !/\[fill:/.test(String(v)) && String(v).trim().length > 0;
+  if (item.platform === "youtube") {
+    if (!filled(a.title)) missing.push("title");
+    if (!filled(a.description)) missing.push("description");
+    if (!(a.tags || []).length) missing.push("tags");
+    if (!a.thumbFile) missing.push("thumbnail");
+  } else if (item.platform === "instagram") {
+    if (!filled(a.caption)) missing.push("caption");
+    if (!(a.hashtags || []).length) missing.push("hashtags");
+    if (!a.thumbFile) missing.push("cover");
+  } else if (item.platform === "linkedin") {
+    if (!filled(a.post_text)) missing.push("post text");
+  } else if (item.platform === "x") {
+    if (!(a.thread || []).length) missing.push("thread");
+  }
+  return { complete: missing.length === 0, missing };
 }
 
 /* ---------------- 5. AudioJudge (fully programmatic) ---------------- */

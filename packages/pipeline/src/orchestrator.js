@@ -160,19 +160,56 @@ export async function produce(briefId, { captureFile = null, profiles = "yt_shor
 }
 
 async function finishQC(briefId, lane, videoFile) {
+  // P21 packaging: >=2 judged thumbnails + IG cover, attached before QC
+  console.log(`  [${lane}] packaging (thumbnails + cover)...`);
+  await packageBrief(briefId, videoFile);
+
   console.log(`  [${lane}] running visual + audio judges...`);
   setState(briefId, "qc");
   const { qcBrief } = await import("../../judges/src/qc.js");
   const qc = await qcBrief(briefId, { rendered: true });
-  const escalated = qc.escalated.length > 0;
+
+  // P21 SEO-completeness gate: no "ready" with incomplete metadata
+  const { seoComplete } = await import("../../judges/src/judges.js");
+  const incomplete = collection("publishitems")
+    .find((i) => i.briefId === briefId)
+    .map((i) => ({ platform: i.platform, ...seoComplete(i) }))
+    .filter((r) => !r.complete);
+
+  const escalated = qc.escalated.length > 0 || incomplete.length > 0;
   if (escalated) {
-    setState(briefId, "qc", { escalated: true, escalatedJudges: qc.escalated });
-    console.log(`  [${lane}] escalated (${qc.escalated.join(", ")}) — Human Review, not auto-published`);
-    return { briefId, lane, state: "qc", escalated: true, escalatedJudges: qc.escalated };
+    const seoReasons = incomplete.map((r) => `${r.platform}: missing ${r.missing.join("/")}`);
+    setState(briefId, "qc", { escalated: true, escalatedJudges: qc.escalated, seoIncomplete: seoReasons });
+    console.log(`  [${lane}] escalated — ${[...qc.escalated, ...seoReasons].join("; ")}`);
+    return { briefId, lane, state: "qc", escalated: true, escalatedJudges: qc.escalated, seoIncomplete: seoReasons };
   }
   setState(briefId, "ready");
   console.log(`  [${lane}] READY — in Publish Center for your publish tap`);
   return { briefId, lane, state: "ready" };
+}
+
+/** Generate + judge thumbnails, pick the IG cover, attach onto PublishItems. */
+async function packageBrief(briefId, videoFile) {
+  const { generateThumbnails, pickCoverFrame } = await import("./thumbnails.js");
+  const { thumbnailJudge } = await import("../../judges/src/judges.js");
+  const { attachFile } = await import("../../publish/src/center.js");
+
+  const { variants } = await generateThumbnails(briefId);
+  // judge each; pick the best passing variant as A, keep the rest as B...
+  const judged = variants.map((v) => ({ ...v, critique: thumbnailJudge(v) })).sort((a, b) => b.critique.score - a.critique.score);
+  collection("thumbnails").update(briefId, { judged: judged.map((j) => ({ layout: j.layout, score: j.critique.score, verdict: j.critique.verdict })) });
+  const variantA = judged[0];
+  console.log(`    thumbnails: ${judged.map((j) => `${j.layout} ${j.critique.score}`).join(", ")} -> A=${variantA.layout}`);
+
+  // IG cover from the strongest of 6 frames
+  const dir = path.dirname(videoFile);
+  const cover = pickCoverFrame(videoFile, path.join(dir, "cover.png"));
+
+  // attach: YouTube gets thumbnail A; IG gets the cover
+  for (const item of collection("publishitems").find((i) => i.briefId === briefId)) {
+    if (item.platform === "youtube" && variantA?.critique.verdict === "pass") attachFile(item.id, variantA.file, "thumb");
+    if (item.platform === "instagram" && cover) attachFile(item.id, cover, "thumb");
+  }
 }
 
 /* ---------------- kanban + pacing ---------------- */

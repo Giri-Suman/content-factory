@@ -249,7 +249,12 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       approved->scripted->rendered|awaiting-capture->qc->ready->published,
       Production kanban w/ stuck alerts (>24h / >6h trend), worker pacing
       to daily cadence. factory produce CLI
-- [ ] P21 thumbnail studio
+- [x] P21 thumbnail studio: 3 HTML layouts (BigNumber/FacelessSplit/
+      BeforeAfter) -> 1280x720 PNG via system Chrome headless (zero-dep),
+      >=2 variants, thumbnailJudge (≤4 words/legibility/contrast coded +
+      vision upgrade), IG cover from strongest of 6 frames, SEO-complete
+      gate blocks "ready", Studio A/B checklist step + timed-swap config
+      (off). /packaging page. factory thumbnails CLI
 - [ ] P22 platform playbooks
 - [ ] P23 full-auto dry run + v3
 

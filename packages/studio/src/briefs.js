@@ -53,6 +53,7 @@ function checklistFor(kind, timing) {
     "Golden 60: reply to every comment on both platforms in the first 60 minutes.",
     `LinkedIn ${timing.linkedin} — paste the post text native, no external links.`,
     `X thread ${timing.x} — three posts from the X tab.`,
+    "Thumbnails: variant A auto-set on upload. Add variant B in YouTube Studio → Test & Compare (native A/B is Studio-only).",
     "Export the IG carousel slides when you have 10 minutes; post as a follow-up save-magnet.",
     kind === "trend" ? "All of the above lands TODAY — the deadline chip is real." : "Evergreen: keep the daily-slot queue order.",
   ];

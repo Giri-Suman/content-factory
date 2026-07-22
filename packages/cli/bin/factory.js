@@ -87,6 +87,30 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "thumbnails": {
+    const { generateThumbnails } = await import("../../pipeline/src/thumbnails.js");
+    const { thumbnailJudge } = await import("../../judges/src/judges.js");
+    const id = rest.filter((a) => !a.startsWith("--"))[0];
+    if (!id) {
+      console.error("usage: factory thumbnails <briefId>");
+      process.exit(1);
+    }
+    try {
+      const { collection } = await import("../../shared/src/store.js");
+      const { variants } = await generateThumbnails(id);
+      const judged = variants.map((v) => ({ ...v, critique: thumbnailJudge(v) })).sort((a, b) => b.critique.score - a.critique.score);
+      for (const v of judged) {
+        console.log(`  ${v.layout.padEnd(14)} ${v.critique.score}/100 ${v.critique.verdict}${v.critique.reasons.length ? " — " + v.critique.reasons.join("; ") : ""}`);
+      }
+      collection("thumbnails").update(id, { judged: judged.map((j) => ({ layout: j.layout, score: j.critique.score, verdict: j.critique.verdict })) });
+      console.log(`RESULT ${JSON.stringify({ id, variants: variants.length })}`);
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "produce": {
     const orch = await import("../../pipeline/src/orchestrator.js");
     const noflag = rest.filter((a) => !a.startsWith("--"));

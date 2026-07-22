@@ -54,6 +54,10 @@ const CONFIG_PATH = path.join(paths.data, "config.json");
 export const DEFAULT_CONFIG = {
   // which content niches the trend radar scans — toggled in Mission Control
   categories: { coding: true, ai: true, math: false, makeup: false },
+  // P21: auto-swap thumbnail A->B after 72h if views lag the channel median.
+  // OFF by default — the honest path is the Studio A/B step in the checklist,
+  // since real CTR/impressions aren't exposed by the API.
+  thumbnailTimedSwap: false,
 };
 
 export function loadUserConfig() {
