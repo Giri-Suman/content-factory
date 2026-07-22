@@ -242,7 +242,13 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       PromptVersion registry w/ manual propose->approve, /lessons page
       (trend charts + versions + cited lessons), self-improve card on
       Today, weekly distill on worker. factory lessons/prompts CLI
-- [ ] P20 two-lane orchestrator (capture lane EXISTS = AI Cut)
+- [x] P20 two-lane orchestrator (orchestrates existing pieces): routeLane
+      (LLM + heuristic + manual override), synthetic lane zero-touch
+      (compile->scriptJudge->render->visual/audio->ready), capture lane
+      (shot list -> drop file -> EXISTING AI Cut -> ready), state machine
+      approved->scripted->rendered|awaiting-capture->qc->ready->published,
+      Production kanban w/ stuck alerts (>24h / >6h trend), worker pacing
+      to daily cadence. factory produce CLI
 - [ ] P21 thumbnail studio
 - [ ] P22 platform playbooks
 - [ ] P23 full-auto dry run + v3

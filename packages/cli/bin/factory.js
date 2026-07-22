@@ -87,6 +87,33 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "produce": {
+    const orch = await import("../../pipeline/src/orchestrator.js");
+    const noflag = rest.filter((a) => !a.startsWith("--"));
+    const capIdx = rest.indexOf("--capture-file");
+    const captureFile = capIdx !== -1 ? rest[capIdx + 1] : null;
+    try {
+      if (noflag[0] === "board") {
+        const { columns, alerts } = orch.board();
+        for (const [state, items] of Object.entries(columns)) {
+          if (items.length) console.log(`\n${state} (${items.length}):`);
+          for (const it of items) console.log(`  [${it.lane}] ${it.topic.slice(0, 46)}${it.stuck ? `  ⚠ ${it.stuck}` : ""}`);
+        }
+        if (alerts.length) console.log(`\n⚠ ${alerts.length} stuck item(s)`);
+      } else if (noflag[0]) {
+        const r = await orch.produce(noflag[0], { captureFile });
+        console.log(`\n-> ${r.state}${r.escalated ? " (escalated)" : ""}`);
+      } else {
+        console.error("usage: factory produce <briefId> [--capture-file <path>] | board");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "lessons": {
     const L = await import("../../studio/src/lessons.js");
     const { collection } = await import("../../shared/src/store.js");

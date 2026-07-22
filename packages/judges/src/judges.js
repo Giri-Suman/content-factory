@@ -137,9 +137,13 @@ export async function metadataJudge(payload) {
   const yt = payload.yt_short || {};
   const { scoreTitle } = await import("../../studio/src/titleLab.js");
   const titleScore = await scoreTitle(yt.title || "");
-  if (titleScore.overall < 5) {
+  // gate rubric: hard-fail only genuinely bad titles; the Title Lab owns quality
+  if (titleScore.overall < 3) {
     score -= 30;
-    reasons.push(`weak title (${titleScore.overall}/10 via Title Lab)`);
+    reasons.push(`unusable title (${titleScore.overall}/10 via Title Lab)`);
+  } else if (titleScore.overall < 5) {
+    score -= 8;
+    reasons.push(`title could be sharper (${titleScore.overall}/10 — see Lab)`);
   }
   if (titleScore.banned) {
     score -= 20;

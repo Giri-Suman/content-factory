@@ -30,9 +30,9 @@ export async function POST(request) {
     : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
 }
 
-// PATCH {id, status?|payload?|checklistState?} — direct JSON edit per repo convention
+// PATCH {id, status?|payload?|checklistState?|lane?} — direct JSON edit per repo convention
 export async function PATCH(request) {
-  const { id, status, payload, checklistState } = await request.json();
+  const { id, status, payload, checklistState, lane } = await request.json();
   const rows = read();
   const i = rows.findIndex((r) => r.id === id);
   if (i === -1) return NextResponse.json({ ok: false, error: "unknown brief" }, { status: 404 });
@@ -40,6 +40,8 @@ export async function PATCH(request) {
   if (status && ["draft", "approved", "killed"].includes(status)) rows[i].status = status;
   if (payload && typeof payload === "object") rows[i].payload = payload;
   if (Array.isArray(checklistState)) rows[i].checklistState = checklistState.map(Boolean);
+  if (lane === "synthetic" || lane === "capture") rows[i].lane = lane; // P20 manual override
+  if (becameApproved && !rows[i].pipeline) rows[i].pipeline = { state: "approved", updatedAt: new Date().toISOString(), history: [{ state: "approved", at: new Date().toISOString() }] };
   rows[i].updatedAt = new Date().toISOString();
   write(rows);
   // P14: approval auto-enters the Idea Bank (via CLI — routes never import factory packages)

@@ -1,5 +1,10 @@
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { loadEnv } from "../../shared/src/config.js";
 import { withJobRun } from "../../shared/src/jobs.js";
+
+const CLI = fileURLToPath(new URL("../bin/factory.js", import.meta.url));
 
 /**
  * P8 worker — the long-running heartbeat (plain setInterval; the repo's
@@ -94,6 +99,21 @@ export async function runWorker(argv = []) {
     }
   };
 
+  // P20: pace the synthetic lane to the configured cadence + warn on stale capture items
+  const pacingTick = async () => {
+    const { pacingPlan, board } = await import("../../pipeline/src/orchestrator.js");
+    const plan = pacingPlan();
+    if (plan.remaining > 0 && plan.queue.length) {
+      const toProduce = plan.queue.slice(0, plan.remaining);
+      for (const id of toProduce) {
+        console.log(`[${stamp()}] pacing: auto-producing synthetic brief ${id} (${plan.producedToday + 1}/${plan.cadence} today)`);
+        spawn("node", [CLI, "produce", id], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+      }
+    }
+    const { alerts } = board();
+    for (const a of alerts) console.log(`[${stamp()}] ⚠ stuck: ${a.topic.slice(0, 40)} — ${a.reason}`);
+  };
+
   const digestTick = async () => {
     const { buildDigest } = await import("../../studio/src/digest.js");
     await withJobRun("digest", async () => {
@@ -153,6 +173,7 @@ export async function runWorker(argv = []) {
   setInterval(() => guard("collect", collectTick), collectMs);
   setInterval(() => guard("youtube", youtubeTick), youtubeMs);
   setInterval(() => guard("deep", deepTick), deepMs);
+  setInterval(() => guard("pacing", pacingTick), youtubeMs);
 
   // daily digest: check each minute for 08:00 IST, once per date
   let lastDigestDate = null;
