@@ -22,6 +22,7 @@ const LINKS = [
   ["/footage", "Footage"],
   ["/renders", "Renders"],
   ["/analytics", "Analytics"],
+  ["/cost", "Cost"],
   ["/settings", "Settings"],
 ];
 

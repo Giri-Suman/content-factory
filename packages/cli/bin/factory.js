@@ -87,6 +87,17 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "dryrun": {
+    const { dryRun } = await import("../../pipeline/src/dryrun.js");
+    try {
+      await dryRun(rest);
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "playbook": {
     const PB = await import("../../studio/src/playbooks.js");
     const { collection } = await import("../../shared/src/store.js");

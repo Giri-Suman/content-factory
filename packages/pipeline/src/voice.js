@@ -75,6 +75,12 @@ async function elevenLabs(text, outBase) {
   writeFileSync(file, Buffer.from(data.audio_base64, "base64"));
   const words = alignmentToWords(data.alignment || {});
   const durationSec = words.length ? words[words.length - 1].end : ffprobeDuration(file);
+  try {
+    const { logCost, COST } = await import("../../shared/src/cost.js");
+    logCost("voice", text.length * COST.elevenPerChar, { chars: text.length, videoId: globalThis.__factoryVideoId || null });
+  } catch {
+    /* best-effort */
+  }
   return { provider: "elevenlabs", file, durationSec, words };
 }
 

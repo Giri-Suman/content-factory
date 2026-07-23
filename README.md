@@ -151,11 +151,60 @@ flowchart TB
   verification + Meta app review. Auto mode flips on when they clear —
   zero code changes.
 
-### Phase 3 roadmap (production + self-improvement)
+## Phase 3 — Production + Self-Improvement (v3.0, complete)
 
-Wire approved briefs into the EXISTING Remotion engine + AI-Cut capture
-lane (P17/P20); QC judge network with regeneration (P18); lesson memory +
-prompt evolution (P19); thumbnail studio (P21); platform playbooks (P22).
+The whole machine: an idea becomes a publish-ready video, judged at every
+hop, and the system learns from the results.
+
+```mermaid
+flowchart TB
+  C[#1 cluster / keyword / wishlist] --> B[Brief Studio]
+  B -->|you approve| L{lane?}
+  L -->|synthetic| SY[compile → ScriptJudge → render → thumbnails]
+  L -->|capture| CA[shot list → you record → AI Cut]
+  SY --> QC[VisualJudge · AudioJudge · MetadataJudge · ThumbnailJudge]
+  CA --> QC
+  QC -->|pass + SEO complete| R[Publish Center: ready]
+  QC -->|fail x3 or incomplete| ESC[Human Review — never auto-published]
+  R -->|your publish tap + Golden 60| P[(published → MyPost)]
+  P --> CAL[Calibration: my results vs predictions]
+  QC --> CRIT[(Critiques)]
+  CAL --> LES[Lesson distillation]
+  CRIT --> LES
+  LES -->|top-8 by weight| B
+  CAL --> PB[Playbook proposals] -->|you approve| B
+```
+
+- **Two lanes:** synthetic runs approve→ready zero-touch; capture assists
+  you (shot list → record → auto-edit). Production kanban tracks every
+  brief; stuck items (>24h, >6h trend) raise alerts.
+- **Judge network (P18):** 5 judges gate each hop; fails regenerate (max 3,
+  $0.50 cap) then escalate. Nothing escalated ever auto-publishes.
+- **Self-improvement (P19):** judge critiques + my results distill into
+  cited lessons that inject into generation; prompt versions change only
+  with my approval.
+- **Playbooks (P22):** per-platform rules re-derived from observed
+  outcomes; algorithm chatter is quarantined, never auto-applied.
+- **Proven (P23 dry run):** #1 cluster → ready in **1.9 min at $0.00**
+  keyless (targets <45 min, <$2). Corrupt renders and sabotaged scripts
+  are caught and escalated; nothing half-publishes.
+
+### The three platform walls (honest limits)
+
+1. **Meta app review** — IG/FB Graph publishing is gated off until
+   approved; manual-metrics + copy-paste until then.
+2. **YouTube API verification** — auto-publish stays off until Google's
+   audit clears; staged private/unlisted drafts are the surviving default.
+3. **Instagram's closed data** — no IG/FB metric scraping, ever;
+   manual-entry only. Real CTR/impressions aren't exposed anywhere, so we
+   never fake them.
+
+### Human touchpoints (load-bearing, by design)
+
+Brief approval (originality shield) · capture-lane recording · the publish
+tap + **Golden 60** (first-hour comment replies — a ranking input no API
+fakes) · the weekly review of memo + lessons + playbook proposals. These
+are the quality moat, not friction to automate away.
 
 ## AI providers (pick one in .env)
 

@@ -256,7 +256,14 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       gate blocks "ready", Studio A/B checklist step + timed-swap config
       (off). /packaging page. factory thumbnails CLI
 - [ ] P22 platform playbooks
-- [ ] P23 full-auto dry run + v3
+- [x] P23 full-auto dry run + v3: instrumented dryRun (#1 cluster ->
+      ideaJudge -> brief -> auto-approve -> synthetic produce -> ready,
+      measures wall-clock/cost/attempts), cost ledger (cost.js logs
+      LLM/voice estimates) + /cost dashboard, failure drills round 3
+      (corrupt render now HARD-fails, sabotaged script escalates, nothing
+      half-publishes), README v3 (mermaid + honest limits + touchpoints),
+      tagged content-os-v3.0. PHASE 3 COMPLETE — all 24 milestones done.
+      Dry run: #1 cluster -> ready in 1.9min at $0.00 keyless.
 
 ## Hard rules
 

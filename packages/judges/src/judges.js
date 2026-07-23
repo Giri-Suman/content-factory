@@ -185,9 +185,12 @@ export async function visualJudge(videoFile, props) {
     score -= 45;
     reasons.push(`captions at ${Math.round(captionScale * 100)}% scale — unreadable on mobile (floor 60%)`);
   }
-  // resolution sanity
+  // resolution sanity — an unreadable (0x0) file is a corrupt render: hard-fail
   const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", videoFile], { encoding: "utf8", windowsHide: true });
   const [w, h] = (probe.stdout || "0,0").trim().split(",").map(Number);
+  if (!w || !h) {
+    return finalize("visual", 0, ["corrupt render — ffprobe can't read a video stream"], "re-render the video", "coded");
+  }
   if (w < 1080 || h < 1080) {
     score -= 20;
     reasons.push(`low resolution ${w}x${h}`);
@@ -257,6 +260,7 @@ export function audioJudge(videoFile, expectedSec) {
   if (!existsSync(videoFile)) return finalize("audio", 0, ["render missing"], "render first", "programmatic");
 
   const dur = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", videoFile], { encoding: "utf8", windowsHide: true }).stdout || 0);
+  if (!dur) return finalize("audio", 0, ["corrupt render — no readable audio/duration"], "re-render the video", "programmatic");
   if (expectedSec && Math.abs(dur - expectedSec) / expectedSec > 0.1) {
     score -= 25;
     reasons.push(`duration ${dur.toFixed(1)}s vs spec ${expectedSec.toFixed(1)}s (>10% off)`);

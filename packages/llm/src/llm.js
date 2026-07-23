@@ -132,5 +132,14 @@ export async function chat({ system, user, task = "score", maxTokens = 4000 }) {
       : provider === "openrouter"
         ? await openrouterChat(args)
         : await ollamaChat(args);
+  // P23 cost estimate (ollama = local = $0; skip logging then)
+  if (provider !== "ollama") {
+    try {
+      const { logCost, COST } = await import("../../shared/src/cost.js");
+      logCost(provider === "anthropic" || provider === "openrouter" ? "llm" : "llm", task === "script" ? COST.llmScript : COST.llmScore, { task, provider, videoId: globalThis.__factoryVideoId || null });
+    } catch {
+      /* cost logging is best-effort */
+    }
+  }
   return { text, provider, model };
 }
