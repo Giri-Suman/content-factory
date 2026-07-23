@@ -87,6 +87,43 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "playbook": {
+    const PB = await import("../../studio/src/playbooks.js");
+    const { collection } = await import("../../shared/src/store.js");
+    const [action, ...pargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "list" || !action) {
+        for (const p of PB.ensurePlaybooks()) {
+          console.log(`\n${p.platform}: length ${p.lengthBandSec[0]}-${p.lengthBandSec[1]}s · hooks ${p.hooks.join("/")} · slots ${p.slots.join(", ")}`);
+        }
+      } else if (action === "refresh") {
+        const { withJobRun } = await import("../../shared/src/jobs.js");
+        const r = await withJobRun("playbook-refresh", () => PB.refreshPlaybooks());
+        console.log(`playbook refresh: ${r.proposals} proposal(s), ${r.unverifiedSignals} unverified signal(s) quarantined`);
+        for (const p of collection("playbookproposals").find((x) => x.status === "pending")) {
+          console.log(`  [${p.platform}] ${p.field}: ${JSON.stringify(p.current)} -> ${JSON.stringify(p.proposed)}  (${p.evidence.join("; ")})  id=${p.id}`);
+        }
+      } else if (action === "approve" && pargs[0]) {
+        const r = PB.applyProposal(pargs[0]);
+        console.log(r ? `approved: ${r.platform} ${r.field} -> ${JSON.stringify(r.proposed)}` : "no such pending proposal");
+      } else if (action === "reject" && pargs[0]) {
+        PB.rejectProposal(pargs[0]);
+        console.log("rejected");
+      } else if (action === "seed-signal") {
+        const { seedPlaybookSignal } = await import("../../studio/src/seedPlaybookSignal.js");
+        const r = seedPlaybookSignal();
+        console.log(`seeded ${r.seeded} MyPosts (35s outperform signal)`);
+      } else {
+        console.error("usage: factory playbook list | refresh | approve <id> | reject <id> | seed-signal");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "thumbnails": {
     const { generateThumbnails } = await import("../../pipeline/src/thumbnails.js");
     const { thumbnailJudge } = await import("../../judges/src/judges.js");

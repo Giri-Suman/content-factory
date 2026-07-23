@@ -84,8 +84,20 @@ export async function runWorker(argv = []) {
         })
       );
     }
-    // weekly niche map (runs when the current one is 6+ days old)
+    // P22: monthly playbook refresh (proposals await manual approval)
     const { collection } = await import("../../shared/src/store.js");
+    const pbStore = collection("playbookrefresh").all()[0];
+    if (!pbStore || Date.now() - new Date(pbStore.at).getTime() > 30 * 864e5) {
+      const { refreshPlaybooks } = await import("../../studio/src/playbooks.js");
+      await withJobRun("playbook-refresh", async () => {
+        const r = refreshPlaybooks();
+        collection("playbookrefresh").save([{ id: "last", at: new Date().toISOString() }]);
+        console.log(`[${stamp()}] playbook refresh: ${r.proposals} proposals, ${r.unverifiedSignals} signals`);
+        return r;
+      });
+    }
+
+    // weekly niche map (runs when the current one is 6+ days old)
     const current = collection("nichemap").all()[0];
     if (!current || Date.now() - new Date(current.at).getTime() > 6 * 864e5) {
       const { buildNicheMap } = await import("../../radar/src/explorer.js");

@@ -67,7 +67,7 @@ const PAYLOAD_SHAPE = {
   blog_outline: "object", platform_adjustments: "array",
 };
 
-async function llmPayload(context, kind) {
+async function llmPayload(context, kind, lengthTarget = 32) {
   if (!providerStatus().active) return null;
   const { lessonsFor } = await import("./lessons.js");
   const lessonBlock = lessonsFor("metadata").block + lessonsFor("script").block;
@@ -77,9 +77,10 @@ async function llmPayload(context, kind) {
       maxTokens: 6000,
       system:
         `You write multi-platform content briefs for this creator: ${NICHE_CONTEXT}.${lessonBlock} ` +
+        `Target the YouTube Short at ~${lengthTarget}s (the platform playbook's proven length). ` +
         "Every hook must be concrete and specific — generic openers ('you won't believe') are banned. Reply ONLY JSON:\n" +
-        '{"kind":"trend|evergreen","core_idea":"...","yt_short":{"hook_variants":["3 different hooks"],"beats":["scene beats"],' +
-        '"length_sec":30,"title":"...","description":"keyword-rich, 2 lines","tags":["..."]},' +
+        `{"kind":"trend|evergreen","core_idea":"...","yt_short":{"hook_variants":["3 different hooks"],"beats":["scene beats"],` +
+        `"length_sec":${lengthTarget},"title":"...","description":"keyword-rich, 2 lines","tags":["..."]},` +
         '"ig_reel":{"script_adjustments":"...","caption":"conversational, ends with a question","hashtags":["<=8 niche tags"]},' +
         '"ig_carousel":{"slides":["7 short strings"],"cover_text":"..."},' +
         '"linkedin":{"post_text":"all value native, NO external links, inline code snippet if relevant"},' +
@@ -107,7 +108,7 @@ async function llmPayload(context, kind) {
 }
 
 /** Keyless skeleton — deterministic structure, hand-fillable content. */
-function templatePayload(topic, kind) {
+function templatePayload(topic, kind, lengthTarget = 32) {
   const P = (hint) => `[fill: ${hint}]`;
   return {
     template: true,
@@ -116,7 +117,7 @@ function templatePayload(topic, kind) {
     yt_short: {
       hook_variants: [P("Open Loop hook"), P("Contrarian Strike hook"), P("Results First hook")],
       beats: [P("beat 1: the hook visual"), P("beat 2: the meat"), P("beat 3: payoff + CTA")],
-      length_sec: 32,
+      length_sec: lengthTarget,
       title: topic.slice(0, 90),
       description: P("2 keyword-rich lines"),
       tags: ["ai automation", "coding"],
@@ -183,7 +184,17 @@ export async function generateBrief({ clusterId, wishlistId, topic: rawTopic, se
     /* guard must never block generation */
   }
 
-  const payload = (await llmPayload(context, kind)) || templatePayload(topic, kind);
+  // P22: the yt_short playbook sets the target length (approved changes flow here)
+  let lengthTarget = 32;
+  try {
+    const { playbookTarget } = await import("./playbooks.js");
+    lengthTarget = playbookTarget("yt_short");
+  } catch {
+    /* default */
+  }
+
+  const payload = (await llmPayload(context, kind, lengthTarget)) || templatePayload(topic, kind, lengthTarget);
+  if (payload.yt_short && !payload.template) payload.yt_short.length_sec = payload.yt_short.length_sec || lengthTarget;
   const finalKind = payload.kind === "trend" || payload.kind === "evergreen" ? payload.kind : kind;
   const timing = timingFor(finalKind);
   payload.timing_ist = timing;
