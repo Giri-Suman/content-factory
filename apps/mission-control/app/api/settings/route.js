@@ -62,6 +62,14 @@ export async function GET() {
         ] },
       ].map((t) => ({ ...t, available: t.options.some((o) => o.ready) })),
     },
+    serviceTiers: {
+      assigned: { voice: "free", image: "free", transcribe: "free", ...(config.serviceTiers || {}) },
+      services: [
+        { service: "voice", label: "Voice", note: "free = Windows TTS · premium = YOUR cloned voice", ready: { free: true, budget: envSet("ELEVENLABS_API_KEY"), premium: envSet("ELEVENLABS_API_KEY") } },
+        { service: "image", label: "Thumbnails & images", note: "free = brand HTML (already excellent) · paid adds generated backgrounds", ready: { free: true, budget: envSet("FAL_KEY"), premium: envSet("FAL_KEY") } },
+        { service: "transcribe", label: "Footage transcription", note: "all tiers run locally at $0 — trades speed for accuracy", ready: { free: true, budget: true, premium: true } },
+      ],
+    },
     quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
     budgets: budgetDashboard(),
     flags: {
@@ -93,6 +101,13 @@ export async function PUT(request) {
     config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
   }
   if (typeof body.autoTune === "boolean") config.autoTune = body.autoTune;
+  if (body.serviceTiers && typeof body.serviceTiers === "object") {
+    const valid = ["free", "budget", "premium"];
+    config.serviceTiers = { ...(config.serviceTiers || {}) };
+    for (const svc of ["voice", "image", "transcribe"]) {
+      if (valid.includes(body.serviceTiers[svc])) config.serviceTiers[svc] = body.serviceTiers[svc];
+    }
+  }
   if (body.aiTiers && typeof body.aiTiers === "object") {
     const valid = ["free", "budget", "premium"];
     config.aiTiers = { ...(config.aiTiers || {}) };

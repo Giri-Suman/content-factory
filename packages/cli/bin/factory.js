@@ -135,9 +135,16 @@ switch (cmd) {
     const cfg = loadUserConfig();
     const tiers = { ...DEFAULT_TIERS, ...(cfg.aiTiers || {}) };
     try {
+      const { SERVICES, serviceAvailability, resolveService, DEFAULT_SERVICE_TIERS } = await import("../../llm/src/tiers.js");
+      const svcTiers = { ...DEFAULT_SERVICE_TIERS, ...(cfg.serviceTiers || {}) };
       if (action === "set" && aargs[0] && aargs[1]) {
-        if (!TASKS[aargs[0]] || !TIER_NAMES.includes(aargs[1])) throw new Error(`usage: factory ai set <${Object.keys(TASKS).join("|")}> <${TIER_NAMES.join("|")}>`);
-        cfg.aiTiers = { ...tiers, [aargs[0]]: aargs[1] };
+        const isTask = Boolean(TASKS[aargs[0]]);
+        const isSvc = Boolean(SERVICES[aargs[0]]);
+        if ((!isTask && !isSvc) || !TIER_NAMES.includes(aargs[1])) {
+          throw new Error(`usage: factory ai set <${[...Object.keys(TASKS), ...Object.keys(SERVICES)].join("|")}> <${TIER_NAMES.join("|")}>`);
+        }
+        if (isTask) cfg.aiTiers = { ...tiers, [aargs[0]]: aargs[1] };
+        else cfg.serviceTiers = { ...svcTiers, [aargs[0]]: aargs[1] };
         saveUserConfig(cfg);
         console.log(`${aargs[0]} -> ${aargs[1]} tier`);
       } else {
@@ -152,8 +159,18 @@ switch (cmd) {
           console.log(`  ${task.padEnd(9)} ${tiers[task].padEnd(8)} ${chain.length ? `-> ${chain[0].label}` : "-> (nothing configured; heuristic fallback)"}`);
           console.log(`     ${meta.note}`);
         }
+        console.log("\nOTHER PAID SURFACES (factory ai set <service> <tier>):\n");
+        for (const s of serviceAvailability()) {
+          const active = resolveService(s.service, svcTiers);
+          console.log(`  ${s.service.padEnd(11)} ${svcTiers[s.service].padEnd(8)} -> ${active ? active.label : "(none available)"}`);
+          console.log(`     ${s.note}`);
+          for (const t of s.tiers) {
+            const opts = t.options.map((o) => `${o.ready ? "+" : "o"} ${o.label}`).join(", ");
+            console.log(`     ${t.tier.padEnd(8)} ${opts || "(none)"}`);
+          }
+        }
         if (!tierAvailability().some((t) => t.available)) {
-          console.log("\n  Nothing configured yet. The FREE tier costs nothing:");
+          console.log("\n  No LLM configured yet. The FREE tier costs nothing:");
           console.log("    1. install ollama (ollama.com)  2. ollama pull llama3.2");
           console.log("    3. put OLLAMA_MODEL=llama3.2 in .env   -> every AI feature turns on at $0");
         }

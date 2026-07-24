@@ -105,3 +105,73 @@ export function tierAvailability() {
     return { tier, options, available: options.some((o) => o.ready) };
   });
 }
+
+/* ==================================================================
+ * The other three paid surfaces. Same three-tier contract as the LLM:
+ * free is genuinely $0, budget is cents, premium is best-result — and
+ * every one degrades DOWN to free rather than failing.
+ * ================================================================== */
+
+export const SERVICES = {
+  voice: {
+    label: "Voice",
+    note: "free = Windows TTS (robotic but usable) · premium = YOUR cloned voice",
+    tiers: {
+      free: [{ id: "sapi", label: "Windows SAPI (local)", costPerChar: 0, needs: () => process.platform === "win32" }],
+      budget: [
+        { id: "eleven-flash", label: "ElevenLabs Flash", model: "eleven_flash_v2_5", costPerChar: 0.00005, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
+      ],
+      premium: [
+        { id: "eleven-v2", label: "ElevenLabs multilingual v2 (your clone)", model: "eleven_multilingual_v2", costPerChar: 0.00018, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
+      ],
+    },
+  },
+  image: {
+    label: "Thumbnails & images",
+    note: "free = brand-tokened HTML (already excellent) · paid adds generated backgrounds",
+    tiers: {
+      free: [{ id: "html", label: "HTML + system Chrome", costPerImage: 0, needs: () => true }],
+      budget: [{ id: "flux-schnell", label: "Flux schnell (fal.ai)", model: "fal-ai/flux/schnell", costPerImage: 0.003, needs: () => Boolean(process.env.FAL_KEY) }],
+      premium: [{ id: "flux-pro", label: "Flux 1.1 pro (fal.ai)", model: "fal-ai/flux-pro/v1.1", costPerImage: 0.04, needs: () => Boolean(process.env.FAL_KEY) }],
+    },
+  },
+  transcribe: {
+    label: "Footage transcription",
+    note: "all tiers run LOCALLY at $0 — the tier only trades speed for accuracy",
+    tiers: {
+      free: [{ id: "whisper-base", label: "whisper base (local)", model: "base", costPerMin: 0, needs: () => true }],
+      budget: [{ id: "whisper-small", label: "whisper small (local, better)", model: "small", costPerMin: 0, needs: () => true }],
+      premium: [{ id: "whisper-medium", label: "whisper medium (local, best)", model: "medium", costPerMin: 0, needs: () => true }],
+    },
+  },
+};
+
+export const DEFAULT_SERVICE_TIERS = { voice: "free", image: "free", transcribe: "free" };
+
+/** Resolve a service to its usable option, degrading DOWN to free. */
+export function resolveService(service, tiers = {}) {
+  const spec = SERVICES[service];
+  if (!spec) throw new Error(`unknown service ${service}`);
+  const chosen = TIER_NAMES.includes(tiers[service]) ? tiers[service] : DEFAULT_SERVICE_TIERS[service];
+  const order = TIER_NAMES.slice(0, TIER_NAMES.indexOf(chosen) + 1).reverse();
+  for (const tier of order) {
+    for (const opt of spec.tiers[tier] || []) {
+      if (opt.needs()) return { ...opt, tier, service };
+    }
+  }
+  return null;
+}
+
+/** Settings view for all non-LLM services. */
+export function serviceAvailability() {
+  return Object.entries(SERVICES).map(([service, spec]) => ({
+    service,
+    label: spec.label,
+    note: spec.note,
+    tiers: TIER_NAMES.map((tier) => ({
+      tier,
+      options: (spec.tiers[tier] || []).map((o) => ({ label: o.label, ready: o.needs() })),
+      available: (spec.tiers[tier] || []).some((o) => o.needs()),
+    })),
+  }));
+}

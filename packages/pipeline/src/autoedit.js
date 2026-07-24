@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { loadEnv, repoRoot } from "../../shared/src/config.js";
+import { loadEnv, loadUserConfig, repoRoot } from "../../shared/src/config.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
 import { ffprobeDuration } from "./voice.js";
 
@@ -72,13 +72,24 @@ function readDictionary() {
 }
 
 /** Transcribe with word timestamps. Returns flat [{start,end,word}] or null. */
+/** Tiered whisper model — all tiers run locally at $0, trading speed for accuracy. */
+function whisperModel() {
+  try {
+    const cfg = loadUserConfig().serviceTiers || {};
+    return { free: "base", budget: "small", premium: "medium" }[cfg.transcribe] || "base";
+  } catch {
+    return "base";
+  }
+}
+
 function transcribe(input, workDir) {
   const w = whisperCmd();
   if (!w) return null;
   const dict = readDictionary();
-  const args = [input, "--model", "base", "--output_format", "json", "--output_dir", workDir, "--word_timestamps", "True"];
+  const model = whisperModel();
+  const args = [input, "--model", model, "--output_format", "json", "--output_dir", workDir, "--word_timestamps", "True"];
   if (dict.jargon.length) args.push("--initial_prompt", `Glossary: ${dict.jargon.join(", ")}.`);
-  console.log(`  transcribing with ${w.kind}...`);
+  console.log(`  transcribing with ${w.kind} (${model} model)...`);
   const res = run(w.cmd, args, { timeout: 1000 * 60 * 60, env: WHISPER_ENV });
   if (res.status !== 0) {
     console.log(`  transcription failed — captions/filler cuts skipped: ${(res.stderr || "").slice(-200)}`);

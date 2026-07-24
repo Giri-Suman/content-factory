@@ -25,6 +25,7 @@ export default function SettingsPage() {
   const [budgets, setBudgets] = useState([]);
   const [flags, setFlags] = useState(null);
   const [aiTiers, setAiTiers] = useState(null);
+  const [svcTiers, setSvcTiers] = useState(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -39,6 +40,7 @@ export default function SettingsPage() {
         setBudgets(d.budgets || []);
         setFlags(d.flags || null);
         setAiTiers(d.aiTiers || null);
+        setSvcTiers(d.serviceTiers || null);
       });
   }, []);
 
@@ -149,6 +151,37 @@ export default function SettingsPage() {
               <span className="mono">OLLAMA_MODEL=llama3.2</span> in .env.
             </div>
           )}
+        </div>
+      )}
+
+      {svcTiers && (
+        <div className="panel" style={{ marginBottom: 20 }}>
+          <label className="field" style={{ marginTop: 0 }}>
+            Voice, image & transcription tiers — same contract: free is $0, and anything unavailable degrades
+            down instead of failing.
+          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+            {svcTiers.services.map((s) => (
+              <div key={s.service} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ width: 150, fontSize: 13 }}>{s.label}</span>
+                {["free", "budget", "premium"].map((tier) => (
+                  <button
+                    key={tier}
+                    className={`chip${svcTiers.assigned[s.service] === tier ? " on" : ""}`}
+                    title={s.ready[tier] ? "" : "not configured — will fall back to free"}
+                    onClick={() => {
+                      const next = { ...svcTiers.assigned, [s.service]: tier };
+                      setSvcTiers({ ...svcTiers, assigned: next });
+                      put({ serviceTiers: next });
+                    }}
+                  >
+                    {tier}{s.ready[tier] ? "" : " ○"}
+                  </button>
+                ))}
+                <span className="muted" style={{ fontSize: 11, flex: 1 }}>{s.note}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

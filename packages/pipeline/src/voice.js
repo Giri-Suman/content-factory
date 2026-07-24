@@ -60,14 +60,14 @@ function alignmentToWords(alignment) {
   return words;
 }
 
-async function elevenLabs(text, outBase) {
+async function elevenLabs(text, outBase, modelId = "eleven_multilingual_v2") {
   const key = process.env.ELEVENLABS_API_KEY;
   const voiceId = process.env.ELEVENLABS_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_128`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "xi-api-key": key, "content-type": "application/json" },
-    body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+    body: JSON.stringify({ text, model_id: modelId }),
   });
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
@@ -114,10 +114,17 @@ function sapi(text, outBase) {
   return { provider: "sapi", file, durationSec, words: estimateWords(text, durationSec) };
 }
 
+/**
+ * Tier-driven voice. free = Windows SAPI ($0) · budget = ElevenLabs Flash
+ * · premium = ElevenLabs multilingual v2 with YOUR cloned voice. A missing
+ * key degrades DOWN to SAPI rather than failing the render.
+ */
 export async function synthesize(text, outBase) {
-  const useEleven = Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID);
-  const provider = useEleven ? "elevenlabs" : "sapi";
-  const hash = hashText(`${provider}::${text}`);
+  const { resolveService } = await import("../../llm/src/tiers.js");
+  const { loadUserConfig } = await import("../../shared/src/config.js");
+  const opt = resolveService("voice", loadUserConfig().serviceTiers || {}) || { id: "sapi", tier: "free" };
+
+  const hash = hashText(`${opt.id}::${text}`);
   const metaPath = `${outBase}.meta.json`;
   if (existsSync(metaPath)) {
     try {
@@ -127,7 +134,18 @@ export async function synthesize(text, outBase) {
       /* re-synthesize */
     }
   }
-  const meta = useEleven ? await elevenLabs(text, outBase) : sapi(text, outBase);
+
+  let meta;
+  if (opt.id === "sapi") meta = sapi(text, outBase);
+  else {
+    try {
+      meta = await elevenLabs(text, outBase, opt.model);
+    } catch (e) {
+      console.error(`  voice: ${opt.label} failed (${String(e.message).slice(0, 60)}) — falling back to Windows TTS`);
+      meta = sapi(text, outBase);
+    }
+  }
+  meta.tier = opt.tier;
   meta.hash = hash;
   writeFileSync(metaPath, JSON.stringify(meta));
   return meta;
