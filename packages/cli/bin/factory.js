@@ -87,6 +87,50 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "catalog": {
+    const { collection } = await import("../../shared/src/store.js");
+    const [action, ...cargs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "seed-formats" || action === "formats") {
+        const { ensureFormats } = await import("../../studio/src/formats.js");
+        const fmts = ensureFormats();
+        if (action === "formats") for (const f of fmts) console.log(`  #${String(f.num).padStart(2)} [${f.lane.padEnd(9)}] ${f.autoPct}%  ${f.name}`);
+        else console.log(`format registry: ${fmts.length} formats seeded`);
+      } else if (action === "seed-ideas") {
+        const { seedIdeas } = await import("../../studio/src/seedIdeas.js");
+        const r = seedIdeas();
+        console.log(`seed ideas: +${r.added} added, ${r.skipped} already present (${r.total} in bank)`);
+      } else if (action === "fanout" && cargs[0]) {
+        const { fanOut } = await import("../../studio/src/fanout.js");
+        const r = await fanOut(cargs[0]);
+        console.log(`fan-out: ${r.totalAssets} total assets (derivatives: ${r.derivatives.join(", ")})`);
+      } else if (action === "carousel" && cargs[0]) {
+        const { renderCarousel } = await import("../../pipeline/src/carousel.js");
+        const r = renderCarousel(cargs[0]);
+        console.log(`carousel: ${r.files.length} slides -> ${r.outDir}`);
+      } else if (action === "blog" && cargs[0]) {
+        const { composeBlog } = await import("../../studio/src/composers.js");
+        const r = await composeBlog(cargs[0]);
+        console.log(`blog draft: ${r.title} -> ${r.file}`);
+      } else if (action === "newsletter") {
+        const { composeNewsletter } = await import("../../studio/src/composers.js");
+        const r = composeNewsletter();
+        console.log(`newsletter draft -> ${r.file}`);
+      } else if (action === "comments") {
+        const { mineComments } = await import("../../studio/src/composers.js");
+        const r = await mineComments();
+        console.log(`comment miner: ${r.mined} reply-worthy${r.note ? ` (${r.note})` : ""}`);
+      } else {
+        console.error("usage: factory catalog formats|seed-formats|seed-ideas|fanout <id>|carousel <id>|blog <id>|newsletter|comments");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "dryrun": {
     const { dryRun } = await import("../../pipeline/src/dryrun.js");
     try {

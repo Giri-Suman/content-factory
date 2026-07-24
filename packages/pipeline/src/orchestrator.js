@@ -18,6 +18,16 @@ const CAPTURE_HINT = /\b(build|tutorial|walkthrough|let'?s code|screen ?record|s
 /* ---------------- lane routing ---------------- */
 
 export async function routeLane(brief) {
+  // P24: the FormatRegistry is authoritative when the brief carries a format
+  if (brief.formatNum) {
+    try {
+      const { laneForFormat } = await import("../../studio/src/formats.js");
+      const lane = laneForFormat(brief.formatNum);
+      if (lane) return { lane, why: `format #${brief.formatNum} registry`, mode: "registry" };
+    } catch {
+      /* fall through to heuristic */
+    }
+  }
   const text = `${brief.topic} ${brief.payload?.core_idea || ""} ${(brief.payload?.yt_short?.beats || []).join(" ")}`;
   const heuristic = CAPTURE_HINT.test(text) ? "capture" : "synthetic";
   if (providerStatus().active) {

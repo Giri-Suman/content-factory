@@ -44,7 +44,10 @@ export async function PATCH(request) {
   if (becameApproved && !rows[i].pipeline) rows[i].pipeline = { state: "approved", updatedAt: new Date().toISOString(), history: [{ state: "approved", at: new Date().toISOString() }] };
   rows[i].updatedAt = new Date().toISOString();
   write(rows);
-  // P14: approval auto-enters the Idea Bank (via CLI — routes never import factory packages)
-  if (becameApproved) await runCli(["ideabank", "enter", id], 120000).catch(() => {});
+  // P14: approval auto-enters the Idea Bank · P24: and fans out derivatives
+  if (becameApproved) {
+    await runCli(["ideabank", "enter", id], 120000).catch(() => {});
+    await runCli(["catalog", "fanout", id], 120000).catch(() => {});
+  }
   return NextResponse.json({ ok: true, brief: rows[i] });
 }

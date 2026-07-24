@@ -174,6 +174,17 @@ export async function runWorker(argv = []) {
         console.log(`[${stamp()}] lessons: +${r.added} new, ${r.merged} merged (${r.total} total)`);
         return r;
       });
+      // P22: monthly playbook refresh (evidence-based)
+      const { refreshPlaybooks } = await import("../../studio/src/playbooks.js");
+      await withJobRun("playbook-refresh", async () => {
+        const r = refreshPlaybooks();
+        console.log(`[${stamp()}] playbooks: ${r.proposals} proposals, ${r.unverifiedSignals} signals quarantined`);
+        return r;
+      });
+      // P24: weekly newsletter draft + comment mining
+      const { composeNewsletter, mineComments } = await import("../../studio/src/composers.js");
+      await withJobRun("newsletter", async () => composeNewsletter());
+      await withJobRun("comment-miner", async () => mineComments());
     }
   };
 

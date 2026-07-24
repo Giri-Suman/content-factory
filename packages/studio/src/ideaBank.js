@@ -115,26 +115,34 @@ export function rankIdeas() {
   const hours = Number(cfg.availableHoursPerWeek) || 6;
   const bank = collection("ideabank").find((i) => i.status === "backlog" || i.status === "scheduled");
 
-  // pillar balance from the last 14 days of MyPost history
+  // pillar + format balance from the last 14 days of MyPost history (P24)
   const cutoff = Date.now() - 14 * 864e5;
   const recent = collection("myposts").find((m) => m.postedAt && new Date(m.postedAt).getTime() >= cutoff);
   const byPillar = {};
-  for (const m of recent) if (m.pillar) byPillar[m.pillar] = (byPillar[m.pillar] || 0) + 1;
+  const byFormat = {};
+  for (const m of recent) {
+    if (m.pillar) byPillar[m.pillar] = (byPillar[m.pillar] || 0) + 1;
+    if (m.formatNum) byFormat[m.formatNum] = (byFormat[m.formatNum] || 0) + 1;
+  }
   const total = recent.filter((m) => m.pillar).length;
+  const totalFmt = recent.filter((m) => m.formatNum).length;
 
   const factors = (idea) => {
     const share = total > 0 ? (byPillar[idea.pillar] || 0) / total : 0;
     const pillarBalance = Math.max(0.4, Math.round((1.3 - share * 1.2) * 100) / 100);
+    // P24: format balance — penalize repeating the same format (avoid 5 listicles in a row)
+    const fmtShare = totalFmt > 0 && idea.formatNum ? (byFormat[idea.formatNum] || 0) / totalFmt : 0;
+    const formatBalance = Math.max(0.5, Math.round((1.2 - fmtShare) * 100) / 100);
     const effortFit =
       idea.effort === "S" ? 1 : idea.effort === "M" ? (hours >= 5 ? 1 : 0.6) : hours >= 10 ? 0.9 : hours >= 6 ? 0.6 : 0.3;
     const freshness = idea.kind === "trend" && idea.deadline && Date.now() > new Date(idea.deadline).getTime() ? 0.3 : 1;
-    return { pillarBalance, effortFit, freshness };
+    return { pillarBalance, formatBalance, effortFit, freshness };
   };
 
   return bank
     .map((idea) => {
       const f = factors(idea);
-      return { ...idea, factors: f, rank: Math.round(idea.score * f.pillarBalance * f.effortFit * f.freshness * 10) / 10 };
+      return { ...idea, factors: f, rank: Math.round(idea.score * f.pillarBalance * f.formatBalance * f.effortFit * f.freshness * 10) / 10 };
     })
     .sort((a, b) => b.rank - a.rank);
 }
