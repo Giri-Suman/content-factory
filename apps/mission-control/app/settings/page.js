@@ -24,6 +24,7 @@ export default function SettingsPage() {
   const [projection, setProjection] = useState(null);
   const [budgets, setBudgets] = useState([]);
   const [flags, setFlags] = useState(null);
+  const [aiTiers, setAiTiers] = useState(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -37,6 +38,7 @@ export default function SettingsPage() {
         setProjection(d.dailyProjection || null);
         setBudgets(d.budgets || []);
         setFlags(d.flags || null);
+        setAiTiers(d.aiTiers || null);
       });
   }, []);
 
@@ -89,6 +91,66 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {aiTiers && (
+        <div className="panel" style={{ marginBottom: 20 }}>
+          <label className="field" style={{ marginTop: 0 }}>
+            AI tiers — pick what each job is worth. Free is $0 forever (local Ollama); a failure falls to a
+            cheaper tier, never a pricier one.
+          </label>
+
+          <div style={{ display: "flex", gap: 10, margin: "10px 0", flexWrap: "wrap" }}>
+            {aiTiers.availability.map((t) => (
+              <div key={t.tier} className="panel" style={{ flex: 1, minWidth: 190, padding: "10px 12px", borderColor: t.available ? "var(--green)" : "var(--border)" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                  <strong style={{ textTransform: "capitalize" }}>{t.tier}</strong>
+                  <span className={`badge ${t.available ? "ok" : "cool"}`} style={{ fontSize: 10 }}>{t.available ? "ready" : "not set up"}</span>
+                  {t.tier === "free" && <span className="muted" style={{ fontSize: 10.5 }}>$0</span>}
+                </div>
+                {t.options.map((o) => (
+                  <div key={o.label} className="muted" style={{ fontSize: 11.5, padding: "1px 0" }}>
+                    {o.ready ? "● " : "○ "}{o.label} <span className="mono">{o.model}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+            {[
+              ["score", "Scoring & judging", "runs hundreds of times — cheapest tier saves the most"],
+              ["script", "Scripts & briefs", "a few calls per video — where premium actually pays"],
+              ["analysis", "Analysis & lessons", "autopsies, memos, lesson distillation"],
+            ].map(([task, label, note]) => (
+              <div key={task} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ width: 150, fontSize: 13 }}>{label}</span>
+                {["free", "budget", "premium"].map((tier) => (
+                  <button
+                    key={tier}
+                    className={`chip${aiTiers.assigned[task] === tier ? " on" : ""}`}
+                    onClick={() => {
+                      const next = { ...aiTiers.assigned, [task]: tier };
+                      setAiTiers({ ...aiTiers, assigned: next });
+                      put({ aiTiers: next });
+                    }}
+                  >
+                    {tier}
+                  </button>
+                ))}
+                <span className="muted" style={{ fontSize: 11, flex: 1 }}>{note}</span>
+              </div>
+            ))}
+          </div>
+
+          {!aiTiers.availability.some((t) => t.available) && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+              Nothing configured — every AI feature is running on heuristic fallbacks. The free tier costs nothing:
+              install <span className="mono">ollama</span>, run <span className="mono">ollama pull llama3.2</span>, then put{" "}
+              <span className="mono">OLLAMA_MODEL=llama3.2</span> in .env.
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="panel" style={{ marginBottom: 20 }}>
         <label className="field" style={{ marginTop: 0 }}>

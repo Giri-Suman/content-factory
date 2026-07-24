@@ -39,12 +39,21 @@ export function modelFor(task, provider = resolveProvider()) {
   }
 }
 
+/**
+ * `active` is the gate ~23 AI code paths check. It's true when ANY tier has
+ * a usable option — so a purely local Ollama setup ($0) unlocks the entire
+ * system exactly like a paid key would.
+ */
 export function providerStatus() {
+  const anthropic = Boolean(process.env.ANTHROPIC_API_KEY);
+  const openrouter = Boolean(process.env.OPENROUTER_API_KEY);
+  const ollama = Boolean(process.env.OLLAMA_MODEL);
   return {
     active: resolveProvider(),
-    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
-    ollama: Boolean(process.env.OLLAMA_MODEL),
+    anthropic,
+    openrouter,
+    ollama,
+    freeTierReady: ollama || openrouter,
     scoringModel: modelFor("score"),
     scriptModel: modelFor("script"),
   };
@@ -117,29 +126,62 @@ async function ollamaChat({ system, user, model }) {
   return data.message.content;
 }
 
+const CALLERS = { anthropic: anthropicChat, openrouter: openrouterChat, ollama: ollamaChat };
+
+/** Per-task tier assignment from data/config.json (Settings UI writes it). */
+function configuredTiers() {
+  try {
+    // eslint-disable-next-line no-undef
+    const { loadUserConfig } = globalThis.__factoryConfig || {};
+    if (loadUserConfig) return loadUserConfig().aiTiers || {};
+  } catch {
+    /* fall through */
+  }
+  return {};
+}
+
 /**
- * chat({ system, user, task: "score"|"script", maxTokens }) -> { text, provider, model }
- * Returns null when no provider is configured (caller falls back gracefully).
+ * chat({ system, user, task, maxTokens }) -> { text, provider, model, tier }
+ *
+ * Tier-driven: the task's tier decides which options to try, in order,
+ * falling DOWN to cheaper tiers on failure (never up). Returns null only
+ * when nothing at all is configured — callers then use their heuristic
+ * fallback, exactly as before.
  */
-export async function chat({ system, user, task = "score", maxTokens = 4000 }) {
-  const provider = resolveProvider();
-  if (!provider) return null;
-  const model = modelFor(task, provider);
-  const args = { system, user, maxTokens, task, model };
-  const text =
-    provider === "anthropic"
-      ? await anthropicChat(args)
-      : provider === "openrouter"
-        ? await openrouterChat(args)
-        : await ollamaChat(args);
-  // P23 cost estimate (ollama = local = $0; skip logging then)
-  if (provider !== "ollama") {
+export async function chat({ system, user, task = "score", maxTokens = 4000, tier: tierOverride }) {
+  const { resolveChain } = await import("./tiers.js");
+  let tiers = configuredTiers();
+  if (!Object.keys(tiers).length) {
     try {
-      const { logCost, COST } = await import("../../shared/src/cost.js");
-      logCost(provider === "anthropic" || provider === "openrouter" ? "llm" : "llm", task === "script" ? COST.llmScript : COST.llmScore, { task, provider, videoId: globalThis.__factoryVideoId || null });
+      const { loadUserConfig } = await import("../../shared/src/config.js");
+      tiers = loadUserConfig().aiTiers || {};
     } catch {
-      /* cost logging is best-effort */
+      tiers = {};
     }
   }
-  return { text, provider, model };
+  const taskKey = task === "script" ? "script" : task === "analysis" ? "analysis" : "score";
+  const { chain } = resolveChain(taskKey, tierOverride ? { ...tiers, [taskKey]: tierOverride } : tiers);
+  if (!chain.length) return null; // nothing configured — caller degrades
+
+  const errors = [];
+  for (const opt of chain) {
+    try {
+      const text = await CALLERS[opt.provider]({ system, user, maxTokens, task, model: opt.model });
+      if (!text) throw new Error("empty response");
+      if (opt.costPerCall > 0) {
+        try {
+          const { logCost } = await import("../../shared/src/cost.js");
+          logCost("llm", opt.costPerCall, { task, provider: opt.provider, tier: opt.tier, model: opt.model, videoId: globalThis.__factoryVideoId || null });
+        } catch {
+          /* cost logging is best-effort */
+        }
+      }
+      return { text, provider: opt.provider, model: opt.model, tier: opt.tier };
+    } catch (err) {
+      errors.push(`${opt.label}: ${String(err.message).slice(0, 80)}`);
+    }
+  }
+  // every option in and below the chosen tier failed — degrade like keyless
+  console.error(`  all AI options failed (${errors.join(" | ")}) — using the built-in fallback`);
+  return null;
 }

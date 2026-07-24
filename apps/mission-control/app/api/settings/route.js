@@ -45,6 +45,23 @@ export async function GET() {
       availableHoursPerWeek: config.availableHoursPerWeek || 6,
     },
     env: readEnvKeys(),
+    aiTiers: {
+      assigned: { score: "free", script: "budget", analysis: "free", ...(config.aiTiers || {}) },
+      availability: [
+        { tier: "free", options: [
+          { label: "Ollama (local)", model: process.env.OLLAMA_MODEL || "llama3.2", ready: envSet("OLLAMA_MODEL") },
+          { label: "OpenRouter :free", model: "llama-3.3-70b:free", ready: envSet("OPENROUTER_API_KEY") },
+        ] },
+        { tier: "budget", options: [
+          { label: "OpenRouter budget", model: "gemini-2.0-flash", ready: envSet("OPENROUTER_API_KEY") },
+          { label: "Claude Haiku", model: "claude-haiku-4-5", ready: envSet("ANTHROPIC_API_KEY") },
+        ] },
+        { tier: "premium", options: [
+          { label: "Claude Sonnet 5", model: "claude-sonnet-5", ready: envSet("ANTHROPIC_API_KEY") },
+          { label: "Sonnet via OpenRouter", model: "anthropic/claude-sonnet-5", ready: envSet("OPENROUTER_API_KEY") },
+        ] },
+      ].map((t) => ({ ...t, available: t.options.some((o) => o.ready) })),
+    },
     quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
     budgets: budgetDashboard(),
     flags: {
@@ -76,6 +93,13 @@ export async function PUT(request) {
     config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
   }
   if (typeof body.autoTune === "boolean") config.autoTune = body.autoTune;
+  if (body.aiTiers && typeof body.aiTiers === "object") {
+    const valid = ["free", "budget", "premium"];
+    config.aiTiers = { ...(config.aiTiers || {}) };
+    for (const task of ["score", "script", "analysis"]) {
+      if (valid.includes(body.aiTiers[task])) config.aiTiers[task] = body.aiTiers[task];
+    }
+  }
   if (body.availableHoursPerWeek !== undefined) {
     const h = Number(body.availableHoursPerWeek);
     config.availableHoursPerWeek = Number.isFinite(h) ? Math.max(1, Math.min(60, h)) : 6;

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import path from "node:path";
 import { doctor } from "../src/doctor.js";
 import { c } from "../src/colors.js";
 
@@ -85,6 +86,83 @@ switch (cmd) {
     const { runScore } = await import("../../radar/src/clusters.js");
     await runScore();
     process.exit(0);
+    break;
+  }
+  case "tools": {
+    const T = await import("../../studio/src/creatorTools.js");
+    const [action, ...targs] = rest.filter((a) => !a.startsWith("--"));
+    try {
+      if (action === "captions" && targs[0]) {
+        const r = T.captionFiles(targs[0]);
+        console.log(`captions: ${r.cues} cues -> ${path.basename(r.srtFile)} + ${path.basename(r.vttFile)}`);
+        console.log("  upload the .srt with the video — YouTube indexes it for search (burned-in text isn't readable)");
+      } else if (action === "chapters" && targs[0]) {
+        const r = T.chapters(targs[0]);
+        console.log(r.valid ? "chapters (paste into the description):" : `only ${r.chapters.length} chapters — YouTube needs 3+`);
+        console.log(r.text);
+      } else if (action === "teleprompter" && targs[0]) {
+        const r = T.teleprompter(targs[0]);
+        console.log(`\n${r.topic}\n${"-".repeat(50)}`);
+        for (const b of r.blocks) console.log(`[${b.kind}  ~${b.seconds}s]\n  ${b.text}\n`);
+        console.log(`${r.wordCount} words · ~${r.totalSec}s target`);
+      } else if (action === "calendar") {
+        const r = T.calendar(Number(targs[0]) || 14);
+        for (const d of r.days) {
+          const bits = [...d.slotted.map((s) => `${s.topic.slice(0, 30)} (${s.state || "planned"})`), ...d.scheduled.map((s) => `${s.platform}`)];
+          console.log(`  ${d.date} ${d.weekday}  ${bits.length ? bits.join(" · ") : "—"}`);
+        }
+        if (r.cadenceWarning) console.log(`\n  ⚠ ${r.cadenceWarning}`);
+      } else if (action === "description" && targs[0]) {
+        const r = await T.descriptionKit(targs[0], targs[1]);
+        console.log(`\n${r.description}\n`);
+        console.log(`${r.chars} chars ${r.withinLimit ? "(ok)" : "(OVER 5000 limit)"}`);
+      } else {
+        console.error("usage: factory tools captions <renderId> | chapters <renderId> | teleprompter <briefId> | calendar [days] | description <briefId> [renderId]");
+        process.exit(1);
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "ai": {
+    const { tierAvailability, TASKS, DEFAULT_TIERS, TIER_NAMES, resolveChain } = await import("../../llm/src/tiers.js");
+    const { loadUserConfig, saveUserConfig, loadEnv } = await import("../../shared/src/config.js");
+    loadEnv();
+    const [action, ...aargs] = rest.filter((a) => !a.startsWith("--"));
+    const cfg = loadUserConfig();
+    const tiers = { ...DEFAULT_TIERS, ...(cfg.aiTiers || {}) };
+    try {
+      if (action === "set" && aargs[0] && aargs[1]) {
+        if (!TASKS[aargs[0]] || !TIER_NAMES.includes(aargs[1])) throw new Error(`usage: factory ai set <${Object.keys(TASKS).join("|")}> <${TIER_NAMES.join("|")}>`);
+        cfg.aiTiers = { ...tiers, [aargs[0]]: aargs[1] };
+        saveUserConfig(cfg);
+        console.log(`${aargs[0]} -> ${aargs[1]} tier`);
+      } else {
+        console.log("\nAI TIERS — what's ready right now:\n");
+        for (const t of tierAvailability()) {
+          console.log(`  ${t.tier.padEnd(8)} ${t.available ? "READY" : "not set up"}`);
+          for (const o of t.options) console.log(`     ${o.ready ? "+" : "o"} ${o.label.padEnd(22)} ${o.model}`);
+        }
+        console.log("\nPER-TASK ASSIGNMENT (factory ai set <task> <tier>):\n");
+        for (const [task, meta] of Object.entries(TASKS)) {
+          const { chain } = resolveChain(task, tiers);
+          console.log(`  ${task.padEnd(9)} ${tiers[task].padEnd(8)} ${chain.length ? `-> ${chain[0].label}` : "-> (nothing configured; heuristic fallback)"}`);
+          console.log(`     ${meta.note}`);
+        }
+        if (!tierAvailability().some((t) => t.available)) {
+          console.log("\n  Nothing configured yet. The FREE tier costs nothing:");
+          console.log("    1. install ollama (ollama.com)  2. ollama pull llama3.2");
+          console.log("    3. put OLLAMA_MODEL=llama3.2 in .env   -> every AI feature turns on at $0");
+        }
+      }
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
     break;
   }
   case "catalog": {
