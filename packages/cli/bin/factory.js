@@ -709,7 +709,10 @@ switch (cmd) {
   }
   case "worker": {
     const { runWorker } = await import("../src/worker.js");
-    await runWorker(rest);
+    // returns false when the singleton lock is held — exit non-zero so a
+    // supervisor/script can tell "already running" from "ran and stopped"
+    const started = await runWorker(rest);
+    if (started === false) process.exit(1);
     break;
   }
   case "digest": {

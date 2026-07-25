@@ -1,10 +1,59 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync, unlinkSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { loadEnv } from "../../shared/src/config.js";
+import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { withJobRun } from "../../shared/src/jobs.js";
 
 const CLI = fileURLToPath(new URL("../bin/factory.js", import.meta.url));
+const LOCK = path.join(repoRoot, "data", "worker.lock");
+
+/**
+ * Singleton lock. Two workers would double every collect — doubling API
+ * spend and racing each other's writes into the JSON store. A stale lock
+ * (crashed process) is detected and reclaimed rather than blocking forever.
+ */
+function acquireLock() {
+  mkdirSync(path.dirname(LOCK), { recursive: true });
+  if (existsSync(LOCK)) {
+    try {
+      const held = JSON.parse(readFileSync(LOCK, "utf8"));
+      let alive = false;
+      try {
+        process.kill(held.pid, 0); // signal 0 = "does this pid exist?"
+        alive = true;
+      } catch {
+        alive = false;
+      }
+      if (alive && held.pid !== process.pid) {
+        console.error(`\nanother worker is already running (pid ${held.pid}, started ${held.startedAt}).`);
+        console.error("two workers would double-collect and double-spend. Stop that one first,");
+        console.error(`or delete ${path.relative(repoRoot, LOCK)} if you're sure it's dead.\n`);
+        return false;
+      }
+      console.log(`  (reclaiming stale lock from dead pid ${held.pid})`);
+    } catch {
+      /* unreadable lock — treat as stale */
+    }
+  }
+  writeFileSync(LOCK, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+  const release = () => {
+    try {
+      const held = JSON.parse(readFileSync(LOCK, "utf8"));
+      if (held.pid === process.pid) unlinkSync(LOCK);
+    } catch {
+      /* already gone */
+    }
+  };
+  process.on("exit", release);
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(sig, () => {
+      release();
+      process.exit(0);
+    });
+  }
+  return true;
+}
 
 /**
  * P8 worker — the long-running heartbeat (plain setInterval; the repo's
@@ -32,6 +81,7 @@ async function guard(name, fn) {
 
 export async function runWorker(argv = []) {
   loadEnv();
+  if (!acquireLock()) return false;
   const fast = argv.includes("--fast");
   const collectMs = fast ? 90e3 : 30 * 60e3;
   const youtubeMs = fast ? 150e3 : 60 * 60e3;
@@ -124,6 +174,11 @@ export async function runWorker(argv = []) {
     }
     const { alerts } = board();
     for (const a of alerts) console.log(`[${stamp()}] ⚠ stuck: ${a.topic.slice(0, 40)} — ${a.reason}`);
+
+    // due title A/B swaps (judged on views-vs-median; a proxy, and labelled so)
+    const { runTitleTests } = await import("../../studio/src/engagement.js");
+    const t = runTitleTests();
+    if (t.swapped) console.log(`[${stamp()}] title A/B: ${t.swapped} swap(s) due — set variant B in Studio`);
   };
 
   const digestTick = async () => {
@@ -185,6 +240,17 @@ export async function runWorker(argv = []) {
       const { composeNewsletter, mineComments } = await import("../../studio/src/composers.js");
       await withJobRun("newsletter", async () => composeNewsletter());
       await withJobRun("comment-miner", async () => mineComments());
+      // draft replies for anything the miner just surfaced (drafts only —
+      // nothing is ever posted automatically)
+      const { draftReplies } = await import("../../studio/src/engagement.js");
+      await withJobRun("reply-drafts", async () => {
+        const r = await draftReplies({ limit: 10 });
+        console.log(`[${stamp()}] reply drafts: ${r.note || `${r.drafted} ready to review`}`);
+        return r;
+      });
+      // weekly data hygiene (dry-run report only — pruning stays manual)
+      const { prune } = await import("./prune.js");
+      await withJobRun("prune-report", async () => prune([]));
     }
   };
 
