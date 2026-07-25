@@ -88,6 +88,35 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "health": {
+    const { printHealth } = await import("../src/health.js");
+    const green = await printHealth();
+    process.exit(green ? 0 : 1);
+    break;
+  }
+  case "prune": {
+    const { prune } = await import("../src/prune.js");
+    await prune(rest);
+    process.exit(0);
+    break;
+  }
+  case "longform": {
+    const { mineLongform } = await import("../../pipeline/src/longform.js");
+    const ok = await mineLongform(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "batch": {
+    const { batchProduce } = await import("../../pipeline/src/batch.js");
+    try {
+      await batchProduce(rest);
+      process.exit(0);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "tools": {
     const T = await import("../../studio/src/creatorTools.js");
     const [action, ...targs] = rest.filter((a) => !a.startsWith("--"));
@@ -112,6 +141,70 @@ switch (cmd) {
           console.log(`  ${d.date} ${d.weekday}  ${bits.length ? bits.join(" · ") : "—"}`);
         }
         if (r.cadenceWarning) console.log(`\n  ⚠ ${r.cadenceWarning}`);
+      } else if (action === "cta") {
+        const E = await import("../../studio/src/engagement.js");
+        if (targs[0] === "add") {
+          const added = E.addCta({ platform: targs[1], text: targs.slice(2).join(" ") });
+          console.log(`added CTA for ${added.platform}: ${added.text}`);
+        } else if (targs[0] === "next") {
+          const p = E.nextCta(targs[1] || "yt_short");
+          console.log(p ? `[${p.kind}] ${p.text}\n  (${p.note})` : "no CTAs for that platform");
+        } else {
+          const r = E.ctaLibrary({ platform: targs[0] });
+          console.log(`\nCTA library (${r.ctas.length}):\n`);
+          for (const c of r.ctas) console.log(`  [${c.platform.padEnd(11)} ${c.kind.padEnd(9)} used ${c.uses}x] ${c.text}\n      ${c.note || ""}`);
+          console.log("\nend-screen plans:");
+          for (const [plat, tips] of Object.entries(r.endScreens)) {
+            console.log(`  ${plat}:`);
+            for (const t of tips) console.log(`     · ${t}`);
+          }
+        }
+      } else if (action === "replies") {
+        const E = await import("../../studio/src/engagement.js");
+        const r = await E.draftReplies({ limit: Number(targs[0]) || 10 });
+        if (r.note) console.log(r.note);
+        else {
+          console.log(`drafted ${r.drafted} reply/replies (${r.mode} mode) — review before pasting:\n`);
+          const { collection } = await import("../../shared/src/store.js");
+          for (const l of collection("commentleads").find((x) => x.replyDraft).slice(0, r.drafted)) {
+            console.log(`  Q: ${l.comment.slice(0, 70)}\n  A: ${l.replyDraft}\n`);
+          }
+        }
+      } else if (action === "abtitle") {
+        const E = await import("../../studio/src/engagement.js");
+        if (targs[0] === "run") {
+          const r = E.runTitleTests();
+          console.log(`title tests: ${r.swapped} swapped now, ${r.pending} still pending`);
+        } else if (targs[0]) {
+          const t = await E.scheduleTitleAB(targs[0], { variantB: targs.slice(1).join(" ") || undefined });
+          console.log(`A/B scheduled:\n  A: ${t.variantA}\n  B: ${t.variantB}\n  swap at ${t.swapAt}\n  metric: ${t.metric}`);
+        } else {
+          console.error("usage: factory tools abtitle <myPostId> [variant B text] | abtitle run");
+          process.exit(1);
+        }
+      } else if (action === "gaps") {
+        const G = await import("../../studio/src/growthTools.js");
+        const r = G.catalogGaps();
+        console.log(`\nback-catalog gaps — ${r.publishedCount} published · ${r.candidatesConsidered} signals · ${r.coveredCount} covered · ${r.gapCount} uncovered:\n`);
+        for (const g of r.gaps) console.log(`  ${String(Math.round(g.demand)).padStart(4)}  [${g.source.padEnd(8)}] ${g.title.slice(0, 58)}`);
+      } else if (action === "repurpose") {
+        const G = await import("../../studio/src/growthTools.js");
+        const r = G.repurposeScan();
+        if (r.note) console.log(`${r.note} (have ${r.posts})`);
+        else {
+          console.log(`\nrepurpose scan — ${r.posts} posts, median ${r.medianViews.toLocaleString()} views:\n`);
+          for (const s of r.suggestions) console.log(`  [${s.kind.padEnd(6)}] ${s.title.slice(0, 44)}\n            ${s.why}`);
+        }
+      } else if (action === "competitors") {
+        const G = await import("../../studio/src/growthTools.js");
+        const r = G.competitorDiff({ days: Number(targs[0]) || 7 });
+        if (r.note) console.log(r.note);
+        else {
+          console.log(`\ncompetitor diff — ${r.watching} channels, last ${r.windowDays}d:\n`);
+          for (const o of r.newOutliers) console.log(`  ${o.ratio}x  [${o.channel.slice(0, 16)}] ${o.title.slice(0, 46)}${o.isShort ? " (short)" : ""}`);
+          console.log(`\n  shorts share: ${r.formatShift.recentShortsPct}% now vs ${r.formatShift.priorShortsPct}% prior window`);
+          for (const c of r.cadence) console.log(`  ${c.delta > 0 ? "+" : ""}${c.delta} uploads  ${c.channel}`);
+        }
       } else if (action === "description" && targs[0]) {
         const r = await T.descriptionKit(targs[0], targs[1]);
         console.log(`\n${r.description}\n`);

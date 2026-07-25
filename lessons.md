@@ -90,3 +90,9 @@ once; append after every failed attempt or surprise.
   (P12 discover→watchlist) reads the STALE handle inside watch() →
   **pass the value directly (`watch(c.id)`), never setState-then-read in
   the same handler.**
+
+- `Number(flagValue) || DEFAULT` silently ignored an explicit `0` — hit
+  TWICE in one session (`batch --max-cost=0` still spent; `prune --days=0`
+  still used 30) → **for any numeric CLI flag where 0 is meaningful, check
+  presence explicitly: `raw !== undefined && Number.isFinite(Number(raw))
+  ? Number(raw) : DEFAULT`. Never `||` a numeric default.**
