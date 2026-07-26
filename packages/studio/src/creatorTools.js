@@ -31,28 +31,73 @@ function loadProps(renderId) {
   return JSON.parse(readFileSync(p, "utf8"));
 }
 
+/** Parse word timings out of an AI-Cut .ass file (its \kf sweep IS the timing). */
+function cuesFromAss(renderId) {
+  const assPath = path.join(repoRoot, "data", "build", renderId, "vert.ass");
+  if (!existsSync(assPath)) return [];
+  const toSec = (t) => {
+    const [h, m, s] = t.split(":");
+    return Number(h) * 3600 + Number(m) * 60 + Number(s);
+  };
+  return readFileSync(assPath, "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith("Dialogue:"))
+    .map((line) => {
+      const parts = line.slice(9).split(",");
+      const text = parts.slice(9).join(",").replace(/\{[^}]*\}/g, "").trim();
+      return { start: toSec(parts[1].trim()), end: toSec(parts[2].trim()), text };
+    })
+    .filter((c) => c.text);
+}
+
 /* ---------------- 1. caption sidecars (.srt / .vtt) ---------------- */
 
+/**
+ * Handles all three render shapes the factory produces:
+ *   scripted  { scenes[], timeline }  — per-scene word timings
+ *   math      { words[], totalFrames } — one flat overlay track
+ *   AI-Cut    vert.ass                 — timings already live in the ASS
+ */
 export function captionFiles(renderId) {
-  const props = loadProps(renderId);
-  const fps = props.timeline.fps;
-  const cues = [];
+  let cues = [];
 
-  props.scenes.forEach((scene, i) => {
-    const startSec = props.timeline.scenes[i].start / fps;
-    const words = scene.words || [];
-    if (!words.length) return;
-    // group into readable 2-4 word cues on the real word timings
-    for (let w = 0; w < words.length; w += 4) {
-      const chunk = words.slice(w, w + 4);
-      cues.push({
-        start: startSec + chunk[0].start,
-        end: startSec + chunk[chunk.length - 1].end,
-        text: chunk.map((x) => x.word).join(" ").trim(),
+  const propsPath = path.join(repoRoot, "data", "build", renderId, "props.json");
+  if (existsSync(propsPath)) {
+    const props = JSON.parse(readFileSync(propsPath, "utf8"));
+    const group = (words, offset = 0) => {
+      for (let w = 0; w < words.length; w += 4) {
+        const chunk = words.slice(w, w + 4);
+        cues.push({
+          start: offset + chunk[0].start,
+          end: offset + chunk[chunk.length - 1].end,
+          text: chunk.map((x) => x.word).join(" ").trim(),
+        });
+      }
+    };
+
+    if (props.timeline?.scenes && Array.isArray(props.scenes)) {
+      const fps = props.timeline.fps || 30;
+      props.scenes.forEach((scene, i) => {
+        const startSec = (props.timeline.scenes[i]?.start || 0) / fps;
+        if (scene.words?.length) group(scene.words, startSec);
       });
+    } else if (Array.isArray(props.words) && props.words.length) {
+      group(props.words); // math / ShortOverlay: one flat track, already absolute
     }
-  });
-  if (!cues.length) throw new Error("no word timings in this render (voice step produced none)");
+  }
+
+  if (!cues.length) cues = cuesFromAss(renderId); // AI-Cut footage
+  if (!cues.length) {
+    throw new Error(
+      `no word timings found for ${renderId} — captions need either a voiced render (scripted/math) or an AI-Cut edit with whisper transcription`
+    );
+  }
+
+  // players double-display overlapping cues: clamp each end to the next start
+  cues.sort((a, b) => a.start - b.start);
+  for (let i = 0; i < cues.length - 1; i++) {
+    if (cues[i].end > cues[i + 1].start) cues[i].end = Math.max(cues[i].start + 0.2, cues[i + 1].start - 0.01);
+  }
 
   const srt = cues.map((c, i) => `${i + 1}\n${ts(c.start)} --> ${ts(c.end)}\n${c.text}\n`).join("\n");
   const vtt = `WEBVTT\n\n${cues.map((c) => `${ts(c.start, false)} --> ${ts(c.end, false)}\n${c.text}\n`).join("\n")}`;
@@ -70,9 +115,13 @@ export function captionFiles(renderId) {
 
 export function chapters(renderId) {
   const props = loadProps(renderId);
-  const fps = props.timeline.fps;
+  if (!props.timeline?.scenes || !Array.isArray(props.scenes)) {
+    // math/overlay renders are one continuous piece — chapters don't apply
+    return { chapters: [], text: "", valid: false, note: "this render has no scene timeline (math/overlay renders are a single segment)" };
+  }
+  const fps = props.timeline.fps || 30;
   const rows = props.scenes.map((scene, i) => {
-    const startSec = props.timeline.scenes[i].start / fps;
+    const startSec = (props.timeline.scenes[i]?.start || 0) / fps;
     const first = (scene.voiceover || "").split(/[.!?]/)[0] || scene.type;
     return { at: startSec, label: first.trim().slice(0, 48) || scene.type };
   });

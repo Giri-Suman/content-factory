@@ -127,8 +127,11 @@ switch (cmd) {
         console.log("  upload the .srt with the video — YouTube indexes it for search (burned-in text isn't readable)");
       } else if (action === "chapters" && targs[0]) {
         const r = T.chapters(targs[0]);
-        console.log(r.valid ? "chapters (paste into the description):" : `only ${r.chapters.length} chapters — YouTube needs 3+`);
-        console.log(r.text);
+        if (r.note) console.log(r.note);
+        else {
+          console.log(r.valid ? "chapters (paste into the description):" : `only ${r.chapters.length} chapters — YouTube needs 3+`);
+          console.log(r.text);
+        }
       } else if (action === "teleprompter" && targs[0]) {
         const r = T.teleprompter(targs[0]);
         console.log(`\n${r.topic}\n${"-".repeat(50)}`);
