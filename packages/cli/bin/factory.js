@@ -100,6 +100,12 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "reframe": {
+    const { reframe } = await import("../../pipeline/src/reframe.js");
+    const ok = await reframe(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
   case "longform": {
     const { mineLongform } = await import("../../pipeline/src/longform.js");
     const ok = await mineLongform(rest);
@@ -144,6 +150,75 @@ switch (cmd) {
           console.log(`  ${d.date} ${d.weekday}  ${bits.length ? bits.join(" · ") : "—"}`);
         }
         if (r.cadenceWarning) console.log(`\n  ⚠ ${r.cadenceWarning}`);
+      } else if (action === "translate" && targs[0]) {
+        const K = await import("../../studio/src/creatorKit.js");
+        const langs = targs.slice(1).length ? targs.slice(1) : ["es", "hi"];
+        const r = await K.translateCaptions(targs[0], langs);
+        console.log(`translated ${r.cues} cues into ${r.made.length} language(s):`);
+        for (const m of r.made) console.log(`  ${m.name.padEnd(12)} -> captions.${m.code}.srt`);
+      } else if (action === "pacing") {
+        const K = await import("../../studio/src/creatorKit.js");
+        const { collection: coll } = await import("../../shared/src/store.js");
+        // treat arg 1 as a brief id only if such a brief really exists,
+        // otherwise it's free text to measure
+        if (targs.length === 1 && coll("briefs").get(targs[0])) {
+          const r = K.pacingForBrief(targs[0]);
+          console.log(`\npacing for brief (target ${r.target}s):`);
+          console.log(`  WHOLE: ${r.whole.words} words -> ~${r.whole.estSec}s  [${r.whole.verdict}]`);
+          console.log(`         ${r.whole.advice}\n`);
+          for (const p of r.perPart) console.log(`  ${p.name.padEnd(8)} ${String(p.words).padStart(3)}w ~${String(p.estSec).padStart(5)}s  ${p.verdict}`);
+        } else {
+          const r = K.pacingCheck(targs.join(" "));
+          console.log(`${r.words} words -> ~${r.estSec}s (target ${r.targetSec}s) — ${r.verdict}\n  ${r.advice}`);
+        }
+      } else if (action === "link") {
+        const K = await import("../../studio/src/creatorKit.js");
+        if (targs[0] === "add" && targs[1] && targs[2]) {
+          const l = K.addLink({ label: targs[1], url: targs[2], kind: targs[3] || "product" });
+          console.log(`added ${l.kind}: ${l.label} -> ${l.url}`);
+        } else {
+          const r = K.linkKit({ videoId: targs[0] || "video" });
+          console.log(`\nlink block (${r.count} link(s), UTM-tagged so you can attribute clicks):\n`);
+          console.log(r.block);
+        }
+      } else if (action === "stock") {
+        const K = await import("../../studio/src/creatorKit.js");
+        // flags live on `rest` — `targs` already had them stripped
+        const kind = rest.includes("--music") ? "music" : rest.includes("--photo") ? "photo" : "video";
+        const q = targs.join(" ");
+        if (!q) {
+          console.error('usage: factory tools stock "<query>" [--music|--photo]');
+          process.exit(1);
+        }
+        const r = await K.stockSearch(q, { kind });
+        if (r.keyless) {
+          console.log(`\n${r.note}\n`);
+          for (const l of r.links) console.log(`  ${l.source.padEnd(20)} ${l.url}`);
+        } else {
+          console.log(`\n${r.results.length} free-licence ${kind}(s) for "${q}":\n`);
+          for (const it of r.results) console.log(`  ${String(it.duration || "").padStart(3)}s by ${(it.by || "?").padEnd(18)} ${it.preview?.slice(0, 60)}`);
+        }
+      } else if (action === "niche") {
+        const N = await import("../../studio/src/nichePacks.js");
+        if (targs[0] === "set") {
+          const set = N.setActiveNiches(targs.slice(1));
+          console.log(`active niches: ${set.join(", ")}`);
+        } else if (targs[0] && N.getPack(targs[0])) {
+          const s = N.shotListFor(targs[0]);
+          console.log(`\n${s.label} — ${s.lane} lane · ~${s.totalSec}s of shots\n`);
+          for (const sh of s.shots) console.log(`  ${sh.n}. [${String(sh.sec).padStart(2)}s] ${sh.name}\n         ${sh.note}`);
+          console.log(`\n  hooks that work here: ${s.hooks.join(", ")}`);
+          console.log(`  pacing:  ${s.pacing}`);
+          console.log(`  gotcha:  ${s.gotcha}`);
+          console.log(`  tags:    ${s.hashtags.join(" ")}`);
+        } else {
+          console.log(`\nniche packs (factory tools niche <name> | niche set <a> <b>):\n`);
+          for (const n of N.NICHE_NAMES) {
+            const p = N.getPack(n);
+            console.log(`  ${n.padEnd(14)} ${p.lane.padEnd(9)} ${p.shots.length} shots · ${p.label}`);
+          }
+          console.log(`\n  active: ${N.activeNiches().join(", ")}`);
+        }
       } else if (action === "cta") {
         const E = await import("../../studio/src/engagement.js");
         if (targs[0] === "add") {

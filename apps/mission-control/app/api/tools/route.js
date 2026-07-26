@@ -18,7 +18,10 @@ const os = (name) => {
 export async function GET(request) {
   const view = new URL(request.url).searchParams.get("view");
   if (view) {
-    const map = { gaps: ["tools", "gaps"], repurpose: ["tools", "repurpose"], competitors: ["tools", "competitors"], calendar: ["tools", "calendar", "14"], health: ["health"], prune: ["prune"] };
+    const map = {
+      gaps: ["tools", "gaps"], repurpose: ["tools", "repurpose"], competitors: ["tools", "competitors"],
+      calendar: ["tools", "calendar", "14"], health: ["health"], prune: ["prune"], niche: ["tools", "niche"],
+    };
     const args = map[view];
     if (!args) return NextResponse.json({ ok: false, error: "unknown view" }, { status: 400 });
     const { out } = await runCli(args, 120000);
@@ -45,7 +48,11 @@ export async function GET(request) {
 // POST {action, arg} — anything that writes or costs time runs as a job/CLI
 export async function POST(request) {
   const { action, arg, arg2 } = await request.json();
-  const jobs = { batch: ["batch", String(arg || 3)], longform: ["longform", String(arg || ""), String(arg2 || 3)] };
+  const jobs = {
+    batch: ["batch", String(arg || 3)],
+    longform: ["longform", String(arg || ""), String(arg2 || 3)],
+    reframe: ["reframe", String(arg || ""), `--focus=${arg2 || "auto"}`],
+  };
   if (jobs[action]) {
     const job = startJob(action, jobs[action]);
     return NextResponse.json({ ok: true, jobId: job.id });
@@ -58,6 +65,11 @@ export async function POST(request) {
     replies: ["tools", "replies", "10"],
     cta: ["tools", "cta", "next", String(arg || "yt_short")],
     prune: ["prune", ...(arg === "apply" ? ["--apply"] : [])],
+    translate: ["tools", "translate", String(arg || ""), ...String(arg2 || "es hi").split(/\s+/)],
+    pacing: ["tools", "pacing", String(arg || "")],
+    link: ["tools", "link", String(arg || "video")],
+    stock: ["tools", "stock", String(arg || ""), ...(arg2 === "music" ? ["--music"] : arg2 === "photo" ? ["--photo"] : [])],
+    nichepack: ["tools", "niche", String(arg || "")],
   };
   const args = quick[action];
   if (!args) return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
