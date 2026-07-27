@@ -100,6 +100,12 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "steps": {
+    const { burnSteps } = await import("../../pipeline/src/stepCards.js");
+    const ok = await burnSteps(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
   case "reframe": {
     const { reframe } = await import("../../pipeline/src/reframe.js");
     const ok = await reframe(rest);
