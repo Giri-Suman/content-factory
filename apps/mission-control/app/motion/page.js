@@ -124,6 +124,8 @@ export default function MotionPage() {
                   muted
                   loop
                   playsInline
+                  /* metadata only — `auto` buffered all 16 clips (~10MB) on load */
+                  preload="metadata"
                   autoPlay={playing === e.id}
                   onMouseEnter={(ev) => { setPlaying(e.id); ev.currentTarget.play().catch(() => {}); }}
                   onMouseLeave={(ev) => { ev.currentTarget.pause(); ev.currentTarget.currentTime = 0; }}
