@@ -189,6 +189,45 @@ flowchart TB
   keyless (targets <45 min, <$2). Corrupt renders and sabotaged scripts
   are caught and escalated; nothing half-publishes.
 
+## Motion Lab (`factory motion`)
+
+A catalog of **22 visual effects — 16 coded, 6 spec'd** — that the brief
+compiler picks from automatically, and that you can browse as live video at
+`/motion` in the portal.
+
+Three things it deliberately does *not* do:
+
+- **It doesn't scrape anyone's designs.** No Dribbble/Awwwards/TikTok
+  crawler. Every effect is a parameterised generator in
+  `renderers/code-report/src/effects/Effects.jsx` — code we own. Lifting
+  another creator's look and re-rendering it is the same reupload pattern
+  the compliance layer exists to block.
+- **It doesn't predict virality.** Nobody can. What it *does* is render each
+  effect and measure the properties retention actually depends on — opening
+  energy, motion energy, contrast, loop seam — from real pixels via ffmpeg.
+- **It doesn't pretend generic rankings are yours.** Until ~20 posts are
+  tagged, `suggest` says "fit heuristic — not your data yet" in the output.
+  Tag what you ship (`factory motion tag <post-id> word-punch`) and the
+  calibration loop reranks on *your* retention.
+
+```bash
+factory motion list                          # the catalog, with measured scores
+factory motion suggest --scene=hook --niche=nails
+factory motion bench --all                   # render + measure every live effect
+factory motion measure my-clip.mp4 --role=ambient
+factory motion results                       # effect → your median views
+```
+
+Effects are scored **against their role**, because grading a calm background
+on a scroll-stopper scale measures the wrong thing: `ambient`/`dimensional`
+want a motion *band* (dead frames lose viewers, busy ones fight your copy),
+`type`/`transition`/`compare` want opening energy, and `overlay` refuses to
+score solo — a chip on a blank frame tells you nothing.
+
+`compileBrief` attaches a per-scene `effect` hint automatically (additive —
+the renderer ignores it if unused), which also makes the effect→retention
+join automatic instead of hand-tagged.
+
 ### The three platform walls (honest limits)
 
 1. **Meta app review** — IG/FB Graph publishing is gated off until
@@ -229,13 +268,19 @@ what can wait.
 ## Structure
 
 ```
-packages/cli/       the `factory` command (doctor; later: render, radar, script, publish)
-packages/shared/    env loading, repo paths, config
-renderers/          P1: code-report (Remotion) · P4: math (Manim), shorts
-apps/               P3: Mission Control dashboard (Next.js)
+packages/cli/       the `factory` command — 40 subcommands
+packages/shared/    env loading, repo paths, config, JSON collection store
+packages/llm/       3-tier AI router (free → budget → premium) + tier chains
+packages/radar/     trend discovery, clustering, keyword + niche heat
+packages/pipeline/  orchestrator, batch, longform, reframe, clips, step cards
+packages/studio/    briefs, compileBrief, motionLab, nichePacks, creator tools
+packages/judges/    visual · audio · script · metadata · thumbnail gates
+packages/publish/   publish center, calibration, playbooks, compliance
+renderers/          code-report (Remotion) + src/effects/ · math (Manim), shorts
+apps/               Mission Control dashboard (Next.js, port 4600)
 assets/brand/       palette, logo, intro sting, licensed SFX/music only
-data/               (gitignored) SQLite: trends, jobs, analytics
-renders/            (gitignored) finished MP4s
+data/               (gitignored) JSON collections: trends, briefs, jobs, analytics
+renders/            (gitignored) finished MP4s · _motion/ = effect previews
 ```
 
 ## Phase roadmap

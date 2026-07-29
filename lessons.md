@@ -96,3 +96,29 @@ once; append after every failed attempt or surprise.
   still used 30) → **for any numeric CLI flag where 0 is meaningful, check
   presence explicitly: `raw !== undefined && Number.isFinite(Number(raw))
   ? Number(raw) : DEFAULT`. Never `||` a numeric default.**
+
+- Motion Lab's ranker read `e.attention` off the catalog entry, but measured
+  scores live in the `motionbench` collection (`benchResults()`). The field
+  never existed, so `measured ? … : 1` always took the null branch and the
+  entire measurement term was dead — the feature's headline claim ("ranked on
+  measured pixels") was quietly false while every test still passed →
+  **a `??`/`?:` guard on a misspelled or non-existent field degrades silently
+  instead of throwing. When a term is supposed to change a score, assert it
+  actually does: log the score with and without it once, or the optional
+  chain hides the bug forever.**
+
+- Normalisation ceilings for the attention metrics were guessed (12/10/25).
+  Real ffmpeg YAVG deltas land in 0.05–1.4, so every effect scored ~0.02 and
+  the ranking was noise → **never guess a normalisation range; render a few
+  known-contrasting samples, print the raw values, then set the ceiling.**
+
+- Cost was multiplied into the effect fit score at full weight, which ranked
+  a cheap 0.4× overlay chip above the effect that actually fitted the scene
+  (step-chip 0.8 vs code-rain 0.52 for a terminal scene) → **a tie-breaker
+  must be scaled like one (`0.9 + 0.1*x`), not multiplied in as a peer term.**
+
+- Benching the catalog graded ambient backgrounds and hooks on one
+  "more motion = better" axis, so calm-by-design beds (tilt-parallax 0.24,
+  macro-vignette 0.08) read as failures → **score against what the thing is
+  FOR. A background wants a motion band; a hook wants opening energy; an
+  overlay measured on a blank frame should refuse to score at all.**

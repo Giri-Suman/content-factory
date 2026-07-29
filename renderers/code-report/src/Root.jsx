@@ -2,6 +2,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { CodeReportVideo } from "./Video.jsx";
 import { ShortOverlay } from "./ShortOverlay.jsx";
+import { EffectLab } from "./effects/Effects.jsx";
 
 const FPS = 30;
 
@@ -64,6 +65,16 @@ export const Root = () => (
       width={1080}
       height={1920}
       defaultProps={{}}
+      calculateMetadata={calcOverlay}
+    />
+    <Composition
+      id="EffectLab"
+      component={EffectLab}
+      durationInFrames={120}
+      fps={FPS}
+      width={1080}
+      height={1920}
+      defaultProps={{ effect: "aurora-mesh", text: "Motion Lab" }}
       calculateMetadata={calcOverlay}
     />
   </>

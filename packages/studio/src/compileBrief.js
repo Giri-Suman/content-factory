@@ -73,6 +73,24 @@ export async function compileBrief(briefId) {
   if (injected.lessons.length) console.log(`  injecting ${injected.lessons.length} script lesson(s) into generation`);
 
   const scenes = (await llmScenes(brief, injected.block)) || heuristicScenes(brief);
+
+  // Motion Lab: recommend an effect per scene. Additive only — `effect` is a
+  // hint the renderer may honour, and it makes the effect->retention join
+  // automatic instead of relying on `factory motion tag` by hand. A failure
+  // here must never block a compile, so it's best-effort.
+  try {
+    const { suggestEffects } = await import("./motionLab.js");
+    const { activeNiches } = await import("./nichePacks.js");
+    // same resolution order the orchestrator's packForBrief uses
+    const niche = brief.niche || activeNiches()[0] || "coding";
+    for (const [i, s] of scenes.entries()) {
+      const picks = suggestEffects({ sceneType: i === 0 ? "hook" : s.type, niche, limit: 1 });
+      if (picks[0]) s.effect = picks[0].id;
+    }
+  } catch (e) {
+    console.log(`  (effect suggestion skipped: ${e.message.slice(0, 60)})`);
+  }
+
   const script = {
     id: `brief-${briefId.slice(0, 10)}`,
     title: brief.payload?.yt_short?.title || brief.topic,

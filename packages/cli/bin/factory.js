@@ -112,6 +112,17 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "motion": {
+    const { motion } = await import("../src/motion.js");
+    try {
+      const ok = await motion(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "longform": {
     const { mineLongform } = await import("../../pipeline/src/longform.js");
     const ok = await mineLongform(rest);
