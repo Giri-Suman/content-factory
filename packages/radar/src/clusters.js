@@ -3,6 +3,7 @@ import { collection } from "../../shared/src/store.js";
 import { withJobRun } from "../../shared/src/jobs.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
 import { hasKey, saturation } from "./youtube.js";
+import { evidenceFloor, poolConfidence } from "./evidence.js";
 
 /**
  * P4 scoring engine: items -> TopicClusters -> transparent opportunityScore.
@@ -79,7 +80,7 @@ async function clusterWithLlm(items) {
 
 /* ---------------- score components ---------------- */
 
-function velocityBaselines(trends) {
+export function velocityBaselines(trends) {
   const bySource = {};
   for (const t of Object.values(trends)) {
     if (t.velocity === null || t.velocity === undefined) continue;
@@ -247,6 +248,12 @@ async function runScoreInner() {
     const gap = w(await saturationGapScore(g.label, rankOf.get(i)), "saturationGap");
     const opportunityScore = vel.value + cross.value + fit.value + gap.value;
 
+    // Absolute evidence gate (adapted from last30days). Independent of the
+    // 0-100 score: relative ranking always crowns a winner, so a cluster can
+    // top the board on defaults alone. This answers a different question —
+    // may it be recommended at all — and is allowed to say no to everything.
+    const evidence = evidenceFloor(g, g.members, { baselines });
+
     const existing = prior.get(g.label.toLowerCase());
     const history = [...(existing?.scoreHistory || []), opportunityScore].slice(-4);
     out.push({
@@ -254,6 +261,7 @@ async function runScoreInner() {
       label: g.label,
       summary: g.summary,
       opportunityScore,
+      evidence,
       scoreBreakdown: {
         velocity: { ...vel, max: 40 },
         crossSource: { ...cross, max: 25 },
@@ -277,13 +285,28 @@ async function runScoreInner() {
   for (const c of rows) for (const id of c.memberIds) setClusterId(id, c.id);
   save();
 
-  console.log(`\n  SCORE  V/40 X/25 N/20 G/15  STATUS  CLUSTER`);
-  console.log("  " + "-".repeat(88));
+  const pool = poolConfidence(rows.map((c) => ({ evidence: c.evidence })));
+
+  console.log(`\n  SCORE  V/40 X/25 N/20 G/15  EVIDENCE      STATUS  CLUSTER`);
+  console.log("  " + "-".repeat(100));
   for (const c of rows.slice(0, 12)) {
     const b = c.scoreBreakdown;
+    const ev = c.evidence?.promotable ? c.evidence.level : `${c.evidence?.level || "?"}*`;
     console.log(
-      `  ${String(c.opportunityScore).padStart(5)}  ${String(b.velocity.value).padStart(4)} ${String(b.crossSource.value).padStart(4)} ${String(b.nicheFit.value).padStart(4)} ${String(b.saturationGap.value).padStart(4)}  ${c.status.padEnd(6)}  ${c.label.slice(0, 46)}${c.memberCount > 1 ? ` (${c.memberCount})` : ""}`
+      `  ${String(c.opportunityScore).padStart(5)}  ${String(b.velocity.value).padStart(4)} ${String(b.crossSource.value).padStart(4)} ${String(b.nicheFit.value).padStart(4)} ${String(b.saturationGap.value).padStart(4)}  ${ev.padEnd(13)} ${c.status.padEnd(6)}  ${c.label.slice(0, 42)}${c.memberCount > 1 ? ` (${c.memberCount})` : ""}`
     );
   }
-  return { clusters: rows.length, summary: `${rows.length} clusters` };
+
+  // The verdict matters more than the ranking. A pool where nothing clears
+  // the floor still produces a tidy sorted table, which reads like a set of
+  // leads — say plainly that it isn't one.
+  console.log(`\n  evidence: ${pool.corroborated} corroborated · ${pool.spike} spiking · ${pool.unproven} unproven   (* = below the floor, not promotable)`);
+  console.log(`  ${pool.verdict}`);
+  if (pool.promotable === 0 && rows.length) {
+    const why = rows[0]?.evidence?.why || "";
+    console.log(`  top row's actual basis: ${why}`);
+    console.log(`  this is a collection problem, not a ranking problem — more sources or more`);
+    console.log(`  snapshot passes (velocity needs 2+ observations of the same item) will fix it.`);
+  }
+  return { clusters: rows.length, promotable: pool.promotable, summary: `${rows.length} clusters, ${pool.promotable} with evidence` };
 }

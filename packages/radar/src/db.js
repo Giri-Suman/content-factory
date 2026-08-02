@@ -73,6 +73,14 @@ export function upsertTrend(item) {
     url: item.url || null,
     points: item.points || 0,
     comments: item.comments || 0,
+    // Quote material. This row is rebuilt from an explicit field list every
+    // upsert, so anything not named here is silently dropped — keep the
+    // previous excerpt when a later pass (e.g. the RSS fallback) has none,
+    // rather than erasing text we already collected.
+    excerpt: item.excerpt || existing?.excerpt || null,
+    author: item.author || existing?.author || null,
+    // per-comment attribution, so a quote can name the person who said it
+    voices: item.voices || existing?.voices || null,
     published_at: item.publishedAt || existing?.published_at || null,
     first_seen: existing?.first_seen || now,
     last_seen: now,

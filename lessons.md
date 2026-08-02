@@ -150,3 +150,38 @@ once; append after every failed attempt or surprise.
   ("This tool. which I use daily. can transform"), producing broken grammar
   that TTS then read as three fragments → **a paired delimiter and a lone
   one mean different things; handle the pair first, then whatever remains.**
+
+- `const fetchOpts = { signal: AbortSignal.timeout(15000) }` at MODULE level
+  shares one signal across every request, and it starts counting at import.
+  Any collect run longer than 15s aborted every subsequent fetch with a
+  TimeoutError. It went unnoticed for the entire project because all the
+  existing fetches fire in one `Promise.allSettled` burst at the start —
+  only the first sequential fetch added afterwards ever hit it →
+  **request options carrying a signal, deadline or timestamp MUST be built
+  per call (`const opts = () => ({...})`). A shared `AbortSignal.timeout` is
+  a time bomb with a 15-second fuse, and spreading it into a second const
+  (`{...fetchOpts, headers}`) copies the bomb, not the timeout.**
+
+- The radar ranks 120 clusters and prints a confident top-3, but every one
+  was a singleton scoring `0 velocity + 5 crossSource floor + 16 heuristic
+  fit + 7 default saturation = 28` — pure defaults. Relative ranking ALWAYS
+  produces a winner, so a sorted table reads like a set of leads even when
+  nothing in the pool has earned it (adapted from last30days' confidence
+  floor) → **a ranker needs an ABSOLUTE bar in addition to the sort, and the
+  honest answer "nothing qualified today" must be reachable. Sorting is not
+  evidence.**
+
+- Reimplemented `velocityBaselines` in the CLI instead of importing it, and
+  the copy lacked the `VELOCITY_BASELINES` seed defaults — so `evidence
+  report` called a cluster a 4.3× spike while `evidence ground` called the
+  same cluster unproven, in the same session → **never reimplement a scoring
+  function for a second caller; export the original. Two copies of a formula
+  is two answers to one question.**
+
+- Captured post bodies to get "community quotes" and the top results were
+  Vercel and OpenAI blog prose — marketing copy wearing a quote's clothes.
+  A corporate RSS feed and a subreddit both arrive with 0 points, so nothing
+  distinguished them → **"engagement over editorial authority" needs the
+  source CLASS encoded explicitly; it does not fall out of the metrics.**
+  Related: a line beginning `>` is the commenter quoting someone else —
+  attributing it to them fabricates a quote.

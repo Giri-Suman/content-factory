@@ -112,6 +112,17 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "evidence": {
+    const { evidence } = await import("../src/evidence.js");
+    try {
+      const ok = await evidence(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "humanize": {
     const { humanize } = await import("../src/humanize.js");
     try {

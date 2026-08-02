@@ -228,6 +228,48 @@ score solo — a chip on a blank frame tells you nothing.
 the renderer ignores it if unused), which also makes the effect→retention
 join automatic instead of hand-tagged.
 
+## Evidence floor (`factory evidence`)
+
+Adapted from the [`last30days` skill by mvanhorn](https://github.com/mvanhorn/last30days-skill)
+(MIT). Two of its ideas, both *refusals* rather than ranking tweaks:
+
+**1. The confidence floor is absolute, not relative.** The radar ranked 120
+clusters and printed a confident top-3 — but all 120 were singletons scoring
+`0 velocity + 5 crossSource floor + 16 heuristic fit + 7 default saturation
+= 28`. Pure defaults. Relative ranking always produces a winner, so a tidy
+sorted table reads like a set of leads even when nothing has earned it. A
+cluster is now `corroborated` (2+ independent sources), `spike` (3×+ its own
+source's baseline with real engagement), or `unproven` — and **unproven is not
+promotable**, however high it ranks. "Nothing qualified today" is now an
+answer this system can give.
+
+**2. Entity grounding with decisive demotion.** Items are grounded on the
+head token of the cluster label; a miss costs ×0.25, so a 5,000-upvote post
+about something else still loses to a 40-upvote post that is actually on
+topic. Engagement cannot rescue off-entity content.
+
+Plus the quote rule (their LAW 9), which solves a content problem here:
+collectors captured only `title/url/points/comments`, so briefs were written
+from **headlines alone**. Now HN discussions attach to the busiest stories and
+briefs carry verbatim, per-commenter-attributed community language. A headline
+gives you the topic; the thread gives you the phrasing a hook is made of.
+
+```bash
+factory evidence report            # what actually clears the floor
+factory evidence quotes [filter]   # real community language, attributed
+factory evidence ground "<label>"  # per-member grounding decisions
+```
+
+Two honesty rules are load-bearing. **Press releases are not community
+voice** — a Vercel blog post and a subreddit both arrive as RSS with zero
+points, so the source class is encoded explicitly and press is down-ranked.
+And a line beginning `>` is the commenter quoting *someone else*; attributing
+it to them would fabricate a quote, so those are dropped.
+
+Deliberately **not** adapted: the source sweep. This repo already has
+collectors, clustering and cross-source scoring — porting their engine would
+be rebuilding the radar next to the radar.
+
 ## Humanize (`factory humanize`)
 
 Strips the tells that make generated copy read as generated. Adapted from
@@ -315,10 +357,10 @@ what can wait.
 ## Structure
 
 ```
-packages/cli/       the `factory` command — 41 subcommands
+packages/cli/       the `factory` command — 42 subcommands
 packages/shared/    env loading, repo paths, config, JSON collection store
 packages/llm/       3-tier AI router (free → budget → premium) + tier chains
-packages/radar/     trend discovery, clustering, keyword + niche heat
+packages/radar/     trend discovery, clustering, evidence floor, quotes, keywords
 packages/pipeline/  orchestrator, batch, longform, reframe, clips, step cards
 packages/studio/    briefs, compileBrief, motionLab, humanize, nichePacks, tools
 packages/judges/    visual · audio · script · metadata · thumbnail gates

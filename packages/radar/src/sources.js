@@ -8,7 +8,14 @@ import { loadUserConfig } from "../../shared/src/config.js";
  */
 
 const UA = { "User-Agent": "content-factory-radar/0.1 (personal trend research)" };
-const fetchOpts = { headers: UA, signal: AbortSignal.timeout(15000), redirect: "follow" };
+/**
+ * MUST be a function. As a module-level const, `AbortSignal.timeout(15000)`
+ * starts counting at import time and is SHARED by every request — so once a
+ * collect run passes 15 seconds, every subsequent fetch aborts instantly with
+ * a TimeoutError. The parallel burst at the start of ingestAll masked this
+ * completely; only a sequential fetch afterwards ever hit it.
+ */
+const fetchOptions = () => ({ headers: UA, signal: AbortSignal.timeout(15000), redirect: "follow" });
 
 export const CATEGORY_SOURCES = {
   coding: {
@@ -67,7 +74,7 @@ const techCategory = (text, enabled) => {
 };
 
 async function hackerNews(enabled) {
-  const res = await fetch("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30", fetchOpts);
+  const res = await fetch("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30", fetchOptions());
   if (!res.ok) throw new Error(`HN ${res.status}`);
   const data = await res.json();
   return (data.hits || []).map((h) => ({
@@ -77,12 +84,36 @@ async function hackerNews(enabled) {
     url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
     points: h.points || 0,
     comments: h.num_comments || 0,
+    hnId: h.objectID, // needed to fetch the discussion; lost otherwise when h.url is set
     publishedAt: h.created_at,
   }));
 }
 
+/**
+ * The discussion under a story — the only reachable source of real community
+ * voice this project currently has. Reddit's JSON endpoint (which carries
+ * selftext) is 403-blocked and its RSS gives link posts nothing but
+ * "submitted by /u/x [link] [comments]", so without this, every captured
+ * "quote" is a press release.
+ *
+ * Deliberately narrow: top stories only, a handful of comments each. This is
+ * quote material for a script, not a scrape of the thread.
+ */
+export async function hnComments(hnId, { limit = 5 } = {}) {
+  const res = await fetch(`https://hn.algolia.com/api/v1/search?tags=comment,story_${hnId}&hitsPerPage=${limit}`, fetchOptions());
+  if (!res?.ok) return [];
+  const data = await res.json();
+  return (data.hits || [])
+    .map((h) => ({
+      text: decode(String(h.comment_text || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim(),
+      author: h.author ? `@${h.author}` : null,
+    }))
+    .filter((c) => c.text.length >= 40)
+    .slice(0, limit);
+}
+
 async function githubTrending(enabled) {
-  const res = await fetch("https://github.com/trending?since=daily", fetchOpts);
+  const res = await fetch("https://github.com/trending?since=daily", fetchOptions());
   if (!res.ok) throw new Error(`GitHub ${res.status}`);
   const html = await res.text();
   const items = [];
@@ -114,23 +145,25 @@ async function githubTrending(enabled) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // reddit blocks non-browser UAs for unauthenticated JSON; use a browser-style one there
-const redditOpts = {
-  ...fetchOpts,
+// also a function — spreading fetchOptions() at module level would freeze the
+// same already-counting AbortSignal it exists to avoid
+const redditOptions = () => ({
+  ...fetchOptions(),
   headers: {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
     Accept: "application/json",
   },
-};
+});
 
 async function subreddit(sub, category) {
   // escalating fallbacks: www json (browser UA) → old json → www json with a
   // descriptive bot UA (reddit's rules prefer those) → hot.rss (no scores,
   // but keeps the source alive; velocity then comes from cross-source)
   const attempts = [
-    [`https://www.reddit.com/r/${sub}/hot.json?limit=15`, redditOpts, "json"],
-    [`https://old.reddit.com/r/${sub}/hot.json?limit=15`, redditOpts, "json"],
-    [`https://www.reddit.com/r/${sub}/hot.json?limit=15`, { ...fetchOpts, headers: { "User-Agent": "content-os/1.0", Accept: "application/json" } }, "json"],
-    [`https://www.reddit.com/r/${sub}/hot.rss`, redditOpts, "rss"],
+    [`https://www.reddit.com/r/${sub}/hot.json?limit=15`, redditOptions(), "json"],
+    [`https://old.reddit.com/r/${sub}/hot.json?limit=15`, redditOptions(), "json"],
+    [`https://www.reddit.com/r/${sub}/hot.json?limit=15`, { ...fetchOptions(), headers: { "User-Agent": "content-os/1.0", Accept: "application/json" } }, "json"],
+    [`https://www.reddit.com/r/${sub}/hot.rss`, redditOptions(), "rss"],
   ];
   let lastStatus = "?";
   for (const [url, opts, kind] of attempts) {
@@ -155,6 +188,12 @@ async function subreddit(sub, category) {
         url: `https://www.reddit.com${p.permalink}`,
         points: p.score || 0,
         comments: p.num_comments || 0,
+        // The post's own words. Briefs were being written from headlines
+        // alone, which is why hooks came out generic — a headline tells you
+        // the topic, the body tells you how people actually talk about it.
+        // Capped: this is quote material, not an archive.
+        excerpt: String(p.selftext || "").replace(/\s+/g, " ").trim().slice(0, 600) || null,
+        author: p.author ? `u/${p.author}` : null,
         publishedAt: new Date(p.created_utc * 1000).toISOString(),
       });
     }
@@ -191,13 +230,34 @@ function parseFeed(xml, source, category) {
     const url = (linkHref?.[1] || (linkText ? decode(linkText[1]) : "")).trim();
     const dateMatch = entry.match(/<(?:pubDate|published|updated)[^>]*>([\s\S]*?)<\/(?:pubDate|published|updated)>/);
     const publishedAt = dateMatch ? new Date(decode(dateMatch[1])).toISOString() : null;
-    if (title && url) items.push({ source, category, title, url, points: 0, comments: 0, publishedAt });
+
+    // Body text, for quotes. Reddit's JSON endpoint is 403-blocked and the
+    // chain falls back to RSS, so WITHOUT this the excerpt capture on the
+    // JSON path would never actually fire for the source that needs it most.
+    const bodyMatch = entry.match(/<(?:content|description|summary)[^>]*>([\s\S]*?)<\/(?:content|description|summary)>/);
+    const excerpt = bodyMatch
+      ? decode(bodyMatch[1].replace(/<!\[CDATA\[|\]\]>/g, ""))
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 600) || null
+      : null;
+    // Atom nests <author><name>x</name><uri>…</uri></author>; stripping tags
+    // naively glues the name onto the URL ("/u/fooohttps://reddit.com/…").
+    const authorMatch = entry.match(/<(?:author|dc:creator)[^>]*>([\s\S]*?)<\/(?:author|dc:creator)>/);
+    const rawAuthor = authorMatch ? authorMatch[1] : "";
+    const nameMatch = rawAuthor.match(/<name[^>]*>([\s\S]*?)<\/name>/);
+    const author = (nameMatch ? nameMatch[1] : rawAuthor)
+      ? decode((nameMatch ? nameMatch[1] : rawAuthor).replace(/<[^>]+>|<!\[CDATA\[|\]\]>/g, "")).trim().slice(0, 60) || null
+      : null;
+
+    if (title && url) items.push({ source, category, title, url, points: 0, comments: 0, excerpt, author, publishedAt });
   }
   return items;
 }
 
 async function rssFeed(name, feedUrl, category) {
-  const res = await fetch(feedUrl, fetchOpts);
+  const res = await fetch(feedUrl, fetchOptions());
   if (!res.ok) throw new Error(`${name} ${res.status}`);
   return parseFeed(await res.text(), name, category);
 }
@@ -234,5 +294,25 @@ export async function ingestAll({ github = true } = {}) {
     if (r.status === "fulfilled") all.push(...r.value);
     else failures.push(`${tasks[i][0]}: ${r.reason?.message || r.reason}`);
   });
+
+  // Attach the discussion to the busiest HN stories, as an excerpt. Capped at
+  // 8 stories/run: this is quote material, not a thread archive, and each one
+  // is a separate API call.
+  const hot = all
+    .filter((i) => i.hnId && (i.comments || 0) >= 15)
+    .sort((a, b) => (b.comments || 0) - (a.comments || 0))
+    .slice(0, 8);
+  for (const story of hot) {
+    try {
+      const cs = await hnComments(story.hnId, { limit: 4 });
+      if (!cs.length) continue;
+      story.excerpt = cs.map((c) => c.text).join(" ").slice(0, 900);
+      story.author = cs[0].author;
+      story.voices = cs.map((c) => ({ author: c.author, text: c.text.slice(0, 240) }));
+    } catch {
+      /* a missing discussion must never fail the whole collect */
+    }
+  }
+
   return { items: all, failures, enabled };
 }
