@@ -9,6 +9,7 @@ const ANALYSES = [
   ["competitors", "Competitor diff", "what changed on the watchlist this week"],
   ["calendar", "Content calendar", "14-day ship schedule + cadence gaps"],
   ["prune", "Data hygiene", "what a prune would remove (dry run)"],
+  ["humanize", "AI-writing audit", "which generated copy reads as machine-written, scored per surface"],
 ];
 
 export default function ToolsPage() {

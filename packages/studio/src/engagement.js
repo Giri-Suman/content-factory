@@ -93,7 +93,22 @@ export async function draftReplies({ limit = 10 } = {}) {
       }
     }
     if (!draft) draft = REPLY_TEMPLATES[i % REPLY_TEMPLATES.length](lead.comment);
-    collection("commentleads").update(lead.id, { replyDraft: draft, draftedAt: new Date().toISOString(), draftMode: providerStatus().active ? "llm" : "template" });
+
+    // Score it for assistant-register tells. The prompt already asks for no
+    // "great question!" filler, but asking isn't enforcing. Flag, don't
+    // rewrite: you review every reply before it posts, and silently editing
+    // your voice is worse than showing you the tell.
+    let human = null;
+    try {
+      const { scan } = await import("./humanize.js");
+      const s = scan(draft, { surface: "reply" });
+      human = { score: s.score, tells: s.hits.map((h) => h.id) };
+      if (s.score < 70) console.log(`  ⚠ reply draft reads as generated (${s.score}): ${s.hits.map((h) => h.name).join(", ")}`);
+    } catch {
+      /* advisory only */
+    }
+
+    collection("commentleads").update(lead.id, { replyDraft: draft, human, draftedAt: new Date().toISOString(), draftMode: providerStatus().active ? "llm" : "template" });
     drafted++;
   }
   return { drafted, mode: providerStatus().active ? "llm" : "template" };

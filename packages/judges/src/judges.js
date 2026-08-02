@@ -101,6 +101,26 @@ export async function scriptJudge(script) {
     reasons.push("contains unfilled [fill:] placeholders");
   }
 
+  // AI-writing tells. Folded in here rather than as a parallel judge because
+  // it's the same decision at the same hop. Voiceover-surface rules: some of
+  // these (emoji, markdown, em dash) are TTS hazards, not just style.
+  try {
+    const { scanScript } = await import("../../studio/src/humanize.js");
+    const h = scanScript(script);
+    if (h.score < 85) {
+      const penalty = Math.min(30, Math.round((85 - h.score) / 2));
+      score -= penalty;
+      const top = [...new Set(h.perScene.flatMap((s) => s.hits.map((x) => x.name)))].slice(0, 3);
+      reasons.push(`reads as generated (${h.score}/100): ${top.join(", ")}`);
+    }
+    if (h.perScene.some((s) => s.hits.some((x) => x.id === "emoji-in-speech" || x.id === "markdown-in-speech"))) {
+      score -= 15;
+      reasons.push("voiceover contains emoji or markdown — TTS will speak or mangle it, shifting every word timestamp");
+    }
+  } catch {
+    /* humanize is advisory; never block a compile on it */
+  }
+
   if (providerStatus().active && score >= 40) {
     try {
       const res = await chat({
@@ -125,6 +145,8 @@ export async function scriptJudge(script) {
 function codedScriptFix(reasons) {
   if (reasons.some((r) => r.includes("banned"))) return "Replace the generic opener with a concrete hook: state the surprising outcome or call out the viewer.";
   if (reasons.some((r) => r.includes("placeholder"))) return "Fill every [fill:] placeholder with real copy.";
+  if (reasons.some((r) => r.includes("TTS will speak"))) return "Strip emoji and markdown from every voiceover field — run `factory humanize script <id> --fix`.";
+  if (reasons.some((r) => r.includes("reads as generated"))) return "Rewrite the flagged lines in plain spoken English — run `factory humanize script <id>` to see each tell.";
   return "Tighten the hook and pacing; one idea, concrete payoff.";
 }
 

@@ -122,3 +122,31 @@ once; append after every failed attempt or surprise.
   macro-vignette 0.08) read as failures → **score against what the thing is
   FOR. A background wants a motion band; a hook wants opening energy; an
   overlay measured on a blank frame should refuse to score at all.**
+
+- Adapting the `humanizer` skill (Wikipedia "Signs of AI writing") as a flat
+  banlist would have DEGRADED output: it bans rule-of-three and "Here's the
+  thing", but both are proven retention devices in a spoken hook, and it
+  treats emoji as a violation when they're native to an IG caption →
+  **when porting a rule set from another medium, check every rule against
+  THIS medium before adopting it. A pattern table needs a `native` weight
+  ("expected here, never flag"), not just severities. Blind adoption of a
+  good rule set is still a regression.**
+
+- The humanize audit scored the factory's own copy 98/100 — because all 18
+  briefs are still `[fill:]` templates, so it was grading scaffolding, not
+  LLM output → **before trusting a quality metric, verify the corpus it
+  measured is the thing you think it is. A flattering score over the wrong
+  input is worse than no score; the audit now prints the template warning
+  itself.**
+
+- An em dash in a `scene.voiceover` field is not a style nit, it's a render
+  bug: ElevenLabs turns it into an unpredictable pause and every downstream
+  word timestamp (captions, Remotion timeline) shifts → **voiceover fields
+  are TTS INPUT, not prose. Emoji, markdown and dashes must be stripped
+  before synthesis, and any new code path writing `scene.voiceover` has to
+  go through `humanize.autoFix(..., {surface:"voiceover"})`.**
+
+- The first em-dash fix turned BOTH dashes of a parenthetical into periods
+  ("This tool. which I use daily. can transform"), producing broken grammar
+  that TTS then read as three fragments → **a paired delimiter and a lone
+  one mean different things; handle the pair first, then whatever remains.**

@@ -228,6 +228,53 @@ score solo — a chip on a blank frame tells you nothing.
 the renderer ignores it if unused), which also makes the effect→retention
 join automatic instead of hand-tagged.
 
+## Humanize (`factory humanize`)
+
+Strips the tells that make generated copy read as generated. Adapted from
+the [`humanizer` skill by blader](https://github.com/blader/humanizer) (MIT),
+which encodes Wikipedia's "Signs of AI writing" as 33 patterns.
+
+It is an **adaptation, not a port**, because a flat banlist would damage this
+project's output. The original targets encyclopedic prose; this system emits
+spoken voiceover and platform copy, where three of its rules invert:
+
+| the original says | here |
+|---|---|
+| rule-of-three is a tell | a triplet is a **proven spoken-hook device** — only flagged when doubled in written copy |
+| ban "Honestly?" / "Here's the thing" | these are **retention devices** in short-form — only flagged when stacked |
+| emoji are a violation | **native** in an IG caption; fatal only in a voiceover field |
+
+So every pattern carries a **per-surface weight** across six surfaces
+(`voiceover · title · description · caption · reply · post`), and some are
+marked `native` — expected there, never flagged.
+
+The project-specific addition the source skill has no concept of is
+**TTS safety**. In a voiceover field an em dash isn't a style crime, it's a
+render bug: ElevenLabs renders it as an unpredictable pause, which shifts
+every word timestamp the captions and Remotion timeline depend on. Same for
+emoji (spoken aloud or silently dropped) and markdown (read as literal
+characters). `compileBrief` auto-strips these on every compile.
+
+```bash
+factory humanize scan "your text" --surface=voiceover --fix
+factory humanize script <brief-id> --fix          # mechanical fixes
+factory humanize script <brief-id> --fix --ai     # + rephrasing (3-tier, free tier = $0)
+factory humanize audit                            # everything the factory has generated
+factory humanize voice                            # learn your style from your shipped posts
+factory humanize patterns                         # the per-surface weight table
+```
+
+Wired in at three points: `scriptJudge` scores it (so slop can't pass QC),
+`compileBrief` auto-cleans voiceover for TTS, and reply drafts are **flagged
+but never auto-rewritten** — you review every reply, and silently editing
+your voice is worse than showing you the tell.
+
+Two rules carried over intact, both load-bearing here because this system
+publishes: **no fabrication** (a rewrite may never invent a fact, name,
+number or citation absent from the input — removing a tell is never worth
+adding a falsehood), and **no over-editing** (look for clusters, not isolated
+words; the false-positive suite covers legitimate human phrasing).
+
 ### The three platform walls (honest limits)
 
 1. **Meta app review** — IG/FB Graph publishing is gated off until
@@ -268,12 +315,12 @@ what can wait.
 ## Structure
 
 ```
-packages/cli/       the `factory` command — 40 subcommands
+packages/cli/       the `factory` command — 41 subcommands
 packages/shared/    env loading, repo paths, config, JSON collection store
 packages/llm/       3-tier AI router (free → budget → premium) + tier chains
 packages/radar/     trend discovery, clustering, keyword + niche heat
 packages/pipeline/  orchestrator, batch, longform, reframe, clips, step cards
-packages/studio/    briefs, compileBrief, motionLab, nichePacks, creator tools
+packages/studio/    briefs, compileBrief, motionLab, humanize, nichePacks, tools
 packages/judges/    visual · audio · script · metadata · thumbnail gates
 packages/publish/   publish center, calibration, playbooks, compliance
 renderers/          code-report (Remotion) + src/effects/ · math (Manim), shorts

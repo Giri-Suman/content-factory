@@ -21,6 +21,7 @@ export async function GET(request) {
     const map = {
       gaps: ["tools", "gaps"], repurpose: ["tools", "repurpose"], competitors: ["tools", "competitors"],
       calendar: ["tools", "calendar", "14"], health: ["health"], prune: ["prune"], niche: ["tools", "niche"],
+      humanize: ["humanize", "audit"],
     };
     const args = map[view];
     if (!args) return NextResponse.json({ ok: false, error: "unknown view" }, { status: 400 });
