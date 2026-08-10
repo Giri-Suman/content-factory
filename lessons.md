@@ -185,3 +185,32 @@ once; append after every failed attempt or surprise.
   source CLASS encoded explicitly; it does not fall out of the metrics.**
   Related: a line beginning `>` is the commenter quoting someone else —
   attributing it to them fabricates a quote.
+
+- `.env` value `OPENROUTER_API_KEY = "sk-or-..."` broke auth: the parser
+  handled the spaces but NOT the quotes, so the header became
+  `Bearer "sk-or-…"` and OpenRouter replied 401 "Missing Authentication
+  header" — which reads like a missing key, not a quoted one →
+  **an env parser must strip one layer of matching surrounding quotes, like
+  dotenv. Pasting KEY="value" is the natural thing to do.**
+
+- `factory ai` reported all three tiers READY on an account with ZERO
+  credits, because availability was `Boolean(env.OPENROUTER_API_KEY)` — a
+  key-EXISTS check, not a can-it-run check. Every paid call then answered
+  "Insufficient credits" and free models throttled after two requests →
+  **a readiness indicator that only checks configuration will confidently
+  lie. Probe the provider (`/api/v1/credits`) and report the real state.**
+
+- Two hardcoded model ids had rotted: `meta-llama/llama-3.3-70b-instruct:free`
+  now 404s "unavailable for free" and `google/gemini-2.0-flash-001` 404s "No
+  endpoints found" (current is gemini-3.6). Both silently degraded the whole
+  system to template mode →
+  **model ids are perishable. Keep them in env vars, treat the code default
+  as a guess, and ship a way to list what is valid TODAY
+  (`factory ai models`).**
+
+- There was no 429 handling anywhere in the LLM router: a throttled call threw,
+  the chain found no cheaper option, returned null, and the caller degraded to
+  heuristics. On a rate-limited free tier that means "configured but behaves
+  keyless" → **retry transient failures (429/502/503/504) with backoff before
+  abandoning a provider, and never retry 401/404 — a config error must surface
+  in a second, not after 90.**

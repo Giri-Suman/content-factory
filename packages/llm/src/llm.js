@@ -166,7 +166,10 @@ export async function chat({ system, user, task = "score", maxTokens = 4000, tie
   const errors = [];
   for (const opt of chain) {
     try {
-      const text = await CALLERS[opt.provider]({ system, user, maxTokens, task, model: opt.model });
+      const text = await withThrottleRetry(
+        () => CALLERS[opt.provider]({ system, user, maxTokens, task, model: opt.model }),
+        opt.label
+      );
       if (!text) throw new Error("empty response");
       if (opt.costPerCall > 0) {
         try {
@@ -184,4 +187,37 @@ export async function chat({ system, user, task = "score", maxTokens = 4000, tie
   // every option in and below the chosen tier failed — degrade like keyless
   console.error(`  all AI options failed (${errors.join(" | ")}) — using the built-in fallback`);
   return null;
+}
+
+/**
+ * Retry a throttled call before giving up on the option.
+ *
+ * The free tier is rate-limited hard — a bare `PIPELINE OK` probe needed three
+ * attempts. Without this, a 429 threw, the chain found no cheaper option, and
+ * the caller silently degraded to heuristics: the free tier looked configured
+ * but behaved keyless, which is the exact failure mode it exists to escape.
+ * `radar score` alone makes a call per batch of 120 items, so this is the
+ * difference between the free tier being usable and being decorative.
+ *
+ * Only retries throttling/transient server errors. A 401 or 404 is a
+ * configuration problem and must surface immediately, not after 90 seconds.
+ */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function withThrottleRetry(fn, label, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err.message || "");
+      const transient = /\b(429|502|503|504)\b/.test(msg) || /rate.?limit|too many requests|overloaded/i.test(msg);
+      if (!transient || i === attempts - 1) throw err;
+      const waitMs = 4000 * 2 ** i; // 4s, 8s
+      console.error(`  ${label} throttled — retrying in ${waitMs / 1000}s (${i + 1}/${attempts - 1})`);
+      await sleep(waitMs);
+    }
+  }
+  throw lastErr;
 }

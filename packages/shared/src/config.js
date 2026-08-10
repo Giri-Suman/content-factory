@@ -29,8 +29,14 @@ export function loadEnv() {
   for (const line of readFileSync(paths.env, "utf8").split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
     if (!m || line.trim().startsWith("#")) continue;
-    parsed[m[1]] = m[2];
-    if (process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+    // Strip ONE layer of matching surrounding quotes, like dotenv does.
+    // Pasting a key as KEY="sk-or-..." is the natural thing to do, and without
+    // this the quotes travel into the value: the Authorization header became
+    // `Bearer "sk-or-…"` and OpenRouter answered 401 "Missing Authentication
+    // header", which reads like a missing key rather than a quoted one.
+    const value = m[2].replace(/^(['"])([\s\S]*)\1$/, "$2");
+    parsed[m[1]] = value;
+    if (process.env[m[1]] === undefined) process.env[m[1]] = value;
   }
   return parsed;
 }

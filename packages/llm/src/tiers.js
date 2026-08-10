@@ -40,7 +40,12 @@ export function tierChain(tier) {
       { provider: "ollama", model: env.OLLAMA_MODEL || "llama3.2", needs: () => Boolean(env.OLLAMA_MODEL), costPerCall: 0, label: "Ollama (local)" },
       {
         provider: "openrouter",
-        model: env.OPENROUTER_FREE_MODEL || "meta-llama/llama-3.3-70b-instruct:free",
+        // OpenRouter's free roster ROTATES — llama-3.3-70b:free was the default
+        // here and now 404s with "unavailable for free". Any hardcoded value
+        // goes stale, so OPENROUTER_FREE_MODEL is the real setting and this is
+        // only a starting guess. Verified working: google/gemma-4-31b-it:free
+        // (clean JSON, ~3s). List current ones with `factory ai models`.
+        model: env.OPENROUTER_FREE_MODEL || "google/gemma-4-31b-it:free",
         needs: () => Boolean(env.OPENROUTER_API_KEY),
         costPerCall: 0,
         label: "OpenRouter :free",
@@ -49,7 +54,10 @@ export function tierChain(tier) {
     budget: [
       {
         provider: "openrouter",
-        model: env.OPENROUTER_BUDGET_MODEL || "google/gemini-2.0-flash-001",
+        // gemini-2.0-flash-001 was the default and now 404s "No endpoints
+        // found" — two major versions stale. Model ids rot; override with
+        // OPENROUTER_BUDGET_MODEL and check `factory ai models`.
+        model: env.OPENROUTER_BUDGET_MODEL || "google/gemini-3.5-flash-lite",
         needs: () => Boolean(env.OPENROUTER_API_KEY),
         costPerCall: 0.0015,
         label: "OpenRouter budget",
