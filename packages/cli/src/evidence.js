@@ -11,7 +11,9 @@ const pad = (s, n) => String(s).padEnd(n);
 const baselines = () => velocityBaselines(getAllTrends());
 
 export async function evidence(argv) {
-  const [action, ...rest] = argv;
+  // --help is a usage request, not an unknown subcommand
+  const [rawAction, ...rest] = argv;
+  const action = rawAction === "--help" || rawAction === "-h" ? undefined : rawAction;
   const targs = rest.filter((a) => !a.startsWith("--"));
   const clusters = collection("clusters").all();
   const base = baselines();

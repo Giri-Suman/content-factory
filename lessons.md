@@ -214,3 +214,22 @@ once; append after every failed attempt or surprise.
   keyless" → **retry transient failures (429/502/503/504) with backoff before
   abandoning a provider, and never retry 401/404 — a config error must surface
   in a second, not after 90.**
+
+- OpenRouter's FREE pool is congested per-model, and the popular models are
+  the congested ones: `google/gemma-4-31b-it:free` measured 0/4 requests
+  while `google/gemma-4-26b-a4b-it:free` measured 4/4 with 9s spacing.
+  Picking the biggest free model made the whole tier look broken and sent
+  every brief back to [fill:] templates →
+  **on a shared free tier, choose for RELIABILITY first and capability
+  second, and keep a second, different free model in the fallback chain —
+  congestion is per-model, so one alternate rescues far more runs than
+  retrying the same busy model.**
+
+- The humanizer's AI-vocabulary pattern used `leverage[sd]?`, which cannot
+  match "leveraging" — the word is leverag+ing, so "leverage" is not even a
+  substring. The first REAL generated brief came back with "Leveraging
+  AirLLM to…" and scored a clean 100. Same blind spot for utilizing and
+  facilitating →
+  **for -ing forms match the STEM (`leverag(?:e[sd]?|ing)`), and remember
+  that a detector can only be validated against real output: this pattern
+  passed every synthetic test because I wrote the test strings myself.**

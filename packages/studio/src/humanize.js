@@ -62,7 +62,11 @@ export const PATTERNS = [
     name: "AI vocabulary",
     cat: "language",
     why: "these words are statistically over-represented in LLM output; a person picking words for a 30-second script almost never reaches for them",
-    test: rx("\\b(delve|delves|delving|intricate|intricacies|interplay|tapestry|testament|pivotal|underscore[sd]?|showcase[sd]?|garner(?:ed|s)?|foster(?:ing|ed|s)?|enhance[sd]?|enhancing|multifaceted|realm|myriad|plethora|paradigm|holistic|robust|seamless(?:ly)?|leverage[sd]?|utilize[sd]?|facilitate[sd]?|endeavor|nuanced|vibrant|landscape of|evolving landscape)\\b"),
+    // -ing forms need the stem, not the full word: "leveraging" is
+    // leverag+ing, so `leverage[sd]?` never matches it. Real generated copy
+    // came back with "Leveraging AirLLM to…" and scored a clean 100 — the
+    // most common form of the tell was invisible to the pattern.
+    test: rx("\\b(delv(?:e[sd]?|ing)|intricate|intricacies|interplay|tapestry|testament|pivotal|underscor(?:e[sd]?|ing)|showcas(?:e[sd]?|ing)|garner(?:ed|s|ing)?|foster(?:ing|ed|s)?|enhanc(?:e[sd]?|ing)|multifaceted|realm|myriad|plethora|paradigm|holistic|robust|seamless(?:ly)?|leverag(?:e[sd]?|ing)|utiliz(?:e[sd]?|ing)|facilitat(?:e[sd]?|ing)|endeavor|nuanced|vibrant|landscape of|evolving landscape)\\b"),
     surfaces: { voiceover: FATAL, title: FATAL, description: HIGH, caption: HIGH, reply: HIGH, post: HIGH },
   },
   {

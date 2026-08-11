@@ -41,14 +41,27 @@ export function tierChain(tier) {
       {
         provider: "openrouter",
         // OpenRouter's free roster ROTATES — llama-3.3-70b:free was the default
-        // here and now 404s with "unavailable for free". Any hardcoded value
-        // goes stale, so OPENROUTER_FREE_MODEL is the real setting and this is
-        // only a starting guess. Verified working: google/gemma-4-31b-it:free
-        // (clean JSON, ~3s). List current ones with `factory ai models`.
-        model: env.OPENROUTER_FREE_MODEL || "google/gemma-4-31b-it:free",
+        // here and now 404s "unavailable for free". Any hardcoded value goes
+        // stale, so OPENROUTER_FREE_MODEL is the real setting and this is only
+        // a starting guess. List current ones with `factory ai models`.
+        //
+        // Reliability matters more than raw capability here: the free pool is
+        // shared across all OpenRouter users, so the POPULAR models are the
+        // congested ones. gemma-4-31b measured 0/4 while gemma-4-26b measured
+        // 4/4 — picking the bigger model made the tier look broken.
+        model: env.OPENROUTER_FREE_MODEL || "google/gemma-4-26b-a4b-it:free",
         needs: () => Boolean(env.OPENROUTER_API_KEY),
         costPerCall: 0,
         label: "OpenRouter :free",
+      },
+      {
+        // A second, different free model. Congestion is per-model, so one
+        // alternate rescues far more runs than retrying the same busy model.
+        provider: "openrouter",
+        model: env.OPENROUTER_FREE_MODEL_2 || "nvidia/nemotron-3-nano-30b-a3b:free",
+        needs: () => Boolean(env.OPENROUTER_API_KEY),
+        costPerCall: 0,
+        label: "OpenRouter :free (alt)",
       },
     ],
     budget: [

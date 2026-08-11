@@ -14,7 +14,9 @@ const num = (args, name, d) => {
 };
 
 export async function motion(argv) {
-  const [action, ...rest] = argv;
+  // --help is a usage request, not an unknown subcommand
+  const [rawAction, ...rest] = argv;
+  const action = rawAction === "--help" || rawAction === "-h" ? undefined : rawAction;
   const targs = rest.filter((a) => !a.startsWith("--"));
 
   switch (action) {

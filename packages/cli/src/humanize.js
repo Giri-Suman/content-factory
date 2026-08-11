@@ -22,7 +22,9 @@ function report(r, label) {
 }
 
 export async function humanize(argv) {
-  const [action, ...rest] = argv;
+  // --help is a usage request, not an unknown subcommand
+  const [rawAction, ...rest] = argv;
+  const action = rawAction === "--help" || rawAction === "-h" ? undefined : rawAction;
   const targs = rest.filter((a) => !a.startsWith("--"));
   const surface = flag(rest, "surface") || "voiceover";
   const doFix = rest.includes("--fix");
@@ -169,6 +171,11 @@ export async function humanize(argv) {
         if (t) rows.push(["title", b.id, H.scan(t, { surface: "title" })]);
         if (hook) rows.push(["hook", b.id, H.scan(hook, { surface: "voiceover" })]);
         if (p.ig_reel?.caption) rows.push(["caption", b.id, H.scan(p.ig_reel.caption, { surface: "caption" })]);
+        // core_idea and the blog outline are generated prose too — the first
+        // real brief put "Leveraging AirLLM to…" in core_idea, which no
+        // scanned surface was looking at.
+        if (p.core_idea) rows.push(["core-idea", b.id, H.scan(p.core_idea, { surface: "description" })]);
+        if (p.blog_outline?.quick_answer) rows.push(["blog", b.id, H.scan(p.blog_outline.quick_answer, { surface: "description" })]);
       }
       for (const l of collection("engagementlog").all()) {
         if (l.replyDraft) rows.push(["reply", l.id, H.scan(l.replyDraft, { surface: "reply" })]);
@@ -197,8 +204,9 @@ export async function humanize(argv) {
         console.log(`    It will only mean something once briefs generate for real (needs a`);
         console.log(`    reachable AI tier: \`factory ai\`).`);
       } else if (templated) {
+        const real = briefs.length - templated;
         console.log(`\n  note: ${templated}/${briefs.length} briefs are still [fill:] templates and`);
-        console.log(`    score artificially clean — only the ${briefs.length - templated} real ones are meaningful.`);
+        console.log(`    score artificially clean — only the ${real} real ${real === 1 ? "one is" : "ones are"} meaningful.`);
       }
       console.log("");
       return true;
