@@ -228,6 +228,56 @@ score solo — a chip on a blank frame tells you nothing.
 the renderer ignores it if unused), which also makes the effect→retention
 join automatic instead of hand-tagged.
 
+## Four AI tiers (`factory ai`)
+
+Every AI feature picks a **tier**, not a provider. Pick per task — free
+scoring plus best scripts is one command, and it's the economically correct
+split since scoring runs hundreds of times and a script runs once per video.
+
+| Tier | Cost/call | Leads with | For |
+|---|---|---|---|
+| `free` | **$0** | `google/gemma-4-26b-a4b-it:free` | everything, genuinely — this is not a crippled tier |
+| `cheap` | ~$0.0003 | DeepSeek V4 Flash | high-volume scoring and judging |
+| `medium` | ~$0.009 | Gemini 3.6 Flash | strong structured output without frontier pricing |
+| `best` | ~$0.03 | Claude Opus 5 | the few calls that decide quality — hooks, scripts |
+
+```bash
+factory ai                       # what's ready, with real cost per tier
+factory ai models                # current free roster on OpenRouter
+factory ai set script best       # per-task assignment
+factory ai set transcribe best   # services too (4 whisper sizes)
+```
+
+Three things worth knowing:
+
+**The free tier is chosen for reliability, not size.** OpenRouter's free pool
+is congested *per model*, and the popular models are the busy ones — measured
+with 9s spacing, `gemma-4-31b:free` returned **0/4** while `gemma-4-26b:free`
+returned **4/4**. Picking the bigger free model makes the whole tier look
+broken. A second, different free model sits behind it in the chain, because
+congestion is per-model and one alternate rescues far more runs than retrying
+the same busy one.
+
+**Chains only fall DOWN.** `best` → `medium` → `cheap` → `free`, eight
+options deep. You are never silently charged more than the tier you chose,
+and a dead provider degrades instead of failing the run.
+
+**Model ids rot.** Two hardcoded defaults 404'd inside a year
+(`llama-3.3-70b:free` "unavailable for free", `gemini-2.0-flash-001` "no
+endpoints found"), each silently dropping the system to template mode. Every
+id above was verified present in OpenRouter's catalogue with its real price —
+but treat them as starting values and use `factory ai models`. Overrides:
+`OPENROUTER_FREE_MODEL`, `OPENROUTER_CHEAP_MODEL`, `OPENROUTER_MEDIUM_MODEL`,
+`OPENROUTER_BEST_MODEL` (each with a `_2` alternate).
+
+Legacy `budget`/`premium` names still work everywhere and normalise to
+`cheap`/`best`.
+
+`voice` and `image` deliberately have **no `medium` step** — ElevenLabs and
+fal.ai each sell two products, and inventing a third would be a lie; those
+fall through to `cheap`. `transcribe` uses all four (whisper
+base/small/medium/large-v3), all local at $0.
+
 ## Evidence floor (`factory evidence`)
 
 Adapted from the [`last30days` skill by mvanhorn](https://github.com/mvanhorn/last30days-skill)
@@ -300,7 +350,7 @@ characters). `compileBrief` auto-strips these on every compile.
 ```bash
 factory humanize scan "your text" --surface=voiceover --fix
 factory humanize script <brief-id> --fix          # mechanical fixes
-factory humanize script <brief-id> --fix --ai     # + rephrasing (3-tier, free tier = $0)
+factory humanize script <brief-id> --fix --ai     # + rephrasing (tiered, free = $0)
 factory humanize audit                            # everything the factory has generated
 factory humanize voice                            # learn your style from your shipped posts
 factory humanize patterns                         # the per-surface weight table
@@ -359,7 +409,7 @@ what can wait.
 ```
 packages/cli/       the `factory` command — 42 subcommands
 packages/shared/    env loading, repo paths, config, JSON collection store
-packages/llm/       3-tier AI router (free → budget → premium) + tier chains
+packages/llm/       4-tier AI router (free → cheap → medium → best) + chains
 packages/radar/     trend discovery, clustering, evidence floor, quotes, keywords
 packages/pipeline/  orchestrator, batch, longform, reframe, clips, step cards
 packages/studio/    briefs, compileBrief, motionLab, humanize, nichePacks, tools

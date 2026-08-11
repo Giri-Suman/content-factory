@@ -233,3 +233,19 @@ once; append after every failed attempt or surprise.
   **for -ing forms match the STEM (`leverag(?:e[sd]?|ing)`), and remember
   that a detector can only be validated against real output: this pattern
   passed every synthetic test because I wrote the test strings myself.**
+
+- The Settings API hand-maintained its OWN copy of the AI tier table, and it
+  had drifted to advertising "llama-3.3-70b:free" and "gemini-2.0-flash" —
+  both dead ids that 404 — so the portal confidently displayed models that
+  could not run. Same failure class as the duplicated velocityBaselines →
+  **a registry with a second hand-written copy is not a registry. Derive UI
+  from the source module (tierAvailability/serviceAvailability), never
+  re-list its contents in a route.**
+
+- Renaming TIER_NAMES from free/budget/premium to free/cheap/medium/best
+  would have silently broken three consumers that hardcoded the old strings
+  (`autoedit.js` whisper mapping returned "base" for every tier, and two
+  Settings UI arrays rendered dead chips) →
+  **when an enum is a public contract, grep for its VALUES before renaming,
+  add an alias map for persisted configs, and make the resolver normalise
+  rather than fall back — a fallback hides the break, an alias fixes it.**

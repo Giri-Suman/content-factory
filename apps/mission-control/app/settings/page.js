@@ -126,10 +126,13 @@ export default function SettingsPage() {
             ].map(([task, label, note]) => (
               <div key={task} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ width: 150, fontSize: 13 }}>{label}</span>
-                {["free", "budget", "premium"].map((tier) => (
+                {/* tier list comes from the registry via the API — hardcoding it
+                    here is how the old 3-tier names outlived the 4-tier change */}
+                {(aiTiers.availability || []).map((a) => a.tier).map((tier) => (
                   <button
                     key={tier}
                     className={`chip${aiTiers.assigned[task] === tier ? " on" : ""}`}
+                    title={aiTiers.tierMeta?.[tier] ? `${aiTiers.tierMeta[tier].cost} — ${aiTiers.tierMeta[tier].note}` : ""}
                     onClick={() => {
                       const next = { ...aiTiers.assigned, [task]: tier };
                       setAiTiers({ ...aiTiers, assigned: next });
@@ -164,11 +167,19 @@ export default function SettingsPage() {
             {svcTiers.services.map((s) => (
               <div key={s.service} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ width: 150, fontSize: 13 }}>{s.label}</span>
-                {["free", "budget", "premium"].map((tier) => (
+                {(svcTiers.tierNames || []).map((tier) => (
                   <button
                     key={tier}
                     className={`chip${svcTiers.assigned[s.service] === tier ? " on" : ""}`}
-                    title={s.ready[tier] ? "" : "not configured — will fall back to free"}
+                    /* voice/image have no `medium` step on purpose — say so
+                       rather than offering a chip that silently falls back */
+                    title={
+                      (s.tiers || []).find((t) => t.tier === tier)?.available
+                        ? ""
+                        : (s.tiers || []).some((t) => t.tier === tier && t.options.length === 0)
+                          ? `no ${tier} option for ${s.label} — falls back to the tier below`
+                          : "not configured — will fall back to free"
+                    }
                     onClick={() => {
                       const next = { ...svcTiers.assigned, [s.service]: tier };
                       setSvcTiers({ ...svcTiers, assigned: next });

@@ -350,13 +350,17 @@ switch (cmd) {
       if (action === "set" && aargs[0] && aargs[1]) {
         const isTask = Boolean(TASKS[aargs[0]]);
         const isSvc = Boolean(SERVICES[aargs[0]]);
-        if ((!isTask && !isSvc) || !TIER_NAMES.includes(aargs[1])) {
+        // accept the legacy budget/premium names so old notes still work, but
+        // persist the canonical one and say so rather than storing a stale name
+        const { canonicalTier } = await import("../../llm/src/tiers.js");
+        const tier = canonicalTier(aargs[1]);
+        if ((!isTask && !isSvc) || !tier) {
           throw new Error(`usage: factory ai set <${[...Object.keys(TASKS), ...Object.keys(SERVICES)].join("|")}> <${TIER_NAMES.join("|")}>`);
         }
-        if (isTask) cfg.aiTiers = { ...tiers, [aargs[0]]: aargs[1] };
-        else cfg.serviceTiers = { ...svcTiers, [aargs[0]]: aargs[1] };
+        if (isTask) cfg.aiTiers = { ...tiers, [aargs[0]]: tier };
+        else cfg.serviceTiers = { ...svcTiers, [aargs[0]]: tier };
         saveUserConfig(cfg);
-        console.log(`${aargs[0]} -> ${aargs[1]} tier`);
+        console.log(`${aargs[0]} -> ${tier} tier${tier !== aargs[1] ? `  (“${aargs[1]}” is the old name for “${tier}”)` : ""}`);
       } else if (action === "models") {
         // OpenRouter's free roster rotates; a stale default 404s with
         // "unavailable for free", which reads like a broken key. Check it here.
@@ -375,9 +379,11 @@ switch (cmd) {
         console.log(`  change it with OPENROUTER_FREE_MODEL=<id> in .env`);
         console.log(`  pick one that returns clean JSON — some leak reasoning or fence it\n`);
       } else {
+        const { TIER_META } = await import("../../llm/src/tiers.js");
         console.log("\nAI TIERS — what's ready right now:\n");
         for (const t of tierAvailability()) {
-          console.log(`  ${t.tier.padEnd(8)} ${t.available ? "READY" : "not set up"}`);
+          const meta = TIER_META[t.tier] || {};
+          console.log(`  ${t.tier.padEnd(8)} ${(t.available ? "READY" : "not set up").padEnd(11)} ${(meta.cost || "").padEnd(16)} ${meta.note || ""}`);
           for (const o of t.options) console.log(`     ${o.ready ? "+" : "o"} ${o.label.padEnd(22)} ${o.model}`);
         }
 
@@ -398,11 +404,10 @@ switch (cmd) {
               const left = (data.total_credits || 0) - (data.total_usage || 0);
               console.log(`\n  OpenRouter balance: $${left.toFixed(4)}  (granted $${(data.total_credits || 0).toFixed(2)}, used $${(data.total_usage || 0).toFixed(4)})`);
               if (left <= 0) {
-                console.log(`  ⚠ no credits — the BUDGET and PREMIUM rows above cannot actually run.`);
-                console.log(`    Free models still work but OpenRouter caps never-purchased accounts`);
-                console.log(`    hard, so a multi-call job (brief, clustering) exhausts the quota and`);
-                console.log(`    silently falls back to templates. Options: add credit at`);
-                console.log(`    openrouter.ai/settings/credits, or run Ollama locally for free.`);
+                console.log(`  ⚠ no credits — the CHEAP, MEDIUM and BEST rows above cannot actually run,`);
+                console.log(`    however "READY" they look. Only the free tier will work.`);
+                console.log(`    Add credit at openrouter.ai/settings/credits to unlock them, or stay`);
+                console.log(`    on free — it is genuinely sufficient for one video at a time.`);
               }
             }
           } catch {

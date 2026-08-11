@@ -1,24 +1,48 @@
 /**
- * Three-tier AI. Every AI feature in the factory picks a TIER, not a
- * provider — you choose how much each job is worth:
+ * Four-tier AI. Every AI feature picks a TIER, not a provider — you choose
+ * what each job is worth:
  *
- *   free     $0 forever. Ollama running locally, or OpenRouter ":free"
- *            models. Slower / smaller, but unlocks every AI feature.
- *   budget   cents per video. Haiku-class or cheap OpenRouter models.
- *            The right default for high-volume jobs (scoring, judging).
- *   premium  best results. Opus/Sonnet-class. Worth it for the few calls
- *            that decide quality: scripts, briefs, hooks.
+ *   free    $0 forever. The best free model that ACTUALLY WORKS — chosen for
+ *           reliability, not size, because OpenRouter's free pool is
+ *           congested per-model and the popular models are the busy ones.
+ *   cheap   best results per cent. Fractions of a cent per call; the right
+ *           default for anything high-volume.
+ *   medium  the balanced pick. Strong structured output and instruction
+ *           following without frontier pricing.
+ *   best    best results available, cost no object. For the few calls that
+ *           decide quality: hooks, scripts, final copy.
  *
- * Per-task assignment lives in data/config.json (aiTiers), so you can run
- * free scoring + premium scripts — the economically correct split, since
- * scoring runs hundreds of times and scripts run once per video.
+ * Per-task assignment lives in data/config.json (aiTiers), so free scoring +
+ * best scripts is one config away — the economically correct split, since
+ * scoring runs hundreds of times and a script runs once per video.
  *
- * Each tier is a CHAIN: the first configured, reachable option wins, and
- * a failure falls through to the next (including down a tier) so a dead
- * provider degrades instead of breaking the run.
+ * Each tier is a CHAIN: first configured reachable option wins, and failures
+ * fall through to the next — including DOWN a tier, never up. You are never
+ * silently charged more than the tier you picked.
+ *
+ * Every model id below was verified present in OpenRouter's catalogue, with
+ * its real price, at the time of writing. Ids ROT (two hardcoded defaults
+ * 404'd within a year), so treat them as starting values and check
+ * `factory ai models`.
  */
 
-export const TIER_NAMES = ["free", "budget", "premium"];
+export const TIER_NAMES = ["free", "cheap", "medium", "best"];
+
+/** Shown in the CLI and Settings so the choice is legible. */
+export const TIER_META = {
+  free: { label: "Free", cost: "$0", note: "best free model that actually works — reliability over size" },
+  cheap: { label: "Cheap", cost: "~$0.0003/call", note: "best quality per cent; fine for high volume" },
+  medium: { label: "Medium", cost: "~$0.009/call", note: "balanced — strong structured output, no frontier price" },
+  best: { label: "Best", cost: "~$0.03/call", note: "best results available; for the calls that decide quality" },
+};
+
+/**
+ * Older configs (and older docs) used budget/premium. Map them rather than
+ * silently falling back to free, which would look like the setting was
+ * ignored.
+ */
+const TIER_ALIASES = { budget: "cheap", premium: "best" };
+export const canonicalTier = (t) => (TIER_NAMES.includes(t) ? t : TIER_ALIASES[t] || null);
 
 /** Tasks that can be tier-assigned independently. */
 export const TASKS = {
@@ -27,7 +51,7 @@ export const TASKS = {
   analysis: { label: "Analysis & lessons", volume: "medium", note: "wishlist autopsies, memos, distillation" },
 };
 
-export const DEFAULT_TIERS = { score: "free", script: "budget", analysis: "free" };
+export const DEFAULT_TIERS = { score: "free", script: "cheap", analysis: "free" };
 
 /**
  * Ordered options per tier. `model` may be a function of env so users can
@@ -64,43 +88,79 @@ export function tierChain(tier) {
         label: "OpenRouter :free (alt)",
       },
     ],
-    budget: [
+    // CHEAP — most results per cent. DeepSeek V4 Flash is $0.08/M in,
+    // $0.18/M out: a capable reasoning model for ~3 hundredths of a cent per
+    // call, which makes it the correct default for anything high-volume.
+    cheap: [
       {
         provider: "openrouter",
-        // gemini-2.0-flash-001 was the default and now 404s "No endpoints
-        // found" — two major versions stale. Model ids rot; override with
-        // OPENROUTER_BUDGET_MODEL and check `factory ai models`.
-        model: env.OPENROUTER_BUDGET_MODEL || "google/gemini-3.5-flash-lite",
+        model: env.OPENROUTER_CHEAP_MODEL || env.OPENROUTER_BUDGET_MODEL || "deepseek/deepseek-v4-flash-0731",
         needs: () => Boolean(env.OPENROUTER_API_KEY),
-        costPerCall: 0.0015,
-        label: "OpenRouter budget",
+        costPerCall: 0.0003,
+        label: "DeepSeek V4 Flash",
+      },
+      {
+        // even cheaper ($0.03/M in) — the floor before quality really drops
+        provider: "openrouter",
+        model: env.OPENROUTER_CHEAP_MODEL_2 || "qwen/qwen3.7-flash",
+        needs: () => Boolean(env.OPENROUTER_API_KEY),
+        costPerCall: 0.00015,
+        label: "Qwen3.7 Flash",
       },
       {
         provider: "anthropic",
-        model: env.ANTHROPIC_BUDGET_MODEL || "claude-haiku-4-5-20251001",
+        model: env.ANTHROPIC_CHEAP_MODEL || "claude-haiku-4-5-20251001",
         needs: () => Boolean(env.ANTHROPIC_API_KEY),
         costPerCall: 0.004,
         label: "Claude Haiku",
       },
     ],
-    premium: [
+    // MEDIUM — the balanced pick. Gemini Flash is the strongest all-rounder
+    // in this band for structured/JSON work, which is most of what the
+    // factory asks for. Qwen3.7 Plus sits behind it at a fifth the price.
+    medium: [
       {
-        provider: "anthropic",
-        model: env.ANTHROPIC_PREMIUM_MODEL || "claude-sonnet-5",
-        needs: () => Boolean(env.ANTHROPIC_API_KEY),
-        costPerCall: 0.03,
-        label: "Claude Sonnet 5",
+        provider: "openrouter",
+        model: env.OPENROUTER_MEDIUM_MODEL || "google/gemini-3.6-flash",
+        needs: () => Boolean(env.OPENROUTER_API_KEY),
+        costPerCall: 0.009,
+        label: "Gemini 3.6 Flash",
       },
       {
         provider: "openrouter",
-        model: env.OPENROUTER_PREMIUM_MODEL || "anthropic/claude-sonnet-5",
+        model: env.OPENROUTER_MEDIUM_MODEL_2 || "qwen/qwen3.7-plus",
+        needs: () => Boolean(env.OPENROUTER_API_KEY),
+        costPerCall: 0.002,
+        label: "Qwen3.7 Plus",
+      },
+    ],
+    // BEST — cost no object. Opus 5 leads; Sonnet 5 is the near-frontier
+    // fallback at $2/M in, and is genuinely cheaper than Sonnet 4.6 was.
+    best: [
+      {
+        provider: "anthropic",
+        model: env.ANTHROPIC_BEST_MODEL || env.ANTHROPIC_PREMIUM_MODEL || "claude-opus-5",
+        needs: () => Boolean(env.ANTHROPIC_API_KEY),
+        costPerCall: 0.03,
+        label: "Claude Opus 5 (direct)",
+      },
+      {
+        provider: "openrouter",
+        model: env.OPENROUTER_BEST_MODEL || env.OPENROUTER_PREMIUM_MODEL || "anthropic/claude-opus-5",
         needs: () => Boolean(env.OPENROUTER_API_KEY),
         costPerCall: 0.035,
-        label: "Sonnet via OpenRouter",
+        label: "Claude Opus 5",
+      },
+      {
+        provider: "openrouter",
+        model: env.OPENROUTER_BEST_MODEL_2 || "anthropic/claude-sonnet-5",
+        needs: () => Boolean(env.OPENROUTER_API_KEY),
+        costPerCall: 0.014,
+        label: "Claude Sonnet 5",
       },
     ],
   };
-  return chains[tier] || chains.free;
+  return chains[canonicalTier(tier) || "free"] || chains.free;
 }
 
 /**
@@ -108,7 +168,7 @@ export function tierChain(tier) {
  * cheaper tiers (never silently upgrade to a pricier tier than you chose).
  */
 export function resolveChain(task, tiers = DEFAULT_TIERS) {
-  const tier = TIER_NAMES.includes(tiers[task]) ? tiers[task] : DEFAULT_TIERS[task] || "free";
+  const tier = canonicalTier(tiers[task]) || DEFAULT_TIERS[task] || "free";
   const order = TIER_NAMES.slice(0, TIER_NAMES.indexOf(tier) + 1).reverse(); // chosen, then cheaper
   const chain = [];
   for (const t of order) {
@@ -128,21 +188,26 @@ export function tierAvailability() {
 }
 
 /* ==================================================================
- * The other three paid surfaces. Same three-tier contract as the LLM:
- * free is genuinely $0, budget is cents, premium is best-result — and
- * every one degrades DOWN to free rather than failing.
+ * The other three paid surfaces. Same four-tier contract as the LLM:
+ * free is genuinely $0 and every tier degrades DOWN rather than failing.
+ *
+ * Not every surface has four real steps, and inventing one would be worse
+ * than leaving a gap: voice and image have two paid products each, so
+ * `medium` is deliberately absent and falls through to `cheap`. Transcribe
+ * genuinely has four whisper sizes, so it uses all four.
  * ================================================================== */
 
 export const SERVICES = {
   voice: {
     label: "Voice",
-    note: "free = Windows TTS (robotic but usable) · premium = YOUR cloned voice",
+    note: "free = Windows TTS (robotic but usable) · best = YOUR cloned voice",
     tiers: {
       free: [{ id: "sapi", label: "Windows SAPI (local)", costPerChar: 0, needs: () => process.platform === "win32" }],
-      budget: [
+      cheap: [
         { id: "eleven-flash", label: "ElevenLabs Flash", model: "eleven_flash_v2_5", costPerChar: 0.00005, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
       ],
-      premium: [
+      // no `medium` — ElevenLabs has two products, not three
+      best: [
         { id: "eleven-v2", label: "ElevenLabs multilingual v2 (your clone)", model: "eleven_multilingual_v2", costPerChar: 0.00018, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
       ],
     },
@@ -152,8 +217,8 @@ export const SERVICES = {
     note: "free = brand-tokened HTML (already excellent) · paid adds generated backgrounds",
     tiers: {
       free: [{ id: "html", label: "HTML + system Chrome", costPerImage: 0, needs: () => true }],
-      budget: [{ id: "flux-schnell", label: "Flux schnell (fal.ai)", model: "fal-ai/flux/schnell", costPerImage: 0.003, needs: () => Boolean(process.env.FAL_KEY) }],
-      premium: [{ id: "flux-pro", label: "Flux 1.1 pro (fal.ai)", model: "fal-ai/flux-pro/v1.1", costPerImage: 0.04, needs: () => Boolean(process.env.FAL_KEY) }],
+      cheap: [{ id: "flux-schnell", label: "Flux schnell (fal.ai)", model: "fal-ai/flux/schnell", costPerImage: 0.003, needs: () => Boolean(process.env.FAL_KEY) }],
+      best: [{ id: "flux-pro", label: "Flux 1.1 pro (fal.ai)", model: "fal-ai/flux-pro/v1.1", costPerImage: 0.04, needs: () => Boolean(process.env.FAL_KEY) }],
     },
   },
   transcribe: {
@@ -161,8 +226,9 @@ export const SERVICES = {
     note: "all tiers run LOCALLY at $0 — the tier only trades speed for accuracy",
     tiers: {
       free: [{ id: "whisper-base", label: "whisper base (local)", model: "base", costPerMin: 0, needs: () => true }],
-      budget: [{ id: "whisper-small", label: "whisper small (local, better)", model: "small", costPerMin: 0, needs: () => true }],
-      premium: [{ id: "whisper-medium", label: "whisper medium (local, best)", model: "medium", costPerMin: 0, needs: () => true }],
+      cheap: [{ id: "whisper-small", label: "whisper small (local, better)", model: "small", costPerMin: 0, needs: () => true }],
+      medium: [{ id: "whisper-medium", label: "whisper medium (local)", model: "medium", costPerMin: 0, needs: () => true }],
+      best: [{ id: "whisper-large", label: "whisper large-v3 (local, best)", model: "large-v3", costPerMin: 0, needs: () => true }],
     },
   },
 };
@@ -173,7 +239,7 @@ export const DEFAULT_SERVICE_TIERS = { voice: "free", image: "free", transcribe:
 export function resolveService(service, tiers = {}) {
   const spec = SERVICES[service];
   if (!spec) throw new Error(`unknown service ${service}`);
-  const chosen = TIER_NAMES.includes(tiers[service]) ? tiers[service] : DEFAULT_SERVICE_TIERS[service];
+  const chosen = canonicalTier(tiers[service]) || DEFAULT_SERVICE_TIERS[service];
   const order = TIER_NAMES.slice(0, TIER_NAMES.indexOf(chosen) + 1).reverse();
   for (const tier of order) {
     for (const opt of spec.tiers[tier] || []) {
