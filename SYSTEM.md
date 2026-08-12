@@ -220,7 +220,77 @@ posts to learn from.
 
 ---
 
-## 6. Data model
+## 6. Mission Control — the portal
+
+```bash
+npm run dev --prefix apps/mission-control     # → http://localhost:4600
+```
+
+Next.js, port 4600, **23 pages over 33 API routes**. Every page is a view over
+the same CLI and the same JSON store — nothing is portal-only, so anything you
+can click you can also script. The exception is **brief approval**, which is
+portal-only on purpose (see §8).
+
+Pages are ordered by pipeline stage in the sidebar, not alphabetically.
+
+### Daily driver
+| Tab | What it's for | You can |
+|---|---|---|
+| **Today** | the command centre — what's moving, what needs a decision, what ships today | refresh scan, tick the posting checklist |
+| **Trends** | Trend Radar: what your niches are talking about now, scored for video potential | filter, inspect clusters, draft a brief |
+| **Briefs** | Brief Studio — the human gate | **Approve · Improve · Kill** |
+| **Production** | kanban of every brief in flight; flags items stuck >24h (>6h if trend-lane) | drop a capture file to edit |
+| **Publish** | Publish Center: staged, private-first queue | copy all metadata, mark live |
+
+### Finding what to make
+| Tab | What it's for | You can |
+|---|---|---|
+| **YouTube** | YouTube Radar — trending, niche heat, watchlist, shorts outliers | add to watchlist, analyze, brief it |
+| **Wishlist** | autopsy posts you admire, scored against 9 hook patterns | brief it |
+| **Keywords** | keyword-gap finder: demand proxy vs actual supply | brief it |
+| **Ideas** | Idea Bank ranked by pillar × effort × freshness | read-only ranking |
+| **Catalog** | format registry + back-catalog gaps | compile newsletter, mine comments, seed formats/ideas |
+| **Lab** | Title & Hook Lab scoring | extract patterns now |
+
+### Making it
+| Tab | What it's for | You can |
+|---|---|---|
+| **Scripts** | every draft the studio has produced | edit scenes, send to the render farm |
+| **Renders** | finished MP4s with in-browser preview | play, cut shorts |
+| **Motion** | Motion Lab — 22 effects as **hover-playable video** | filter by family, re-bench, see measured scores |
+| **Math** | Manim math shorts + bundled demos | render a scene |
+| **Footage** | your own local recordings for the capture lane | — |
+| **Packaging** | thumbnail variants + metadata review | compare variants |
+
+### Quality & learning
+| Tab | What it's for | You can |
+|---|---|---|
+| **QC** | the judge network's verdicts and escalation queue | resolve an escalation |
+| **Lessons** | distilled rules + prompt version history | see what's being injected |
+| **Playbooks** | per-platform rule proposals derived from your outcomes | **Approve · Reject** |
+| **Analytics** | Calibration — predictions vs your real results | ingest my channel, revert a tune |
+| **Cost** | spend per module, per day | read-only dashboard |
+| **Tools** | Creator Tools — the practical layer | captions, chapters, b-roll, music, UTM links, mine Shorts, reply drafts, 6 analyses |
+| **Settings** | niches, **AI tiers**, key status, live quota budgets, backup export | save |
+
+### What the portal adds over the CLI
+
+- **Watching a video before you ship it.** Renders and Motion stream MP4s with
+  Range support, so you can scrub a render or hover an effect. The CLI can only
+  tell you a file exists.
+- **The approval decision with context.** Briefs shows all hook variants,
+  platform copy and the evidence level side by side — the CLI prints them, but
+  choosing between three hooks is a looking task.
+- **Live job logs.** Long jobs (`batch`, `bench --all`, `produce`) run in the
+  background and stream their output into the page.
+- **Escalation triage.** QC surfaces what failed three times and why, which is
+  where a human actually has to intervene.
+
+Everything else is parity — the portal calls the same commands.
+
+---
+
+## 7. Data model
 
 JSON collections in `data/os/*.json` (no SQLite — no native modules on this
 machine). Atomic writes, `.bak` on prune.
@@ -240,7 +310,7 @@ machine). Atomic writes, `.bak` on prune.
 
 ---
 
-## 7. Hard rules the system enforces
+## 8. Hard rules the system enforces
 
 These are non-negotiable and deliberately hard to bypass:
 
@@ -266,7 +336,7 @@ These are non-negotiable and deliberately hard to bypass:
 
 ---
 
-## 8. Running it
+## 9. Running it
 
 ```bash
 node packages/cli/bin/factory.js radar collect     # 1. find topics
@@ -287,7 +357,7 @@ The portal at **http://localhost:4600** exposes all of it across 23 pages.
 
 ---
 
-## 9. File map
+## 10. File map
 
 ```
 packages/cli/       the `factory` command — 42 subcommands
@@ -309,7 +379,7 @@ imported from `packages/`, never in the Vercel build.
 
 ---
 
-## 10. Knowledge files
+## 11. Knowledge files
 
 - **`lessons.md`** — 20+ entries of *tried → broke → rule*. Read before
   retrying anything that failed once; append after every surprise. This is the
