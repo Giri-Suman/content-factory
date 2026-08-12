@@ -42,7 +42,7 @@ Being precise about this matters more than the feature list.
 |---|---|
 | Render pipeline | **Working.** Produced a real 26.5s video in 4.6 min at $0.00 |
 | AI generation | **Working** on the free tier — real hooks, titles, beats, blog outlines |
-| Trend collection | **Working.** 120 clusters from HN/GitHub/Reddit/RSS |
+| Trend collection | **Working.** ~357 items/run from 17 sources |
 | Evidence floor | **Working.** 10–13 of 120 clusters clear the bar |
 | Community quotes | **Working.** HN discussions attached, verbatim + attributed |
 | Judges / QC | **Working.** 77 critiques logged |
@@ -65,7 +65,7 @@ real video unblocks more than any new feature would.
 ### Discover
 | Command | What it does |
 |---|---|
-| `radar collect` | sweep HN, GitHub trending, Reddit, RSS; score and snapshot |
+| `radar collect` | sweep 17 sources across 6 kinds; score and snapshot |
 | `radar score` | cluster items, compute opportunityScore + evidence level |
 | `evidence report` | **which clusters actually deserve a video** (the one to trust) |
 | `evidence quotes` | real community language, verbatim and attributed |
@@ -164,6 +164,38 @@ Flux), `transcribe` (4 whisper sizes, all local at $0).
 ---
 
 ## 5. The subsystems worth understanding
+
+### Sources — 17 collectors, 6 kinds of evidence
+```
+hn          front page + Show HN (people demoing what they built)
+github      trending + new repos that got popular fast
+reddit      programming, webdev, reactjs, SideProject, MachineLearning,
+            LocalLLaMA, AI_Agents, artificial, automation, math, beauty...
+launch      Product Hunt (new products, ranked by votes)
+newsletter  Ben's Bites, TLDR AI, TLDR Tech - the cheapest legitimate proxy
+            for X, since those editors monitor it full-time
+vendor      OpenAI, Anthropic, Vercel, GitHub blog (primary sources)
+press       TechCrunch, The Verge, Ars Technica, Allure
+```
+Feed *kind* matters to the evidence floor: a vendor announcing its own product
+is a primary source, press rewriting it is weak confirmation, a newsletter
+editor choosing to feature it is a human filter, a launch board is votes.
+Collapsing them all to "rss" meant real corroboration could never register.
+Likewise `hn` + `hn-show` collapse to ONE source — two queries against one
+site must not read as independent confirmation.
+
+**Reddit needs OAuth to work properly.** Unauthenticated access is effectively
+dead: measured, 1 of 5 subs succeeded at both 5s *and* 9s spacing, so no amount
+of pacing fixes it. Keyless mode therefore collects a **rotating window of 3
+subs per run**, with the cursor persisted so every sub gets its turn within a
+couple of hours. A free "script" app at reddit.com/prefs/apps gives 100
+queries/minute and collects everything every run — set `REDDIT_CLIENT_ID` and
+`REDDIT_CLIENT_SECRET` in `.env`.
+
+**The Rundown is deliberately absent.** Checked `/feed`, `/rss`, `/rss.xml`
+and the beehiiv subdomain — all 404 or non-RSS. Gmail parsing would be its only
+route, and that is a large build (OAuth, HTML-email parsing) for one newsletter
+whose function Ben's Bites and TLDR AI already cover.
 
 ### Evidence floor — *does this deserve a video?*
 The radar ranks 120 clusters and always produces a top row. That's what

@@ -36,6 +36,24 @@ export function save() {
   renameSync(tmp, STORE_PATH);
 }
 
+/**
+ * Small named counters that must survive between runs — currently the
+ * rotating window over subreddits, since keyless Reddit can only collect a
+ * few per pass and the cursor is what makes the coverage fair over time.
+ */
+export function readCursor(name) {
+  const s = load();
+  return (s.cursors || {})[name] ?? null;
+}
+
+export function writeCursor(name, value) {
+  const s = load();
+  s.cursors ??= {};
+  s.cursors[name] = value;
+  save();
+  return value;
+}
+
 export const trendId = (str) => {
   let h = 5381;
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;

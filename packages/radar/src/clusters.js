@@ -19,11 +19,32 @@ const SATURATION_DEFAULT = 7;
 // per-source velocity baselines until 7 days of snapshots exist (pts/hour)
 const VELOCITY_BASELINES = { hn: 8, github: 25, reddit: 12, rss: 1, youtube: 2000 };
 
+/**
+ * Collapses collector lanes to INDEPENDENT sources. `hn` and `hn-show` are two
+ * queries against one site, as are `github` and `github-new` — counting them
+ * separately would let a single story read as cross-source corroborated, which
+ * is precisely the false positive the evidence floor exists to reject.
+ */
+// Feeds are not interchangeable. Collapsing them all to "rss" meant a story
+// on Product Hunt, in Ben's Bites AND on TechCrunch counted as ONE source, so
+// genuine corroboration could never register. These are distinct kinds of
+// evidence: a vendor announcing its own product is a primary source, press
+// rewriting that announcement is weak confirmation, a newsletter editor
+// choosing to feature it is a human filter, and a launch board is votes.
+const FEED_KIND = [
+  [/^(openai|anthropic|vercel|githubblog|google|microsoft)$/i, "vendor"],
+  [/^(techcrunch|theverge|arstechnica|wired|engadget|venturebeat|allure)$/i, "press"],
+  [/^(bensbites|tldr-)/i, "newsletter"],
+  [/^producthunt$/i, "launch"],
+];
+
 export const sourceType = (source) => {
-  if (source === "hn") return "hn";
-  if (source === "github") return "github";
-  if (source.startsWith("r/")) return "reddit";
-  if (source.startsWith("yt-")) return "youtube";
+  const s = String(source || "");
+  if (s === "hn" || s.startsWith("hn-")) return "hn";
+  if (s === "github" || s.startsWith("github-")) return "github";
+  if (s.startsWith("r/")) return "reddit";
+  if (s.startsWith("yt-")) return "youtube";
+  for (const [re, kind] of FEED_KIND) if (re.test(s)) return kind;
   return "rss";
 };
 
@@ -46,8 +67,9 @@ function topItems(trends) {
 
 async function clusterWithLlm(items) {
   if (!providerStatus().active) return null;
-  const listing = items.map((t) => `${t.id} | ${t.source} | ${t.title.slice(0, 110)}`).join("\n");
-  const ask = async () => {
+  // takes the batch so the chunked fallback below can reuse it
+  const askOver = async (batch) => {
+    const listing = batch.map((t) => `${t.id} | ${t.source} | ${t.title.slice(0, 110)}`).join("\n");
     const res = await chat({
       task: "score",
       maxTokens: 4000,
@@ -62,20 +84,40 @@ async function clusterWithLlm(items) {
     const e = res.text.lastIndexOf("}");
     return JSON.parse(res.text.slice(s, e + 1));
   };
+  const valid = (parsed) =>
+    (parsed?.clusters || []).filter((c) => typeof c.label === "string" && Array.isArray(c.memberIds) && c.memberIds.length >= 2);
+
   try {
-    let parsed;
+    let out;
     try {
-      parsed = await ask();
+      out = valid(await askOver(items));
     } catch {
-      parsed = await ask(); // one retry on parse failure per spec
+      out = valid(await askOver(items)); // one retry on parse failure per spec
     }
-    const valid = (parsed.clusters || []).filter(
-      (c) => typeof c.label === "string" && Array.isArray(c.memberIds) && c.memberIds.length >= 2
-    );
-    return valid.length ? valid : null;
+    if (out.length) return out;
   } catch {
-    return null;
+    /* fall through to chunking */
   }
+
+  /**
+   * One call over 120 items asking for 4000 tokens of JSON is a big structured
+   * -output task for a small free model — measured, it succeeded once and
+   * failed the next run, and a failure means every cluster becomes a singleton
+   * so NOTHING can ever be corroborated. Half-size batches are a much easier
+   * ask; partial success beats total fallback.
+   */
+  const HALF = Math.ceil(items.length / 2);
+  const merged = [];
+  for (const batch of [items.slice(0, HALF), items.slice(HALF)]) {
+    if (!batch.length) continue;
+    try {
+      merged.push(...valid(await askOver(batch)));
+    } catch {
+      /* one bad half still leaves the other */
+    }
+  }
+  if (merged.length) console.log(`  (clustering fell back to 2 smaller batches)`);
+  return merged.length ? merged : null;
 }
 
 /* ---------------- score components ---------------- */
@@ -196,7 +238,9 @@ async function runScoreInner() {
     for (const c of llmClusters) {
       const members = c.memberIds.map((id) => byId.get(id)).filter(Boolean);
       if (members.length >= 2) {
-        groups.push({ label: c.label, summary: c.summary || "", members });
+        // `llm: true` tells the evidence floor this grouping was read, not
+        // keyword-matched, so entity grounding must not re-litigate membership
+        groups.push({ label: c.label, summary: c.summary || "", members, llm: true });
         members.forEach((m) => grouped.add(m.id));
       }
     }
@@ -205,7 +249,7 @@ async function runScoreInner() {
     console.log(`  singleton clustering (${providerStatus().active ? "LLM grouping failed" : "no LLM key"})`);
   }
   for (const t of items) {
-    if (!grouped.has(t.id)) groups.push({ label: t.title.slice(0, 80), summary: "", members: [t] });
+    if (!grouped.has(t.id)) groups.push({ label: t.title.slice(0, 80), summary: "", members: [t], llm: false });
   }
   // same-label groups collapse into one (e.g. identical titles from two URLs)
   const byLabel = new Map();

@@ -101,8 +101,18 @@ export function evidenceFloor(cluster, members, { baselines = {} } = {}) {
   const mem = members.filter(Boolean);
   const types = [...new Set(mem.map((m) => sourceType(m.source)))];
 
-  // grounding first: an off-entity member is not corroboration
-  const groundedMem = mem.filter((m) => entityGrounding(cluster.label, m).grounded);
+  /**
+   * Grounding guards against ACCIDENTAL keyword grouping. When an LLM read the
+   * titles and grouped them, a literal token test is the wrong instrument and
+   * demonstrably produces false negatives: the cluster "AI security and safety
+   * concerns" had six real members — mass vulnerability scans, device
+   * hijacking, cracked encryption — and every one was demoted for not
+   * containing the word "security". Thematic labels never share tokens with
+   * the specific stories underneath them.
+   *
+   * So: trust an LLM grouping, keep grounding for heuristic/singleton ones.
+   */
+  const groundedMem = cluster.llm ? mem : mem.filter((m) => entityGrounding(cluster.label, m).grounded);
   const groundedTypes = [...new Set(groundedMem.map((m) => sourceType(m.source)))];
 
   if (groundedTypes.length >= 2) {
@@ -139,7 +149,7 @@ export function evidenceFloor(cluster, members, { baselines = {} } = {}) {
   return {
     level: "unproven",
     why: groundedMem.length === 0
-      ? "no member survives entity grounding"
+      ? "no member survives entity grounding (keyword-formed cluster)"
       : types.length === 1 && !mem.some((m) => m.velocity > 0)
         ? `single source (${types[0]}), no velocity data — cannot distinguish demand from noise`
         : `single source (${types[0]}), peak engagement ${topEng} below a ${SPIKE_MULTIPLE}× spike`,

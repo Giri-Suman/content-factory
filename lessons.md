@@ -249,3 +249,40 @@ once; append after every failed attempt or surprise.
   **when an enum is a public contract, grep for its VALUES before renaming,
   add an alias map for persisted configs, and make the resolver normalise
   rather than fall back — a fallback hides the break, an alias fixes it.**
+
+- Adding `hn-show` and `github-new` as collector lanes would have created FALSE
+  cross-source corroboration: `sourceType()` mapped them to new types, so one
+  story appearing on HN front page and Show HN would have counted as "2
+  independent sources" and cleared the evidence floor →
+  **when you add a collector, check how it maps in the source-type function.
+  Two queries against one site are one source. A new lane silently widens
+  every downstream rule that counts source diversity.**
+
+- Conversely, collapsing every RSS feed to one `"rss"` type meant a story on
+  Product Hunt AND in Ben's Bites AND on TechCrunch counted as a single source,
+  so genuine corroboration could never register → **feed KIND is real evidence
+  structure: vendor (primary), press (weak confirmation), newsletter (human
+  filter), launch (votes). Over-collapsing is as wrong as over-splitting.**
+
+- Entity grounding demoted all 6 members of a real cluster ("AI security and
+  safety concerns" — mass vulnerability scans, device hijacking, cracked
+  encryption) because none contained the literal word "security" →
+  **grounding guards against ACCIDENTAL keyword grouping. When an LLM read the
+  titles and grouped them, re-litigating membership with a token test is the
+  wrong instrument; thematic labels never share tokens with the specific
+  stories under them. Tag the clustering method and skip grounding for LLM
+  groupings.**
+
+- Unauthenticated Reddit is effectively dead, not merely slow: 1 of 5 subs
+  succeeded at BOTH 5s and 9s spacing. The old code paced subs 400ms apart and
+  tried 4 endpoints each (~48 rapid requests), so r/LocalLLaMA was configured
+  but essentially never collected →
+  **when a source fails, measure whether pacing actually helps before building
+  backoff. If it doesn't, the honest designs are a rotating window (collect 3
+  properly rather than failing 15) plus support for the free auth path.**
+
+- One LLM call clustering 120 items into 4000 tokens of JSON succeeded once and
+  failed the next run on a small free model — and a failure makes every cluster
+  a singleton, so nothing can ever be corroborated →
+  **size a structured-output prompt for the weakest model in the chain, and
+  give it a smaller-batch fallback. Partial success beats total degradation.**
