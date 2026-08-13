@@ -59,6 +59,7 @@ export const PATTERNS = [
   /* ---- language: the tells that survive being read aloud ---- */
   {
     id: "ai-vocabulary",
+    avoid: "never write: delve, intricate, interplay, tapestry, testament, pivotal, underscore, showcase, leverage, utilize, facilitate, seamless, robust, realm, myriad, landscape. Use the plain word.",
     name: "AI vocabulary",
     cat: "language",
     why: "these words are statistically over-represented in LLM output; a person picking words for a 30-second script almost never reaches for them",
@@ -71,6 +72,7 @@ export const PATTERNS = [
   },
   {
     id: "significance-inflation",
+    avoid: "do not tell the viewer something is significant — state the thing and let it be. No \"stands as\", \"is a testament to\", \"plays a key role\".",
     name: "Significance inflation",
     cat: "content",
     why: "inflating importance instead of stating the thing; reads as padding in speech",
@@ -81,6 +83,7 @@ export const PATTERNS = [
   },
   {
     id: "copula-avoidance",
+    avoid: "write \"is\", not \"serves as\" / \"stands as\" / \"represents\".",
     name: "Copula avoidance",
     cat: "language",
     why: "'serves as' where a person says 'is'; the elaborate verb is the tell",
@@ -89,6 +92,7 @@ export const PATTERNS = [
   },
   {
     id: "negative-parallelism",
+    avoid: "never use \"not just X, but Y\" or \"isn't just X — it's Y\". It is the single most recognisable machine cadence.",
     name: "Negative parallelism",
     cat: "language",
     why: "'not just X, but Y' is the single most recognisable LLM cadence",
@@ -99,6 +103,7 @@ export const PATTERNS = [
   },
   {
     id: "promotional",
+    avoid: "no advertising register: no groundbreaking, game-changing, revolutionary, cutting-edge, unlock the power of, take it to the next level.",
     name: "Promotional language",
     cat: "content",
     why: "advertising register applied to a neutral claim",
@@ -107,6 +112,7 @@ export const PATTERNS = [
   },
   {
     id: "vague-attribution",
+    avoid: "never write \"experts say\", \"studies show\", \"research suggests\". Name the source or drop the claim.",
     name: "Vague attribution",
     cat: "content",
     why: "credits an undefined authority — and in this system that's also a factuality risk",
@@ -115,6 +121,7 @@ export const PATTERNS = [
   },
   {
     id: "filler",
+    avoid: "cut filler: \"in order to\" -> \"to\", \"due to the fact that\" -> \"because\", \"it is important to note that\" -> delete.",
     name: "Filler phrases",
     cat: "filler",
     why: "burns runtime; in a 30s Short every wasted second is measurable",
@@ -131,6 +138,7 @@ export const PATTERNS = [
   },
   {
     id: "hedging",
+    avoid: "state it or cut it. No stacked qualifiers (arguably, generally speaking, to some extent).",
     name: "Excessive hedging",
     cat: "filler",
     why: "stacked qualifiers make a confident claim sound unsure; kills hook authority",
@@ -139,6 +147,7 @@ export const PATTERNS = [
   },
   {
     id: "signposting",
+    avoid: "do not announce what comes next (\"let's dive in\", \"here's what you need to know\") — just say it.",
     name: "Signposting",
     cat: "communication",
     why: "announcing what comes next instead of saying it — pure runtime tax in video",
@@ -147,6 +156,7 @@ export const PATTERNS = [
   },
   {
     id: "chatbot-artifact",
+    avoid: "no assistant register: no \"I hope this helps\", \"great question\", \"certainly\", \"let me know if\".",
     name: "Chatbot artifacts",
     cat: "communication",
     why: "assistant register leaking into your voice; in a reply this is instantly recognisable",
@@ -203,6 +213,7 @@ export const PATTERNS = [
   },
   {
     id: "ing-analysis",
+    avoid: "no trailing participle commentary (\", highlighting its...\", \", showcasing the...\").",
     name: "Superficial -ing analysis",
     cat: "content",
     why: "a trailing participle clause that adds commentary instead of information",
@@ -213,6 +224,7 @@ export const PATTERNS = [
   /* ---- typography: matters off-mic, and is a TTS hazard on-mic ---- */
   {
     id: "em-dash",
+    avoid: "no em dashes or en dashes anywhere.",
     name: "Em/en dash",
     cat: "style",
     why: "in written copy it's the classic LLM crutch; in VOICEOVER it's worse than a style problem — ElevenLabs renders it as an unpredictable pause, which shifts every word timestamp the captions and render depend on",

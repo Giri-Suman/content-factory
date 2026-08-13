@@ -12,6 +12,9 @@ const age = (iso) => {
 };
 
 const scoreClass = (s) => (s >= 80 ? "hot" : s >= 60 ? "warm" : "cool");
+// the table caps rows; the cap has to be named so the "showing N of M" notice
+// below cannot drift away from the slice above it
+const ROW_CAP = 60;
 
 export default function TrendsPage() {
   const router = useRouter();
@@ -112,6 +115,12 @@ export default function TrendsPage() {
         {enabledCats.map((c) => (
           <button key={c} className={`chip${filter === c ? " on" : ""}`} onClick={() => setFilter(c)}>
             {CATEGORY_LABELS[c] || c}
+            {/* the count makes it obvious the filter DID something. Without it,
+                "all" and "AI" both rendered 60 rows because of the row cap
+                below, so the filter looked broken when it was working. */}
+            <span style={{ opacity: 0.55, marginLeft: 5 }}>
+              {(trends || []).filter((t) => t.category === c).length}
+            </span>
           </button>
         ))}
       </div>
@@ -211,7 +220,7 @@ export default function TrendsPage() {
               </tr>
             </thead>
             <tbody>
-              {shown.slice(0, 60).map((t) => (
+              {shown.slice(0, ROW_CAP).map((t) => (
                 <tr key={t.id}>
                   <td>
                     <span className={`badge ${scoreClass(t.score ?? 0)}`}>{t.score ?? "—"}</span>
@@ -239,6 +248,11 @@ export default function TrendsPage() {
               ))}
             </tbody>
           </table>
+          {shown.length > ROW_CAP && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+              showing {ROW_CAP} of {shown.length} — narrow it with a category filter or the search box
+            </div>
+          )}
         </motion.div>
       )}
     </div>

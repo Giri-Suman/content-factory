@@ -1,6 +1,7 @@
 import { loadEnv, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection, newId } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { preamble } from "./promptKit.js";
 
 /**
  * Engagement tools — the parts of growth that happen AFTER the render:
@@ -84,7 +85,8 @@ export async function draftReplies({ limit = 10 } = {}) {
           system:
             `Write a short, genuinely helpful YouTube comment reply as this creator: ${NICHE_CONTEXT}. ` +
             "Warm, specific, no emoji spam, no 'great question!' filler. 2 sentences max. If the answer needs " +
-            'facts you do not have, say what you would check instead of guessing. Reply ONLY JSON: {"reply":"..."}',
+            'facts you do not have, say what you would check instead of guessing. Reply ONLY JSON: {"reply":"..."}' +
+            preamble({ surface: "reply" }),
           user: `Comment: "${lead.comment}"\nOn video: ${lead.title}`,
         });
         if (res) draft = JSON.parse(res.text.slice(res.text.indexOf("{"), res.text.lastIndexOf("}") + 1)).reply;

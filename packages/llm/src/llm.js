@@ -23,9 +23,12 @@ export function resolveProvider() {
 export function modelFor(task, provider = resolveProvider()) {
   switch (provider) {
     case "anthropic":
+      // Opus 5 is current; 4.8 was a generation behind. This value is only
+      // DISPLAYED (tiers.js does the real selection), but a status line that
+      // names the wrong model is how a stale default survives unnoticed.
       return task === "script"
-        ? process.env.ANTHROPIC_SCRIPT_MODEL || "claude-opus-4-8"
-        : process.env.ANTHROPIC_SCORING_MODEL || "claude-haiku-4-5";
+        ? process.env.ANTHROPIC_SCRIPT_MODEL || "claude-opus-5"
+        : process.env.ANTHROPIC_SCORING_MODEL || "claude-haiku-4-5-20251001";
     case "openrouter":
       return (
         (task === "script" ? process.env.OPENROUTER_SCRIPT_MODEL : process.env.OPENROUTER_SCORING_MODEL) ||
@@ -59,8 +62,16 @@ export function providerStatus() {
   };
 }
 
-/** Claude models where adaptive thinking is valid (4.6+ family). */
-const ADAPTIVE_OK = /opus-4-[678]|sonnet-5|fable/;
+/**
+ * Claude models where adaptive thinking is valid.
+ *
+ * The old pattern was `opus-4-[678]|sonnet-5|fable`, which matched Opus 4.6–4.8
+ * but NOT `claude-opus-5` — so the newest and most capable model was the one
+ * silently running without adaptive thinking. An enumerated version list fails
+ * exactly this way every time the family increments; match the family and let
+ * the version float instead.
+ */
+const ADAPTIVE_OK = /(opus|sonnet|fable)-(?:4-[678]|[5-9])/;
 
 async function anthropicChat({ system, user, maxTokens, task, model }) {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");

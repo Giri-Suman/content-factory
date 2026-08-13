@@ -3,6 +3,7 @@ import path from "node:path";
 import { loadEnv, repoRoot, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection, validateShape } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { preamble } from "./promptKit.js";
 
 /**
  * P17: Brief -> RenderSpec compiler. The repo's RenderSpec is the
@@ -51,7 +52,8 @@ async function llmScenes(brief, lessonBlock = "") {
         `You compile a video brief into renderer scenes for: ${NICHE_CONTEXT}.${lessonBlock} Scene types: ` +
         'kinetic {voiceover, emphasis[]}, code {voiceover, lang, code, focus[2]}, terminal {voiceover, lines[]}, ' +
         "stat {voiceover, label, stats[{name,value,suffix}]}, quote {voiceover, quote, attribution}, meme {voiceover, emoji, text}. " +
-        'Open with a kinetic hook; 3-5 scenes total; voiceover conversational, ~8s each. Reply ONLY JSON: {"scenes":[...]}',
+        'Open with a kinetic hook; 3-5 scenes total; voiceover conversational, ~8s each. Reply ONLY JSON: {"scenes":[...]}' +
+        preamble({ surface: "voiceover", tts: true }),
       user: `topic: ${brief.topic}\nhook: ${p.yt_short?.hook_variants?.[0]}\nbeats: ${(p.yt_short?.beats || []).join(" | ")}\ncore idea: ${p.core_idea}`,
     });
     const parsed = JSON.parse(res.text.slice(res.text.indexOf("{"), res.text.lastIndexOf("}") + 1));

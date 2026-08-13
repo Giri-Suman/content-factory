@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import path from "node:path";
 import { loadEnv, ensureDirs, repoRoot } from "../../shared/src/config.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
-import { MATH_GUIDE, buildMathPrompt, lintManim } from "../../studio/src/mathStyle.js";
+import { MATH_GUIDE, buildMathPrompt, lintLayout, lintManim } from "../../studio/src/mathStyle.js";
 import { synthesize, ffprobeDuration } from "./voice.js";
 
 const FPS = 30;
@@ -82,6 +82,41 @@ export async function mathShort(argv) {
     const result = await chat({ system: MATH_GUIDE, user: buildMathPrompt(topic), task: "script", maxTokens: 16000 });
     spec = extractJson(result.text);
     spec.id = slugify(spec.id || topic);
+
+    /**
+     * Overlapping text is the most common defect in these scenes: Manim never
+     * removes a mobject on its own, so anything a beat adds stays on screen
+     * until it is explicitly faded or replaced. Give the model its own layout
+     * warnings and one chance to fix them — cheaper than rendering a 50-second
+     * video with text piled on text, and the lint costs nothing.
+     */
+    const layout = lintLayout(spec.manim);
+    if (layout.length) {
+      console.log(`  layout warnings — asking for one revision:\n    - ${layout.join("\n    - ")}`);
+      try {
+        const fixed = await chat({
+          system: MATH_GUIDE,
+          task: "script",
+          maxTokens: 16000,
+          user:
+            `${buildMathPrompt(topic)}\n\nYour previous scene had these layout problems:\n` +
+            layout.map((l) => `- ${l}`).join("\n") +
+            `\n\nRewrite it. Fade out or ReplacementTransform everything a beat finishes with, ` +
+            `never leave more than 4 mobjects on screen, and position every Text explicitly. ` +
+            `Reply with the same JSON shape.\n\nPrevious scene:\n${spec.manim}`,
+        });
+        const retry = extractJson(fixed.text);
+        const after = lintLayout(retry.manim);
+        if (retry.manim && after.length < layout.length) {
+          spec = { ...retry, id: slugify(retry.id || spec.id) };
+          console.log(`  revised: ${layout.length} -> ${after.length} layout warning(s)`);
+        } else {
+          console.log(`  revision did not improve — keeping the first scene`);
+        }
+      } catch {
+        console.log(`  revision failed — keeping the first scene`);
+      }
+    }
   }
 
   const problems = lintManim(spec.manim);
@@ -89,6 +124,8 @@ export async function mathShort(argv) {
     console.error(`generated scene failed the safety lint:\n  - ${problems.join("\n  - ")}`);
     return false;
   }
+  // demos are hand-written and trusted, but still worth a warning if they drift
+  for (const w of lintLayout(spec.manim)) console.log(`  ⚠ ${w}`);
 
   const id = `math-${slugify(spec.id)}`;
   const buildDir = path.join(repoRoot, "data", "build", id);

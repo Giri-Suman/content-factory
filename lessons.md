@@ -286,3 +286,44 @@ once; append after every failed attempt or surprise.
   a singleton, so nothing can ever be corroborated →
   **size a structured-output prompt for the weakest model in the chain, and
   give it a smaller-batch fallback. Partial success beats total degradation.**
+
+- `ADAPTIVE_OK = /opus-4-[678]|sonnet-5|fable/` gated adaptive thinking by
+  ENUMERATED version, so `claude-opus-5` — the newest and most capable model —
+  was the one silently running without it →
+  **a capability gate keyed to a version list fails on every increment, and
+  fails silently in the direction of less capability. Match the family and let
+  the version float: `(opus|sonnet|fable)-(?:4-[678]|[5-9])`.**
+
+- `.sidebar { height: 100vh }` with no `overflow-y` hid the tail of the menu
+  entirely: 24 links measure 1145px against a 720px viewport, so 425px of nav
+  was unreachable by any means, with no scrollbar to hint at it →
+  **a fixed-height flex column holding a growing list needs `overflow-y:auto`
+  the day it is written. Measure `scrollHeight` vs `clientHeight`, don't eyeball
+  it — the overflow is invisible precisely because it is clipped.**
+
+- The trends category filter WAS working, but "all" and "AI" both rendered 60
+  rows because the table caps at `.slice(0, 60)` and AI has 76 matches — so it
+  looked broken → **any truncated list must say "showing N of M". A silent cap
+  makes correct filtering indistinguishable from a broken filter, and the bug
+  report you get is "the filter doesn't work".**
+
+- The Manim layout lint's first version flagged BOTH hand-written demos, which
+  are known good: it checked for positioning on the same line, but idiomatic
+  Manim assigns first and positions after (`equals = Text(...)` then
+  `equals.next_to(...)`, or via `VGroup(...).arrange()`) →
+  **validate a new detector against known-GOOD inputs before trusting it on bad
+  ones. A detector with false positives on the reference implementation is
+  worse than none, because it trains you to ignore it.**
+
+- Overlapping text in generated Manim scenes was never a rendering bug — the
+  prompt constrained the frame bounds but never said "remove what a beat
+  finishes with", and Manim removes nothing on its own →
+  **when generated output has a recurring structural defect, check whether the
+  prompt ever forbade it. Adding a lint without fixing the prompt just detects
+  the same failure repeatedly.**
+
+- Anti-slop guidance lived only in the humanizer, which runs AFTER generation.
+  Moving it into the prompts (derived from the same pattern table via an
+  `avoid` field, so the two cannot drift) prevents the tell instead of scoring
+  it → **a detector and a preventer for the same defect should share one
+  definition; the detector then becomes a backstop rather than the mechanism.**

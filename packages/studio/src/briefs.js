@@ -1,6 +1,7 @@
 import { loadEnv, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection, newId, validateShape } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { preamble } from "./promptKit.js";
 
 /**
  * P6 Brief Studio: TopicCluster or WishlistEntry -> one multi-platform
@@ -78,7 +79,10 @@ async function llmPayload(context, kind, lengthTarget = 32) {
       system:
         `You write multi-platform content briefs for this creator: ${NICHE_CONTEXT}.${lessonBlock} ` +
         `Target the YouTube Short at ~${lengthTarget}s (the platform playbook's proven length). ` +
-        "Every hook must be concrete and specific — generic openers ('you won't believe') are banned. Reply ONLY JSON:\n" +
+        "Every hook must be concrete and specific — generic openers ('you won't believe') are banned." +
+        // hooks are SPOKEN, so the voiceover surface is the strictest one present
+        preamble({ surface: "voiceover", json: false }) +
+        "\n\nReply ONLY JSON:\n" +
         `{"kind":"trend|evergreen","core_idea":"...","yt_short":{"hook_variants":["3 different hooks"],"beats":["scene beats"],` +
         `"length_sec":${lengthTarget},"title":"...","description":"keyword-rich, 2 lines","tags":["..."]},` +
         '"ig_reel":{"script_adjustments":"...","caption":"conversational, ends with a question","hashtags":["<=8 niche tags"]},' +
