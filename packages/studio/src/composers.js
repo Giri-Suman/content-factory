@@ -3,6 +3,7 @@ import path from "node:path";
 import { loadEnv, repoRoot, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection, newId } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { preamble } from "./promptKit.js";
 
 /**
  * P24 text composers. BlogComposer drafts a citation-optimized post (quick-
@@ -30,8 +31,9 @@ export async function composeBlog(briefId) {
         maxTokens: 5000,
         system:
           `Write a citation-optimized blog post for: ${NICHE_CONTEXT}. Structure: a 2-sentence quick-answer block ` +
-          "up top, then H2 sections, code where relevant, an original-data angle. Reply ONLY JSON: " +
-          '{"title":"...","quick_answer":"...","sections":[{"h2":"...","body":"..."}],"data_angle":"..."}',
+          "up top, then H2 sections, code where relevant, an original-data angle." +
+          preamble({ surface: "description", json: false }) +
+          '\n\nReply ONLY JSON: {"title":"...","quick_answer":"...","sections":[{"h2":"...","body":"..."}],"data_angle":"..."}',
         user: `topic: ${brief.topic}\noutline: ${JSON.stringify(outline)}`,
       });
       body = JSON.parse(res.text.slice(res.text.indexOf("{"), res.text.lastIndexOf("}") + 1));

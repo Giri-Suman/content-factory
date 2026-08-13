@@ -284,3 +284,14 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
   weaken these defaults.
 - Windows quoting: multi-line git commit messages via `git commit -F <file>`
   (here-strings with quotes inside get mangled).
+- Voiceover fields are TTS input, not prose: never let emoji, markdown or
+  em dashes reach them. `compileBrief` auto-strips them via
+  `humanize.autoFix(..., {surface:"voiceover"})`; if you add another path
+  that writes `scene.voiceover`, run it through there too. An emoji in a
+  voiceover field is a render bug, not a style nit — ElevenLabs either
+  speaks its name or drops it, shifting every word timestamp the captions
+  and Remotion timeline depend on.
+- `humanize` scoring is SURFACE-AWARE and some patterns are deliberately
+  `native` (never flagged) on some surfaces — emoji in an IG caption, a
+  single "Honestly?" in a hook. Do not "fix" those into violations; they're
+  how the format works, and flattening the table costs views.

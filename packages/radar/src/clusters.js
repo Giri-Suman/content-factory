@@ -3,6 +3,7 @@ import { collection } from "../../shared/src/store.js";
 import { withJobRun } from "../../shared/src/jobs.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
 import { hasKey, saturation } from "./youtube.js";
+import { evidenceFloor, poolConfidence } from "./evidence.js";
 
 /**
  * P4 scoring engine: items -> TopicClusters -> transparent opportunityScore.
@@ -18,11 +19,32 @@ const SATURATION_DEFAULT = 7;
 // per-source velocity baselines until 7 days of snapshots exist (pts/hour)
 const VELOCITY_BASELINES = { hn: 8, github: 25, reddit: 12, rss: 1, youtube: 2000 };
 
+/**
+ * Collapses collector lanes to INDEPENDENT sources. `hn` and `hn-show` are two
+ * queries against one site, as are `github` and `github-new` — counting them
+ * separately would let a single story read as cross-source corroborated, which
+ * is precisely the false positive the evidence floor exists to reject.
+ */
+// Feeds are not interchangeable. Collapsing them all to "rss" meant a story
+// on Product Hunt, in Ben's Bites AND on TechCrunch counted as ONE source, so
+// genuine corroboration could never register. These are distinct kinds of
+// evidence: a vendor announcing its own product is a primary source, press
+// rewriting that announcement is weak confirmation, a newsletter editor
+// choosing to feature it is a human filter, and a launch board is votes.
+const FEED_KIND = [
+  [/^(openai|anthropic|vercel|githubblog|google|microsoft)$/i, "vendor"],
+  [/^(techcrunch|theverge|arstechnica|wired|engadget|venturebeat|allure)$/i, "press"],
+  [/^(bensbites|tldr-)/i, "newsletter"],
+  [/^producthunt$/i, "launch"],
+];
+
 export const sourceType = (source) => {
-  if (source === "hn") return "hn";
-  if (source === "github") return "github";
-  if (source.startsWith("r/")) return "reddit";
-  if (source.startsWith("yt-")) return "youtube";
+  const s = String(source || "");
+  if (s === "hn" || s.startsWith("hn-")) return "hn";
+  if (s === "github" || s.startsWith("github-")) return "github";
+  if (s.startsWith("r/")) return "reddit";
+  if (s.startsWith("yt-")) return "youtube";
+  for (const [re, kind] of FEED_KIND) if (re.test(s)) return kind;
   return "rss";
 };
 
@@ -45,8 +67,9 @@ function topItems(trends) {
 
 async function clusterWithLlm(items) {
   if (!providerStatus().active) return null;
-  const listing = items.map((t) => `${t.id} | ${t.source} | ${t.title.slice(0, 110)}`).join("\n");
-  const ask = async () => {
+  // takes the batch so the chunked fallback below can reuse it
+  const askOver = async (batch) => {
+    const listing = batch.map((t) => `${t.id} | ${t.source} | ${t.title.slice(0, 110)}`).join("\n");
     const res = await chat({
       task: "score",
       maxTokens: 4000,
@@ -61,25 +84,45 @@ async function clusterWithLlm(items) {
     const e = res.text.lastIndexOf("}");
     return JSON.parse(res.text.slice(s, e + 1));
   };
+  const valid = (parsed) =>
+    (parsed?.clusters || []).filter((c) => typeof c.label === "string" && Array.isArray(c.memberIds) && c.memberIds.length >= 2);
+
   try {
-    let parsed;
+    let out;
     try {
-      parsed = await ask();
+      out = valid(await askOver(items));
     } catch {
-      parsed = await ask(); // one retry on parse failure per spec
+      out = valid(await askOver(items)); // one retry on parse failure per spec
     }
-    const valid = (parsed.clusters || []).filter(
-      (c) => typeof c.label === "string" && Array.isArray(c.memberIds) && c.memberIds.length >= 2
-    );
-    return valid.length ? valid : null;
+    if (out.length) return out;
   } catch {
-    return null;
+    /* fall through to chunking */
   }
+
+  /**
+   * One call over 120 items asking for 4000 tokens of JSON is a big structured
+   * -output task for a small free model — measured, it succeeded once and
+   * failed the next run, and a failure means every cluster becomes a singleton
+   * so NOTHING can ever be corroborated. Half-size batches are a much easier
+   * ask; partial success beats total fallback.
+   */
+  const HALF = Math.ceil(items.length / 2);
+  const merged = [];
+  for (const batch of [items.slice(0, HALF), items.slice(HALF)]) {
+    if (!batch.length) continue;
+    try {
+      merged.push(...valid(await askOver(batch)));
+    } catch {
+      /* one bad half still leaves the other */
+    }
+  }
+  if (merged.length) console.log(`  (clustering fell back to 2 smaller batches)`);
+  return merged.length ? merged : null;
 }
 
 /* ---------------- score components ---------------- */
 
-function velocityBaselines(trends) {
+export function velocityBaselines(trends) {
   const bySource = {};
   for (const t of Object.values(trends)) {
     if (t.velocity === null || t.velocity === undefined) continue;
@@ -195,7 +238,9 @@ async function runScoreInner() {
     for (const c of llmClusters) {
       const members = c.memberIds.map((id) => byId.get(id)).filter(Boolean);
       if (members.length >= 2) {
-        groups.push({ label: c.label, summary: c.summary || "", members });
+        // `llm: true` tells the evidence floor this grouping was read, not
+        // keyword-matched, so entity grounding must not re-litigate membership
+        groups.push({ label: c.label, summary: c.summary || "", members, llm: true });
         members.forEach((m) => grouped.add(m.id));
       }
     }
@@ -204,7 +249,7 @@ async function runScoreInner() {
     console.log(`  singleton clustering (${providerStatus().active ? "LLM grouping failed" : "no LLM key"})`);
   }
   for (const t of items) {
-    if (!grouped.has(t.id)) groups.push({ label: t.title.slice(0, 80), summary: "", members: [t] });
+    if (!grouped.has(t.id)) groups.push({ label: t.title.slice(0, 80), summary: "", members: [t], llm: false });
   }
   // same-label groups collapse into one (e.g. identical titles from two URLs)
   const byLabel = new Map();
@@ -247,6 +292,12 @@ async function runScoreInner() {
     const gap = w(await saturationGapScore(g.label, rankOf.get(i)), "saturationGap");
     const opportunityScore = vel.value + cross.value + fit.value + gap.value;
 
+    // Absolute evidence gate (adapted from last30days). Independent of the
+    // 0-100 score: relative ranking always crowns a winner, so a cluster can
+    // top the board on defaults alone. This answers a different question —
+    // may it be recommended at all — and is allowed to say no to everything.
+    const evidence = evidenceFloor(g, g.members, { baselines });
+
     const existing = prior.get(g.label.toLowerCase());
     const history = [...(existing?.scoreHistory || []), opportunityScore].slice(-4);
     out.push({
@@ -254,6 +305,7 @@ async function runScoreInner() {
       label: g.label,
       summary: g.summary,
       opportunityScore,
+      evidence,
       scoreBreakdown: {
         velocity: { ...vel, max: 40 },
         crossSource: { ...cross, max: 25 },
@@ -277,13 +329,28 @@ async function runScoreInner() {
   for (const c of rows) for (const id of c.memberIds) setClusterId(id, c.id);
   save();
 
-  console.log(`\n  SCORE  V/40 X/25 N/20 G/15  STATUS  CLUSTER`);
-  console.log("  " + "-".repeat(88));
+  const pool = poolConfidence(rows.map((c) => ({ evidence: c.evidence })));
+
+  console.log(`\n  SCORE  V/40 X/25 N/20 G/15  EVIDENCE      STATUS  CLUSTER`);
+  console.log("  " + "-".repeat(100));
   for (const c of rows.slice(0, 12)) {
     const b = c.scoreBreakdown;
+    const ev = c.evidence?.promotable ? c.evidence.level : `${c.evidence?.level || "?"}*`;
     console.log(
-      `  ${String(c.opportunityScore).padStart(5)}  ${String(b.velocity.value).padStart(4)} ${String(b.crossSource.value).padStart(4)} ${String(b.nicheFit.value).padStart(4)} ${String(b.saturationGap.value).padStart(4)}  ${c.status.padEnd(6)}  ${c.label.slice(0, 46)}${c.memberCount > 1 ? ` (${c.memberCount})` : ""}`
+      `  ${String(c.opportunityScore).padStart(5)}  ${String(b.velocity.value).padStart(4)} ${String(b.crossSource.value).padStart(4)} ${String(b.nicheFit.value).padStart(4)} ${String(b.saturationGap.value).padStart(4)}  ${ev.padEnd(13)} ${c.status.padEnd(6)}  ${c.label.slice(0, 42)}${c.memberCount > 1 ? ` (${c.memberCount})` : ""}`
     );
   }
-  return { clusters: rows.length, summary: `${rows.length} clusters` };
+
+  // The verdict matters more than the ranking. A pool where nothing clears
+  // the floor still produces a tidy sorted table, which reads like a set of
+  // leads — say plainly that it isn't one.
+  console.log(`\n  evidence: ${pool.corroborated} corroborated · ${pool.spike} spiking · ${pool.unproven} unproven   (* = below the floor, not promotable)`);
+  console.log(`  ${pool.verdict}`);
+  if (pool.promotable === 0 && rows.length) {
+    const why = rows[0]?.evidence?.why || "";
+    console.log(`  top row's actual basis: ${why}`);
+    console.log(`  this is a collection problem, not a ranking problem — more sources or more`);
+    console.log(`  snapshot passes (velocity needs 2+ observations of the same item) will fix it.`);
+  }
+  return { clusters: rows.length, promotable: pool.promotable, summary: `${rows.length} clusters, ${pool.promotable} with evidence` };
 }

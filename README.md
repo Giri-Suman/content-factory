@@ -189,6 +189,184 @@ flowchart TB
   keyless (targets <45 min, <$2). Corrupt renders and sabotaged scripts
   are caught and escalated; nothing half-publishes.
 
+## Motion Lab (`factory motion`)
+
+A catalog of **22 visual effects — 16 coded, 6 spec'd** — that the brief
+compiler picks from automatically, and that you can browse as live video at
+`/motion` in the portal.
+
+Three things it deliberately does *not* do:
+
+- **It doesn't scrape anyone's designs.** No Dribbble/Awwwards/TikTok
+  crawler. Every effect is a parameterised generator in
+  `renderers/code-report/src/effects/Effects.jsx` — code we own. Lifting
+  another creator's look and re-rendering it is the same reupload pattern
+  the compliance layer exists to block.
+- **It doesn't predict virality.** Nobody can. What it *does* is render each
+  effect and measure the properties retention actually depends on — opening
+  energy, motion energy, contrast, loop seam — from real pixels via ffmpeg.
+- **It doesn't pretend generic rankings are yours.** Until ~20 posts are
+  tagged, `suggest` says "fit heuristic — not your data yet" in the output.
+  Tag what you ship (`factory motion tag <post-id> word-punch`) and the
+  calibration loop reranks on *your* retention.
+
+```bash
+factory motion list                          # the catalog, with measured scores
+factory motion suggest --scene=hook --niche=nails
+factory motion bench --all                   # render + measure every live effect
+factory motion measure my-clip.mp4 --role=ambient
+factory motion results                       # effect → your median views
+```
+
+Effects are scored **against their role**, because grading a calm background
+on a scroll-stopper scale measures the wrong thing: `ambient`/`dimensional`
+want a motion *band* (dead frames lose viewers, busy ones fight your copy),
+`type`/`transition`/`compare` want opening energy, and `overlay` refuses to
+score solo — a chip on a blank frame tells you nothing.
+
+`compileBrief` attaches a per-scene `effect` hint automatically (additive —
+the renderer ignores it if unused), which also makes the effect→retention
+join automatic instead of hand-tagged.
+
+## Four AI tiers (`factory ai`)
+
+Every AI feature picks a **tier**, not a provider. Pick per task — free
+scoring plus best scripts is one command, and it's the economically correct
+split since scoring runs hundreds of times and a script runs once per video.
+
+| Tier | Cost/call | Leads with | For |
+|---|---|---|---|
+| `free` | **$0** | `google/gemma-4-26b-a4b-it:free` | everything, genuinely — this is not a crippled tier |
+| `cheap` | ~$0.0003 | DeepSeek V4 Flash | high-volume scoring and judging |
+| `medium` | ~$0.009 | Gemini 3.6 Flash | strong structured output without frontier pricing |
+| `best` | ~$0.03 | Claude Opus 5 | the few calls that decide quality — hooks, scripts |
+
+```bash
+factory ai                       # what's ready, with real cost per tier
+factory ai models                # current free roster on OpenRouter
+factory ai set script best       # per-task assignment
+factory ai set transcribe best   # services too (4 whisper sizes)
+```
+
+Three things worth knowing:
+
+**The free tier is chosen for reliability, not size.** OpenRouter's free pool
+is congested *per model*, and the popular models are the busy ones — measured
+with 9s spacing, `gemma-4-31b:free` returned **0/4** while `gemma-4-26b:free`
+returned **4/4**. Picking the bigger free model makes the whole tier look
+broken. A second, different free model sits behind it in the chain, because
+congestion is per-model and one alternate rescues far more runs than retrying
+the same busy one.
+
+**Chains only fall DOWN.** `best` → `medium` → `cheap` → `free`, eight
+options deep. You are never silently charged more than the tier you chose,
+and a dead provider degrades instead of failing the run.
+
+**Model ids rot.** Two hardcoded defaults 404'd inside a year
+(`llama-3.3-70b:free` "unavailable for free", `gemini-2.0-flash-001` "no
+endpoints found"), each silently dropping the system to template mode. Every
+id above was verified present in OpenRouter's catalogue with its real price —
+but treat them as starting values and use `factory ai models`. Overrides:
+`OPENROUTER_FREE_MODEL`, `OPENROUTER_CHEAP_MODEL`, `OPENROUTER_MEDIUM_MODEL`,
+`OPENROUTER_BEST_MODEL` (each with a `_2` alternate).
+
+Legacy `budget`/`premium` names still work everywhere and normalise to
+`cheap`/`best`.
+
+`voice` and `image` deliberately have **no `medium` step** — ElevenLabs and
+fal.ai each sell two products, and inventing a third would be a lie; those
+fall through to `cheap`. `transcribe` uses all four (whisper
+base/small/medium/large-v3), all local at $0.
+
+## Evidence floor (`factory evidence`)
+
+Adapted from the [`last30days` skill by mvanhorn](https://github.com/mvanhorn/last30days-skill)
+(MIT). Two of its ideas, both *refusals* rather than ranking tweaks:
+
+**1. The confidence floor is absolute, not relative.** The radar ranked 120
+clusters and printed a confident top-3 — but all 120 were singletons scoring
+`0 velocity + 5 crossSource floor + 16 heuristic fit + 7 default saturation
+= 28`. Pure defaults. Relative ranking always produces a winner, so a tidy
+sorted table reads like a set of leads even when nothing has earned it. A
+cluster is now `corroborated` (2+ independent sources), `spike` (3×+ its own
+source's baseline with real engagement), or `unproven` — and **unproven is not
+promotable**, however high it ranks. "Nothing qualified today" is now an
+answer this system can give.
+
+**2. Entity grounding with decisive demotion.** Items are grounded on the
+head token of the cluster label; a miss costs ×0.25, so a 5,000-upvote post
+about something else still loses to a 40-upvote post that is actually on
+topic. Engagement cannot rescue off-entity content.
+
+Plus the quote rule (their LAW 9), which solves a content problem here:
+collectors captured only `title/url/points/comments`, so briefs were written
+from **headlines alone**. Now HN discussions attach to the busiest stories and
+briefs carry verbatim, per-commenter-attributed community language. A headline
+gives you the topic; the thread gives you the phrasing a hook is made of.
+
+```bash
+factory evidence report            # what actually clears the floor
+factory evidence quotes [filter]   # real community language, attributed
+factory evidence ground "<label>"  # per-member grounding decisions
+```
+
+Two honesty rules are load-bearing. **Press releases are not community
+voice** — a Vercel blog post and a subreddit both arrive as RSS with zero
+points, so the source class is encoded explicitly and press is down-ranked.
+And a line beginning `>` is the commenter quoting *someone else*; attributing
+it to them would fabricate a quote, so those are dropped.
+
+Deliberately **not** adapted: the source sweep. This repo already has
+collectors, clustering and cross-source scoring — porting their engine would
+be rebuilding the radar next to the radar.
+
+## Humanize (`factory humanize`)
+
+Strips the tells that make generated copy read as generated. Adapted from
+the [`humanizer` skill by blader](https://github.com/blader/humanizer) (MIT),
+which encodes Wikipedia's "Signs of AI writing" as 33 patterns.
+
+It is an **adaptation, not a port**, because a flat banlist would damage this
+project's output. The original targets encyclopedic prose; this system emits
+spoken voiceover and platform copy, where three of its rules invert:
+
+| the original says | here |
+|---|---|
+| rule-of-three is a tell | a triplet is a **proven spoken-hook device** — only flagged when doubled in written copy |
+| ban "Honestly?" / "Here's the thing" | these are **retention devices** in short-form — only flagged when stacked |
+| emoji are a violation | **native** in an IG caption; fatal only in a voiceover field |
+
+So every pattern carries a **per-surface weight** across six surfaces
+(`voiceover · title · description · caption · reply · post`), and some are
+marked `native` — expected there, never flagged.
+
+The project-specific addition the source skill has no concept of is
+**TTS safety**. In a voiceover field an em dash isn't a style crime, it's a
+render bug: ElevenLabs renders it as an unpredictable pause, which shifts
+every word timestamp the captions and Remotion timeline depend on. Same for
+emoji (spoken aloud or silently dropped) and markdown (read as literal
+characters). `compileBrief` auto-strips these on every compile.
+
+```bash
+factory humanize scan "your text" --surface=voiceover --fix
+factory humanize script <brief-id> --fix          # mechanical fixes
+factory humanize script <brief-id> --fix --ai     # + rephrasing (tiered, free = $0)
+factory humanize audit                            # everything the factory has generated
+factory humanize voice                            # learn your style from your shipped posts
+factory humanize patterns                         # the per-surface weight table
+```
+
+Wired in at three points: `scriptJudge` scores it (so slop can't pass QC),
+`compileBrief` auto-cleans voiceover for TTS, and reply drafts are **flagged
+but never auto-rewritten** — you review every reply, and silently editing
+your voice is worse than showing you the tell.
+
+Two rules carried over intact, both load-bearing here because this system
+publishes: **no fabrication** (a rewrite may never invent a fact, name,
+number or citation absent from the input — removing a tell is never worth
+adding a falsehood), and **no over-editing** (look for clusters, not isolated
+words; the false-positive suite covers legitimate human phrasing).
+
 ### The three platform walls (honest limits)
 
 1. **Meta app review** — IG/FB Graph publishing is gated off until
@@ -229,13 +407,19 @@ what can wait.
 ## Structure
 
 ```
-packages/cli/       the `factory` command (doctor; later: render, radar, script, publish)
-packages/shared/    env loading, repo paths, config
-renderers/          P1: code-report (Remotion) · P4: math (Manim), shorts
-apps/               P3: Mission Control dashboard (Next.js)
+packages/cli/       the `factory` command — 42 subcommands
+packages/shared/    env loading, repo paths, config, JSON collection store
+packages/llm/       4-tier AI router (free → cheap → medium → best) + chains
+packages/radar/     trend discovery, clustering, evidence floor, quotes, keywords
+packages/pipeline/  orchestrator, batch, longform, reframe, clips, step cards
+packages/studio/    briefs, compileBrief, motionLab, humanize, nichePacks, tools
+packages/judges/    visual · audio · script · metadata · thumbnail gates
+packages/publish/   publish center, calibration, playbooks, compliance
+renderers/          code-report (Remotion) + src/effects/ · math (Manim), shorts
+apps/               Mission Control dashboard (Next.js, port 4600)
 assets/brand/       palette, logo, intro sting, licensed SFX/music only
-data/               (gitignored) SQLite: trends, jobs, analytics
-renders/            (gitignored) finished MP4s
+data/               (gitignored) JSON collections: trends, briefs, jobs, analytics
+renders/            (gitignored) finished MP4s · _motion/ = effect previews
 ```
 
 ## Phase roadmap

@@ -9,6 +9,7 @@ const ANALYSES = [
   ["competitors", "Competitor diff", "what changed on the watchlist this week"],
   ["calendar", "Content calendar", "14-day ship schedule + cadence gaps"],
   ["prune", "Data hygiene", "what a prune would remove (dry run)"],
+  ["humanize", "AI-writing audit", "which generated copy reads as machine-written, scored per surface"],
 ];
 
 export default function ToolsPage() {
@@ -103,13 +104,45 @@ export default function ToolsPage() {
             <Out k="longform" />
           </div>
 
+          {/* niche + reach */}
+          <div className="panel" style={{ marginBottom: 14 }}>
+            <label className="field" style={{ marginTop: 0 }}>Niche & reach</label>
+            <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              {["coding", "ai-automation", "math", "makeup", "nails", "cooking", "fitness"].map((n) => (
+                <button key={n} className="btn ghost sm" disabled={busy} onClick={() => act("nichepack", n)}>{n}</button>
+              ))}
+            </div>
+            <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+              proven shot structure, hooks, pacing and gotchas per niche — the capture lane uses these automatically
+            </div>
+            <Out k="nichepack" />
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button className="btn ghost sm" disabled={!renderId || busy} onClick={() => act("translate", renderId, "es hi")}>
+                Translate captions (ES + HI)
+              </button>
+              <button className="btn ghost sm" disabled={!file.trim() || busy} onClick={() => act("reframe", file.trim(), "auto")}>
+                Smart reframe 16:9 → 9:16
+              </button>
+            </div>
+            <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+              reframe finds where the motion is (hands, brush, pen) instead of blind center-cropping
+            </div>
+            <Out k="translate" />
+            <Out k="reframe" />
+          </div>
+
           {/* engagement */}
           <div className="panel" style={{ marginBottom: 14 }}>
             <label className="field" style={{ marginTop: 0 }}>Engagement</label>
             <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
               <button className="btn ghost sm" disabled={busy} onClick={() => act("cta", "yt_short")}>Next CTA (rotates)</button>
               <button className="btn ghost sm" disabled={busy} onClick={() => act("replies")}>Draft comment replies</button>
+              <button className="btn ghost sm" disabled={busy} onClick={() => act("link", "video")}>Link block (UTM)</button>
+              <button className="btn ghost sm" disabled={busy} onClick={() => act("stock", "b-roll", "video")}>Find b-roll</button>
+              <button className="btn ghost sm" disabled={busy} onClick={() => act("stock", "upbeat", "music")}>Find music</button>
             </div>
+            <Out k="link" />
+            <Out k="stock" />
             <Out k="cta" />
             <Out k="replies" />
             {data.replyDrafts.length > 0 && (

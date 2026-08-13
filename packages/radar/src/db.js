@@ -36,6 +36,24 @@ export function save() {
   renameSync(tmp, STORE_PATH);
 }
 
+/**
+ * Small named counters that must survive between runs — currently the
+ * rotating window over subreddits, since keyless Reddit can only collect a
+ * few per pass and the cursor is what makes the coverage fair over time.
+ */
+export function readCursor(name) {
+  const s = load();
+  return (s.cursors || {})[name] ?? null;
+}
+
+export function writeCursor(name, value) {
+  const s = load();
+  s.cursors ??= {};
+  s.cursors[name] = value;
+  save();
+  return value;
+}
+
 export const trendId = (str) => {
   let h = 5381;
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
@@ -73,6 +91,14 @@ export function upsertTrend(item) {
     url: item.url || null,
     points: item.points || 0,
     comments: item.comments || 0,
+    // Quote material. This row is rebuilt from an explicit field list every
+    // upsert, so anything not named here is silently dropped — keep the
+    // previous excerpt when a later pass (e.g. the RSS fallback) has none,
+    // rather than erasing text we already collected.
+    excerpt: item.excerpt || existing?.excerpt || null,
+    author: item.author || existing?.author || null,
+    // per-comment attribution, so a quote can name the person who said it
+    voices: item.voices || existing?.voices || null,
     published_at: item.publishedAt || existing?.published_at || null,
     first_seen: existing?.first_seen || now,
     last_seen: now,

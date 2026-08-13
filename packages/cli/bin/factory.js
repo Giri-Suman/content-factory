@@ -100,6 +100,51 @@ switch (cmd) {
     process.exit(0);
     break;
   }
+  case "steps": {
+    const { burnSteps } = await import("../../pipeline/src/stepCards.js");
+    const ok = await burnSteps(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "reframe": {
+    const { reframe } = await import("../../pipeline/src/reframe.js");
+    const ok = await reframe(rest);
+    process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "evidence": {
+    const { evidence } = await import("../src/evidence.js");
+    try {
+      const ok = await evidence(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "humanize": {
+    const { humanize } = await import("../src/humanize.js");
+    try {
+      const ok = await humanize(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "motion": {
+    const { motion } = await import("../src/motion.js");
+    try {
+      const ok = await motion(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "longform": {
     const { mineLongform } = await import("../../pipeline/src/longform.js");
     const ok = await mineLongform(rest);
@@ -127,8 +172,11 @@ switch (cmd) {
         console.log("  upload the .srt with the video — YouTube indexes it for search (burned-in text isn't readable)");
       } else if (action === "chapters" && targs[0]) {
         const r = T.chapters(targs[0]);
-        console.log(r.valid ? "chapters (paste into the description):" : `only ${r.chapters.length} chapters — YouTube needs 3+`);
-        console.log(r.text);
+        if (r.note) console.log(r.note);
+        else {
+          console.log(r.valid ? "chapters (paste into the description):" : `only ${r.chapters.length} chapters — YouTube needs 3+`);
+          console.log(r.text);
+        }
       } else if (action === "teleprompter" && targs[0]) {
         const r = T.teleprompter(targs[0]);
         console.log(`\n${r.topic}\n${"-".repeat(50)}`);
@@ -141,6 +189,75 @@ switch (cmd) {
           console.log(`  ${d.date} ${d.weekday}  ${bits.length ? bits.join(" · ") : "—"}`);
         }
         if (r.cadenceWarning) console.log(`\n  ⚠ ${r.cadenceWarning}`);
+      } else if (action === "translate" && targs[0]) {
+        const K = await import("../../studio/src/creatorKit.js");
+        const langs = targs.slice(1).length ? targs.slice(1) : ["es", "hi"];
+        const r = await K.translateCaptions(targs[0], langs);
+        console.log(`translated ${r.cues} cues into ${r.made.length} language(s):`);
+        for (const m of r.made) console.log(`  ${m.name.padEnd(12)} -> captions.${m.code}.srt`);
+      } else if (action === "pacing") {
+        const K = await import("../../studio/src/creatorKit.js");
+        const { collection: coll } = await import("../../shared/src/store.js");
+        // treat arg 1 as a brief id only if such a brief really exists,
+        // otherwise it's free text to measure
+        if (targs.length === 1 && coll("briefs").get(targs[0])) {
+          const r = K.pacingForBrief(targs[0]);
+          console.log(`\npacing for brief (target ${r.target}s):`);
+          console.log(`  WHOLE: ${r.whole.words} words -> ~${r.whole.estSec}s  [${r.whole.verdict}]`);
+          console.log(`         ${r.whole.advice}\n`);
+          for (const p of r.perPart) console.log(`  ${p.name.padEnd(8)} ${String(p.words).padStart(3)}w ~${String(p.estSec).padStart(5)}s  ${p.verdict}`);
+        } else {
+          const r = K.pacingCheck(targs.join(" "));
+          console.log(`${r.words} words -> ~${r.estSec}s (target ${r.targetSec}s) — ${r.verdict}\n  ${r.advice}`);
+        }
+      } else if (action === "link") {
+        const K = await import("../../studio/src/creatorKit.js");
+        if (targs[0] === "add" && targs[1] && targs[2]) {
+          const l = K.addLink({ label: targs[1], url: targs[2], kind: targs[3] || "product" });
+          console.log(`added ${l.kind}: ${l.label} -> ${l.url}`);
+        } else {
+          const r = K.linkKit({ videoId: targs[0] || "video" });
+          console.log(`\nlink block (${r.count} link(s), UTM-tagged so you can attribute clicks):\n`);
+          console.log(r.block);
+        }
+      } else if (action === "stock") {
+        const K = await import("../../studio/src/creatorKit.js");
+        // flags live on `rest` — `targs` already had them stripped
+        const kind = rest.includes("--music") ? "music" : rest.includes("--photo") ? "photo" : "video";
+        const q = targs.join(" ");
+        if (!q) {
+          console.error('usage: factory tools stock "<query>" [--music|--photo]');
+          process.exit(1);
+        }
+        const r = await K.stockSearch(q, { kind });
+        if (r.keyless) {
+          console.log(`\n${r.note}\n`);
+          for (const l of r.links) console.log(`  ${l.source.padEnd(20)} ${l.url}`);
+        } else {
+          console.log(`\n${r.results.length} free-licence ${kind}(s) for "${q}":\n`);
+          for (const it of r.results) console.log(`  ${String(it.duration || "").padStart(3)}s by ${(it.by || "?").padEnd(18)} ${it.preview?.slice(0, 60)}`);
+        }
+      } else if (action === "niche") {
+        const N = await import("../../studio/src/nichePacks.js");
+        if (targs[0] === "set") {
+          const set = N.setActiveNiches(targs.slice(1));
+          console.log(`active niches: ${set.join(", ")}`);
+        } else if (targs[0] && N.getPack(targs[0])) {
+          const s = N.shotListFor(targs[0]);
+          console.log(`\n${s.label} — ${s.lane} lane · ~${s.totalSec}s of shots\n`);
+          for (const sh of s.shots) console.log(`  ${sh.n}. [${String(sh.sec).padStart(2)}s] ${sh.name}\n         ${sh.note}`);
+          console.log(`\n  hooks that work here: ${s.hooks.join(", ")}`);
+          console.log(`  pacing:  ${s.pacing}`);
+          console.log(`  gotcha:  ${s.gotcha}`);
+          console.log(`  tags:    ${s.hashtags.join(" ")}`);
+        } else {
+          console.log(`\nniche packs (factory tools niche <name> | niche set <a> <b>):\n`);
+          for (const n of N.NICHE_NAMES) {
+            const p = N.getPack(n);
+            console.log(`  ${n.padEnd(14)} ${p.lane.padEnd(9)} ${p.shots.length} shots · ${p.label}`);
+          }
+          console.log(`\n  active: ${N.activeNiches().join(", ")}`);
+        }
       } else if (action === "cta") {
         const E = await import("../../studio/src/engagement.js");
         if (targs[0] === "add") {
@@ -233,18 +350,69 @@ switch (cmd) {
       if (action === "set" && aargs[0] && aargs[1]) {
         const isTask = Boolean(TASKS[aargs[0]]);
         const isSvc = Boolean(SERVICES[aargs[0]]);
-        if ((!isTask && !isSvc) || !TIER_NAMES.includes(aargs[1])) {
+        // accept the legacy budget/premium names so old notes still work, but
+        // persist the canonical one and say so rather than storing a stale name
+        const { canonicalTier } = await import("../../llm/src/tiers.js");
+        const tier = canonicalTier(aargs[1]);
+        if ((!isTask && !isSvc) || !tier) {
           throw new Error(`usage: factory ai set <${[...Object.keys(TASKS), ...Object.keys(SERVICES)].join("|")}> <${TIER_NAMES.join("|")}>`);
         }
-        if (isTask) cfg.aiTiers = { ...tiers, [aargs[0]]: aargs[1] };
-        else cfg.serviceTiers = { ...svcTiers, [aargs[0]]: aargs[1] };
+        if (isTask) cfg.aiTiers = { ...tiers, [aargs[0]]: tier };
+        else cfg.serviceTiers = { ...svcTiers, [aargs[0]]: tier };
         saveUserConfig(cfg);
-        console.log(`${aargs[0]} -> ${aargs[1]} tier`);
+        console.log(`${aargs[0]} -> ${tier} tier${tier !== aargs[1] ? `  (“${aargs[1]}” is the old name for “${tier}”)` : ""}`);
+      } else if (action === "models") {
+        // OpenRouter's free roster rotates; a stale default 404s with
+        // "unavailable for free", which reads like a broken key. Check it here.
+        if (!process.env.OPENROUTER_API_KEY) throw new Error("needs OPENROUTER_API_KEY in .env");
+        const res = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
+        });
+        if (!res.ok) throw new Error(`openrouter ${res.status}`);
+        const free = ((await res.json()).data || []).filter((m) => m.id.endsWith(":free"));
+        const current = process.env.OPENROUTER_FREE_MODEL || "google/gemma-4-31b-it:free";
+        console.log(`\n${free.length} free models on OpenRouter right now:\n`);
+        for (const m of free.sort((a, b) => (b.context_length || 0) - (a.context_length || 0))) {
+          console.log(`  ${m.id === current ? "->" : "  "} ${m.id.padEnd(52)} ctx ${m.context_length || "?"}`);
+        }
+        console.log(`\n  in use: ${current}${free.some((m) => m.id === current) ? "" : "   ** NOT in the free list — this will 404 **"}`);
+        console.log(`  change it with OPENROUTER_FREE_MODEL=<id> in .env`);
+        console.log(`  pick one that returns clean JSON — some leak reasoning or fence it\n`);
       } else {
+        const { TIER_META } = await import("../../llm/src/tiers.js");
         console.log("\nAI TIERS — what's ready right now:\n");
         for (const t of tierAvailability()) {
-          console.log(`  ${t.tier.padEnd(8)} ${t.available ? "READY" : "not set up"}`);
+          const meta = TIER_META[t.tier] || {};
+          console.log(`  ${t.tier.padEnd(8)} ${(t.available ? "READY" : "not set up").padEnd(11)} ${(meta.cost || "").padEnd(16)} ${meta.note || ""}`);
           for (const o of t.options) console.log(`     ${o.ready ? "+" : "o"} ${o.label.padEnd(22)} ${o.model}`);
+        }
+
+        /**
+         * "READY" above only means a key EXISTS. That is how an account with
+         * zero credits reported all three tiers ready while every paid call
+         * answered "Insufficient credits" and free models throttled after a
+         * couple of requests. Ask OpenRouter what the key can actually do.
+         */
+        if (process.env.OPENROUTER_API_KEY) {
+          try {
+            const cr = await fetch("https://openrouter.ai/api/v1/credits", {
+              headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (cr.ok) {
+              const { data } = await cr.json();
+              const left = (data.total_credits || 0) - (data.total_usage || 0);
+              console.log(`\n  OpenRouter balance: $${left.toFixed(4)}  (granted $${(data.total_credits || 0).toFixed(2)}, used $${(data.total_usage || 0).toFixed(4)})`);
+              if (left <= 0) {
+                console.log(`  ⚠ no credits — the CHEAP, MEDIUM and BEST rows above cannot actually run,`);
+                console.log(`    however "READY" they look. Only the free tier will work.`);
+                console.log(`    Add credit at openrouter.ai/settings/credits to unlock them, or stay`);
+                console.log(`    on free — it is genuinely sufficient for one video at a time.`);
+              }
+            }
+          } catch {
+            /* a status probe must never break the status command */
+          }
         }
         console.log("\nPER-TASK ASSIGNMENT (factory ai set <task> <tier>):\n");
         for (const [task, meta] of Object.entries(TASKS)) {

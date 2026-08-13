@@ -3,6 +3,7 @@ import path from "node:path";
 import { loadEnv, repoRoot, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection, validateShape } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { preamble } from "./promptKit.js";
 
 /**
  * P17: Brief -> RenderSpec compiler. The repo's RenderSpec is the
@@ -51,7 +52,8 @@ async function llmScenes(brief, lessonBlock = "") {
         `You compile a video brief into renderer scenes for: ${NICHE_CONTEXT}.${lessonBlock} Scene types: ` +
         'kinetic {voiceover, emphasis[]}, code {voiceover, lang, code, focus[2]}, terminal {voiceover, lines[]}, ' +
         "stat {voiceover, label, stats[{name,value,suffix}]}, quote {voiceover, quote, attribution}, meme {voiceover, emoji, text}. " +
-        'Open with a kinetic hook; 3-5 scenes total; voiceover conversational, ~8s each. Reply ONLY JSON: {"scenes":[...]}',
+        'Open with a kinetic hook; 3-5 scenes total; voiceover conversational, ~8s each. Reply ONLY JSON: {"scenes":[...]}' +
+        preamble({ surface: "voiceover", tts: true }),
       user: `topic: ${brief.topic}\nhook: ${p.yt_short?.hook_variants?.[0]}\nbeats: ${(p.yt_short?.beats || []).join(" | ")}\ncore idea: ${p.core_idea}`,
     });
     const parsed = JSON.parse(res.text.slice(res.text.indexOf("{"), res.text.lastIndexOf("}") + 1));
@@ -73,6 +75,42 @@ export async function compileBrief(briefId) {
   if (injected.lessons.length) console.log(`  injecting ${injected.lessons.length} script lesson(s) into generation`);
 
   const scenes = (await llmScenes(brief, injected.block)) || heuristicScenes(brief);
+
+  // TTS safety: strip emoji / markdown / em dashes from voiceover before it
+  // reaches ElevenLabs. Only the MECHANICAL fixes run automatically — they're
+  // deterministic and an emoji in a voiceover field is a real bug (spoken
+  // aloud or silently dropped, shifting every word timestamp). Rephrasing
+  // needs a human read, so it stays behind `factory humanize script --fix --ai`.
+  try {
+    const { autoFix } = await import("./humanize.js");
+    let cleaned = 0;
+    for (const s of scenes) {
+      if (!s.voiceover) continue;
+      const r = autoFix(s.voiceover, { surface: "voiceover" });
+      if (r.text !== s.voiceover) { s.voiceover = r.text; cleaned++; }
+    }
+    if (cleaned) console.log(`  cleaned ${cleaned} voiceover line(s) for TTS (emoji/markdown/dashes)`);
+  } catch (e) {
+    console.log(`  (voiceover cleanup skipped: ${e.message.slice(0, 60)})`);
+  }
+
+  // Motion Lab: recommend an effect per scene. Additive only — `effect` is a
+  // hint the renderer may honour, and it makes the effect->retention join
+  // automatic instead of relying on `factory motion tag` by hand. A failure
+  // here must never block a compile, so it's best-effort.
+  try {
+    const { suggestEffects } = await import("./motionLab.js");
+    const { activeNiches } = await import("./nichePacks.js");
+    // same resolution order the orchestrator's packForBrief uses
+    const niche = brief.niche || activeNiches()[0] || "coding";
+    for (const [i, s] of scenes.entries()) {
+      const picks = suggestEffects({ sceneType: i === 0 ? "hook" : s.type, niche, limit: 1 });
+      if (picks[0]) s.effect = picks[0].id;
+    }
+  } catch (e) {
+    console.log(`  (effect suggestion skipped: ${e.message.slice(0, 60)})`);
+  }
+
   const script = {
     id: `brief-${briefId.slice(0, 10)}`,
     title: brief.payload?.yt_short?.title || brief.topic,

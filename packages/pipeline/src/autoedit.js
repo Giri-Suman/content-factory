@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, loadUserConfig, repoRoot } from "../../shared/src/config.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { resolveService } from "../../llm/src/tiers.js";
 import { ffprobeDuration } from "./voice.js";
 
 /**
@@ -75,8 +76,12 @@ function readDictionary() {
 /** Tiered whisper model — all tiers run locally at $0, trading speed for accuracy. */
 function whisperModel() {
   try {
+    // Ask the tier registry rather than re-listing the mapping here. The old
+    // hardcoded {free,budget,premium} table silently returned "base" for every
+    // tier the moment the names changed — a duplicated lookup that fails open
+    // is worse than no lookup, because nothing reports the downgrade.
     const cfg = loadUserConfig().serviceTiers || {};
-    return { free: "base", budget: "small", premium: "medium" }[cfg.transcribe] || "base";
+    return resolveService("transcribe", cfg)?.model || "base";
   } catch {
     return "base";
   }

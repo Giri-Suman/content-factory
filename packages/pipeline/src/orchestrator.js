@@ -75,14 +75,41 @@ export function stuckReason(brief) {
 
 /* ---------------- shot list (capture lane) ---------------- */
 
-function shotList(brief) {
+/**
+ * Capture shot list. If the brief carries a niche (or one is configured), use
+ * that niche's PROVEN structure — a makeup tutorial needs the bare-face open,
+ * nail art needs the top-down macro. Falls back to generic beats otherwise, so
+ * nothing that worked before changes.
+ */
+function shotList(brief, pack = null) {
   const beats = brief.payload?.yt_short?.beats || [];
   const track = brief.payload?.yt_short?.hook_variants?.[0] || brief.topic;
-  return {
+  const base = {
     talkingTrack: [track, ...beats].filter(Boolean),
-    shots: (beats.length ? beats : [brief.topic]).map((b, i) => `Shot ${i + 1}: ${b}`),
     generatedAt: new Date().toISOString(),
   };
+  if (pack) {
+    return {
+      ...base,
+      niche: pack.niche,
+      shots: pack.shots.map((s) => `Shot ${s.n} (${s.sec}s) — ${s.name}: ${s.note}`),
+      pacing: pack.pacing,
+      gotcha: pack.gotcha,
+      targetSec: pack.totalSec,
+    };
+  }
+  return { ...base, shots: (beats.length ? beats : [brief.topic]).map((b, i) => `Shot ${i + 1}: ${b}`) };
+}
+
+/** Resolve the niche for a brief: explicit on the brief, else the configured one. */
+async function packForBrief(brief) {
+  try {
+    const { shotListFor, activeNiches, getPack } = await import("../../studio/src/nichePacks.js");
+    const niche = brief.niche || activeNiches().find((n) => getPack(n)?.lane === "capture") || activeNiches()[0];
+    return niche ? shotListFor(niche, brief) : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ---------------- the conveyor ---------------- */
@@ -109,9 +136,16 @@ export async function produce(briefId, { captureFile = null, profiles = "yt_shor
   /* ---- CAPTURE LANE ---- */
   if (lane === "capture") {
     if (!captureFile) {
-      setState(briefId, "awaiting-capture", { shotList: shotList(brief) });
-      log("shot list + talking track ready — record and drop the file (factory produce <id> --capture-file <path>)");
-      return { briefId, lane, state: "awaiting-capture", shotList: shotList(brief) };
+      const pack = await packForBrief(brief);
+      const list = shotList(brief, pack);
+      setState(briefId, "awaiting-capture", { shotList: list });
+      log(
+        pack
+          ? `${pack.label} shot list ready (${list.shots.length} shots, ~${pack.totalSec}s) — record and drop the file`
+          : "shot list + talking track ready — record and drop the file (factory produce <id> --capture-file <path>)"
+      );
+      if (pack) log(`gotcha: ${pack.gotcha}`);
+      return { briefId, lane, state: "awaiting-capture", shotList: list };
     }
     if (!existsSync(captureFile)) throw new Error(`capture file not found: ${captureFile}`);
     log(`AI-Cut editing ${path.basename(captureFile)}...`);

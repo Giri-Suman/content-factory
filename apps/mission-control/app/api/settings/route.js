@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { readConfig, writeConfig, readEnvKeys, repoRoot, envSet } from "../../../lib/factory.js";
+import { loadEnv } from "../../../../../packages/shared/src/config.js";
+import {
+  DEFAULT_SERVICE_TIERS,
+  DEFAULT_TIERS,
+  TIER_META,
+  TIER_NAMES,
+  canonicalTier,
+  serviceAvailability,
+  tierAvailability,
+} from "../../../../../packages/llm/src/tiers.js";
 
 const MODULE_BUDGETS = {
   watchlist: 800, trending: 200, nicheHeat: 600, keywordGap: 2200,
@@ -35,6 +45,7 @@ const os = (name) => {
 export const DEFAULT_WEIGHTS = { velocity: 1, crossSource: 1, nicheFit: 1, saturationGap: 1 };
 
 export async function GET() {
+  loadEnv(); // needs() checks read process.env; Next does not load the factory .env
   const config = readConfig();
   const today = new Date().toISOString().slice(0, 10);
   return NextResponse.json({
@@ -45,30 +56,21 @@ export async function GET() {
       availableHoursPerWeek: config.availableHoursPerWeek || 6,
     },
     env: readEnvKeys(),
+    /**
+     * Derived from the tier registry, never re-listed here. This block used to
+     * be a hand-maintained copy and it had drifted to advertising
+     * "llama-3.3-70b:free" and "gemini-2.0-flash" — both DEAD ids that 404 —
+     * so Settings confidently displayed models that could not run.
+     */
     aiTiers: {
-      assigned: { score: "free", script: "budget", analysis: "free", ...(config.aiTiers || {}) },
-      availability: [
-        { tier: "free", options: [
-          { label: "Ollama (local)", model: process.env.OLLAMA_MODEL || "llama3.2", ready: envSet("OLLAMA_MODEL") },
-          { label: "OpenRouter :free", model: "llama-3.3-70b:free", ready: envSet("OPENROUTER_API_KEY") },
-        ] },
-        { tier: "budget", options: [
-          { label: "OpenRouter budget", model: "gemini-2.0-flash", ready: envSet("OPENROUTER_API_KEY") },
-          { label: "Claude Haiku", model: "claude-haiku-4-5", ready: envSet("ANTHROPIC_API_KEY") },
-        ] },
-        { tier: "premium", options: [
-          { label: "Claude Sonnet 5", model: "claude-sonnet-5", ready: envSet("ANTHROPIC_API_KEY") },
-          { label: "Sonnet via OpenRouter", model: "anthropic/claude-sonnet-5", ready: envSet("OPENROUTER_API_KEY") },
-        ] },
-      ].map((t) => ({ ...t, available: t.options.some((o) => o.ready) })),
+      assigned: { ...DEFAULT_TIERS, ...(config.aiTiers || {}) },
+      tierMeta: TIER_META,
+      availability: tierAvailability(),
     },
     serviceTiers: {
-      assigned: { voice: "free", image: "free", transcribe: "free", ...(config.serviceTiers || {}) },
-      services: [
-        { service: "voice", label: "Voice", note: "free = Windows TTS · premium = YOUR cloned voice", ready: { free: true, budget: envSet("ELEVENLABS_API_KEY"), premium: envSet("ELEVENLABS_API_KEY") } },
-        { service: "image", label: "Thumbnails & images", note: "free = brand HTML (already excellent) · paid adds generated backgrounds", ready: { free: true, budget: envSet("FAL_KEY"), premium: envSet("FAL_KEY") } },
-        { service: "transcribe", label: "Footage transcription", note: "all tiers run locally at $0 — trades speed for accuracy", ready: { free: true, budget: true, premium: true } },
-      ],
+      assigned: { ...DEFAULT_SERVICE_TIERS, ...(config.serviceTiers || {}) },
+      tierNames: TIER_NAMES,
+      services: serviceAvailability(),
     },
     quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
     budgets: budgetDashboard(),
@@ -101,18 +103,21 @@ export async function PUT(request) {
     config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
   }
   if (typeof body.autoTune === "boolean") config.autoTune = body.autoTune;
+  // canonicalTier accepts the legacy budget/premium names and normalises them,
+  // so an older client can't persist a tier the resolver would silently read
+  // as "free". Keys come from the registry, not a second hardcoded list.
   if (body.serviceTiers && typeof body.serviceTiers === "object") {
-    const valid = ["free", "budget", "premium"];
     config.serviceTiers = { ...(config.serviceTiers || {}) };
-    for (const svc of ["voice", "image", "transcribe"]) {
-      if (valid.includes(body.serviceTiers[svc])) config.serviceTiers[svc] = body.serviceTiers[svc];
+    for (const svc of Object.keys(DEFAULT_SERVICE_TIERS)) {
+      const t = canonicalTier(body.serviceTiers[svc]);
+      if (t) config.serviceTiers[svc] = t;
     }
   }
   if (body.aiTiers && typeof body.aiTiers === "object") {
-    const valid = ["free", "budget", "premium"];
     config.aiTiers = { ...(config.aiTiers || {}) };
-    for (const task of ["score", "script", "analysis"]) {
-      if (valid.includes(body.aiTiers[task])) config.aiTiers[task] = body.aiTiers[task];
+    for (const task of Object.keys(DEFAULT_TIERS)) {
+      const t = canonicalTier(body.aiTiers[task]);
+      if (t) config.aiTiers[task] = t;
     }
   }
   if (body.availableHoursPerWeek !== undefined) {

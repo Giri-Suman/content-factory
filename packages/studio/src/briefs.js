@@ -1,6 +1,7 @@
 import { loadEnv, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection, newId, validateShape } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { preamble } from "./promptKit.js";
 
 /**
  * P6 Brief Studio: TopicCluster or WishlistEntry -> one multi-platform
@@ -78,7 +79,10 @@ async function llmPayload(context, kind, lengthTarget = 32) {
       system:
         `You write multi-platform content briefs for this creator: ${NICHE_CONTEXT}.${lessonBlock} ` +
         `Target the YouTube Short at ~${lengthTarget}s (the platform playbook's proven length). ` +
-        "Every hook must be concrete and specific — generic openers ('you won't believe') are banned. Reply ONLY JSON:\n" +
+        "Every hook must be concrete and specific — generic openers ('you won't believe') are banned." +
+        // hooks are SPOKEN, so the voiceover surface is the strictest one present
+        preamble({ surface: "voiceover", json: false }) +
+        "\n\nReply ONLY JSON:\n" +
         `{"kind":"trend|evergreen","core_idea":"...","yt_short":{"hook_variants":["3 different hooks"],"beats":["scene beats"],` +
         `"length_sec":${lengthTarget},"title":"...","description":"keyword-rich, 2 lines","tags":["..."]},` +
         '"ig_reel":{"script_adjustments":"...","caption":"conversational, ends with a question","hashtags":["<=8 niche tags"]},' +
@@ -150,6 +154,26 @@ export async function generateBrief({ clusterId, wishlistId, topic: rawTopic, se
     context =
       `TOPIC CLUSTER: ${c.label}\nsummary: ${c.summary || "(none)"}\nopportunity score: ${c.opportunityScore} (${c.status})\n` +
       `score breakdown: ${Object.entries(c.scoreBreakdown || {}).map(([k, v]) => `${k} ${v.value}/${v.max} (${v.detail})`).join("; ")}\nmembers: ${members}`;
+    // Real community language, verbatim and attributed. A headline gives the
+    // topic; the discussion gives the phrasing people actually use, which is
+    // what a hook is made of. Passing these in stops the model inventing a
+    // plausible-sounding sentiment nobody expressed.
+    try {
+      const { quotesForCluster } = await import("../../radar/src/quotes.js");
+      const qs = quotesForCluster(c, { limit: 4 }).filter((q) => q.voice === "community");
+      if (qs.length) {
+        context +=
+          `\n\nWHAT PEOPLE ACTUALLY SAID (verbatim — quote or paraphrase these, never invent others):\n` +
+          qs.map((q) => `- ${q.author}: "${q.text}"`).join("\n");
+      }
+    } catch {
+      /* quotes are a bonus; a brief must still generate without them */
+    }
+
+    // How much evidence is behind this at all — carried into the brief so a
+    // thin topic can't read as a strong one.
+    if (c.evidence) context += `\n\nEVIDENCE: ${c.evidence.level} — ${c.evidence.why}`;
+
     // trend when the momentum is real: rising status or a hot velocity component
     kind = c.status === "rising" && (c.scoreBreakdown?.velocity?.value ?? 0) >= 20 ? "trend" : "evergreen";
   } else if (wishlistId) {

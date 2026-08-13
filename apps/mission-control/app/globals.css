@@ -27,14 +27,30 @@ a { color: inherit; text-decoration: none; }
 .shell { display: flex; min-height: 100vh; }
 
 /* ---------- sidebar ---------- */
+/**
+ * height:100vh with no overflow rule hid the tail of the menu completely:
+ * 24 nav links measure 1145px against a 720px viewport, so 425px — everything
+ * from roughly Renders down to Settings — was unreachable by any means.
+ */
 .sidebar {
   width: 210px; flex: none; border-right: 1px solid var(--border);
   padding: 22px 14px; display: flex; flex-direction: column; gap: 4px;
   position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain; /* don't chain the scroll to the page */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+.sidebar::-webkit-scrollbar { width: 8px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.sidebar:hover::-webkit-scrollbar-thumb { background: var(--muted); }
 .brand {
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.28em;
   color: var(--accent); padding: 0 10px 18px;
+  /* stays put while the long menu scrolls under it */
+  position: sticky; top: -22px; z-index: 1;
+  background: var(--bg); margin: -22px -14px 0; padding: 22px 24px 14px;
 }
 .brand small { display: block; color: var(--muted); letter-spacing: 0.08em; margin-top: 3px; }
 .nav-link {
