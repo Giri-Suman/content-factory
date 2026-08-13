@@ -117,7 +117,7 @@ export async function mineLongform(argv = []) {
   for (const [i, p] of picks.entries()) {
     const out = path.join(outDir, `clip-${i + 1}.mp4`);
     const vf = argv.includes("--keep-wide") ? "scale=1920:1080" : "crop=ih*9/16:ih,scale=1080:1920";
-    const r = run(["-y", "-v", "error", "-ss", String(p.start), "-t", String(clipSec), "-i", file, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", out]);
+    const r = run(["-y", "-v", "error", "-ss", String(p.start), "-t", String(clipSec), "-i", file, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", "-c:a", "aac", out]);
     if (r.status === 0 && existsSync(out)) made.push(out);
   }
 

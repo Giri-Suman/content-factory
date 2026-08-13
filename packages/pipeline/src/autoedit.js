@@ -30,6 +30,28 @@ const DEFAULTS = {
 };
 
 const FILLER = /^(um+|uh+|uhm+|erm+|hmm+|mhm+|mm+|er|ah+)$/i;
+
+/**
+ * Blocks skin-smoothing from ever entering the filter chain.
+ *
+ * Makeup and nails content exists to show a product's real result on real skin.
+ * A beauty filter destroys exactly that, and once a viewer notices one they
+ * discount every review that follows. Enforced rather than documented, because
+ * "we agreed not to" does not survive a future refactor.
+ *
+ * Sharpening and grading are fine — they do not fabricate a result.
+ */
+const SKIN_SMOOTHING = /\b(smartblur|gblur|boxblur|bilateral|removegrain|hqdn3d\s*=\s*[^,]*[4-9]|surfaceblur|deband\s*=\s*[^,]*blur)/i;
+
+export function assertNoSkinSmoothing(filterChain) {
+  const hit = String(filterChain).match(SKIN_SMOOTHING);
+  if (!hit) return true;
+  throw new Error(
+    `skin-smoothing filter "${hit[0]}" is not allowed in the edit chain.\n` +
+      `  Makeup/nails viewers are judging a product's real result on real skin; smoothing it\n` +
+      `  removes the only thing the video is for. Grade, expose and white-balance instead.`
+  );
+}
 const ACCENT_ASS = "&H0024B2FF"; // #ffb224 in ASS BGR
 const WHISPER_ENV = {
   ...process.env,
@@ -214,6 +236,19 @@ function buildFilterScript(keeps, { width, height, punch, denoise, keptSec }) {
   });
   lines.push(`${pairs.join("")}concat=n=${keeps.length}:v=1:a=1[vcat][acat];`);
 
+  /**
+   * NEVER add a skin-smoothing filter here.
+   *
+   * For makeup and nails content the viewer is evaluating the visible result of
+   * a product on real skin. Smoothing (smartblur, gblur on the face, any
+   * "beauty filter") destroys the only thing the content is for, and a viewer
+   * who spots it stops trusting every future review. This is a trust decision,
+   * not a technical one — grade, expose and white-balance freely, but the skin
+   * itself must survive the pipeline untouched.
+   *
+   * `assertNoSkinSmoothing` below enforces it so a future edit cannot quietly
+   * reintroduce one.
+   */
   // finishing: grade + vignette + sharpen + fades (video), denoise + loudnorm + fades (audio)
   const fadeOut = Math.max(0, keptSec - 0.45).toFixed(2);
   lines.push(
@@ -226,7 +261,9 @@ function buildFilterScript(keeps, { width, height, punch, denoise, keptSec }) {
     `afade=t=in:st=0:d=0.25,afade=t=out:st=${fadeOut}:d=0.45`,
   ].filter(Boolean).join(",");
   lines.push(`[acat]${audioChain}[ac]`);
-  return lines.join("\n");
+  const chain = lines.join("\n");
+  assertNoSkinSmoothing(chain);
+  return chain;
 }
 
 /* ---------------- karaoke captions (ASS) ---------------- */
@@ -362,7 +399,7 @@ export async function autoEdit(argv) {
     "-y", "-v", "error", "-i", input,
     "-filter_complex_script", filterPath,
     "-map", "[vc]", "-map", "[ac]",
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "192k",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "aac", "-b:a", "192k",
     master,
   ]);
   if (cut.status !== 0 || !existsSync(master)) {
@@ -390,7 +427,7 @@ export async function autoEdit(argv) {
 
   /* 5 — exports */
   const isVertical = info.height > info.width;
-  const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "copy"];
+  const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "copy"];
   const outputs = [];
   const shortOut = path.join(outDir, "short.mp4");
   if (isVertical) {

@@ -1,9 +1,23 @@
 import { collection } from "../../shared/src/store.js";
+import { upcoming } from "./seasonal.js";
 
 /**
  * Morning Digest (P8): one record per day — what rose overnight, what's
  * hot, what's still unposted. Rendered as a banner on Today.
  */
+
+/** Seasons whose publish-by date is near or past — best-effort, never fatal. */
+function seasonalWindows() {
+  try {
+    const rows = upcoming({ withinDays: 60 });
+    return rows
+      .filter((s) => s.urgency !== "soon")
+      .slice(0, 4)
+      .map((s) => ({ id: s.id, label: s.label, publishBy: s.publishBy, daysAway: s.daysAway, urgency: s.urgency, niches: s.niches, angle: s.angles[0] }));
+  } catch {
+    return [];
+  }
+}
 
 export function buildDigest() {
   const clusters = collection("clusters").all().sort((a, b) => b.opportunityScore - a.opportunityScore);
@@ -30,6 +44,12 @@ export function buildDigest() {
     unposted: briefs
       .filter((b) => b.status === "approved" && (b.checklistState || []).some((x) => !x))
       .map((b) => ({ id: b.id, topic: b.topic, kind: b.kind, deadline: b.deadline })),
+    /**
+     * Seasonal windows the radar structurally cannot see. Trend feeds report
+     * what is spiking now; nobody posts "Diwali nail art demand starts in three
+     * weeks" — but it does, every year, and being early is the whole advantage.
+     */
+    seasonal: seasonalWindows(),
     createdAt: new Date().toISOString(),
   };
 

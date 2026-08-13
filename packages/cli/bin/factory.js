@@ -112,6 +112,17 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "capabilities": {
+    const { capabilities } = await import("../src/capabilities.js");
+    try {
+      const ok = await capabilities(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "evidence": {
     const { evidence } = await import("../src/evidence.js");
     try {

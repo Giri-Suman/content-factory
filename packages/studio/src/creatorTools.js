@@ -108,7 +108,39 @@ export function captionFiles(renderId) {
   const vttFile = path.join(dir, "captions.vtt");
   writeFileSync(srtFile, srt);
   writeFileSync(vttFile, vtt);
-  return { srtFile, vttFile, cues: cues.length };
+  return { srtFile, vttFile, cues: cues.length, readingSpeed: readingSpeed(cues) };
+}
+
+/**
+ * Reading-speed check (characters per second).
+ *
+ * A cue that is on screen too briefly to read is worse than no cue: the viewer
+ * stops trying, and on a Short they leave. ~20 CPS is the broadcast-subtitle
+ * ceiling for comfortable reading; above ~25 most people cannot finish the line.
+ *
+ * Reported, not enforced — the timings come from real speech, so the fix is to
+ * shorten the LINE, which is a writing decision.
+ */
+export function readingSpeed(cues, { ceiling = 20, hard = 25 } = {}) {
+  const rated = cues
+    .map((c) => {
+      const dur = Math.max(0.1, c.end - c.start);
+      return { text: c.text, cps: Math.round((c.text.replace(/\s+/g, " ").length / dur) * 10) / 10, dur };
+    })
+    .sort((a, b) => b.cps - a.cps);
+  const tooFast = rated.filter((r) => r.cps > ceiling);
+  const unreadable = rated.filter((r) => r.cps > hard);
+  return {
+    medianCps: rated.length ? rated[Math.floor(rated.length / 2)].cps : 0,
+    tooFast: tooFast.length,
+    unreadable: unreadable.length,
+    worst: rated.slice(0, 3),
+    reading: unreadable.length
+      ? `${unreadable.length} cue(s) above ${hard} CPS — most viewers cannot finish these lines; shorten the text`
+      : tooFast.length
+        ? `${tooFast.length} cue(s) above ${ceiling} CPS — readable but rushed`
+        : "comfortable reading speed throughout",
+  };
 }
 
 /* ---------------- 2. chapters ---------------- */

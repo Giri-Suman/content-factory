@@ -20,7 +20,7 @@ function loudnorm(file) {
   const tmp = file.replace(/\.mp4$/, ".ln.mp4");
   const res = spawnSync(
     "ffmpeg",
-    ["-y", "-v", "error", "-i", file, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", tmp],
+    ["-y", "-v", "error", "-i", file, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "copy", "-movflags", "+faststart", "-c:a", "aac", "-b:a", "192k", tmp],
     { encoding: "utf8", windowsHide: true, timeout: 300000 }
   );
   if (res.status === 0 && existsSync(tmp)) renameSync(tmp, file);

@@ -150,7 +150,7 @@ export async function burnSteps(argv = []) {
   console.log(`burning onto ${path.basename(file)}...`);
   const r = spawnSync(
     "ffmpeg",
-    ["-y", "-v", "error", ...inputs, "-filter_complex", chain, "-map", "[out]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "copy", outFile],
+    ["-y", "-v", "error", ...inputs, "-filter_complex", chain, "-map", "[out]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "copy", outFile],
     { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 20 }
   );
   if (r.status !== 0 || !existsSync(outFile)) {

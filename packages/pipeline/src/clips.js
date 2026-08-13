@@ -119,7 +119,7 @@ export async function makeClips(argv) {
     const res = spawnSync(
       "ffmpeg",
       ["-y", "-v", "error", "-i", source, "-ss", startS.toFixed(3), "-t", durS.toFixed(3),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", out],
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", "-c:a", "aac", out],
       { encoding: "utf8", timeout: 300000, windowsHide: true }
     );
     if (res.status === 0) results.push(out);
