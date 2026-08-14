@@ -351,3 +351,33 @@ once; append after every failed attempt or surprise.
   **date-driven demand needs its own calendar with a LEAD TIME per event. The
   actionable field is publish-by, not the event date — shipping Diwali content
   on Diwali is late.**
+
+- `NICHE_CONTEXT` described a coding-only creator and is injected into 17
+  modules' prompts, so every LLM judgment scored makeup, nails and math as
+  "extreme niche misalignment". ideaJudge's coded half compounded it with a
+  coding-only regex, docking 20 points from three of the four categories the
+  channel exists to serve →
+  **a shared identity string is load-bearing precisely because it is
+  everywhere. When a system supports N categories, grep the identity constant
+  before assuming the feature works for all of them — this was a correctness
+  bug wearing a copywriting costume.**
+
+- Even after fixing the identity text, a beauty idea still scored 28-42 while
+  nail art scored 88. Cause: the prompt passed the first 8 idea-bank titles as
+  novelty examples, and they were all coding — the model inferred the vertical
+  from the EXAMPLES and ignored the stated identity →
+  **few-shot examples outrank an instruction. If you tell a model what the
+  brand is and then show it eight counter-examples, the examples win. Filter
+  comparison sets to the same category as the item being judged.**
+
+- `\bproof\b` in a math-detection regex matched "sweat-proof foundation" and
+  classified a makeup review as math → **word boundaries do not respect
+  hyphenated compounds; use `(?<![-\w])proof\b` when the term is a common
+  suffix.**
+
+- Originality was an exact lowercased title comparison against the idea bank
+  only, so "5 Python tricks" and "Five Python Tricks You Should Know" were
+  treated as unrelated, and anything already PUBLISHED was invisible to it →
+  **dedup needs token overlap (with number-word collapsing) against everything
+  already committed to — published posts first, since a duplicate of a live
+  video splits your own search result.**

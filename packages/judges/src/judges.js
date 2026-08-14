@@ -28,29 +28,59 @@ export async function ideaJudge(idea) {
   const reasons = [];
   let score = 60;
   const text = `${idea.title || idea.label || ""} ${idea.summary || ""}`;
-  if (/\b(ai|automation|code|coding|python|llm|agent|dev|tool)\b/i.test(text)) score += 20;
-  else reasons.push("weak niche fit — no coding/AI/automation signal in the title");
-  // novelty vs IdeaBank (coded: exact-ish title collision)
-  const bank = collection("ideabank").all();
-  const dupe = bank.find((b) => b.title && idea.title && b.title.toLowerCase() === idea.title.toLowerCase());
-  if (dupe) {
-    score -= 25;
-    reasons.push(`near-duplicate of existing idea "${dupe.title}"`);
+
+  /**
+   * Niche fit across ALL four categories. The old test was a single
+   * coding/AI regex, so every makeup, nails and math idea lost 20 points and
+   * was told it had "weak niche fit" — the judge was actively penalising three
+   * of the four categories this channel covers.
+   */
+  const { nicheFit, checkOriginality } = await import("../../studio/src/originality.js");
+  const fit = nicheFit(text);
+  if (fit.hit) score += 20;
+  else reasons.push("weak niche fit — no coding, AI, math or beauty signal in the title");
+
+  /**
+   * Originality against everything already committed to — published posts and
+   * briefs, not just the idea bank. Exact lowercase title equality (the old
+   * test) misses "5 Python tricks" vs "Five Python Tricks You Should Know",
+   * which is the same video with no shared string at either end.
+   */
+  const orig = checkOriginality(idea.title || idea.label || "");
+  if (!orig.original) {
+    score -= 30;
+    reasons.push(orig.reading);
+  } else if (orig.score >= 0.35) {
+    score -= 8;
+    reasons.push(`close to something you already have — ${orig.reading}`);
   }
+  const bank = collection("ideabank").all();
   if ((idea.title || "").length < 12) {
     score -= 10;
     reasons.push("title too thin to judge hook potential");
   }
 
   if (providerStatus().active) {
-    const near = bank.slice(0, 8).map((b) => b.title).filter(Boolean);
+    /**
+     * Comparison titles must come from the SAME vertical. Passing the first 8
+     * idea-bank rows meant a beauty idea was shown eight coding examples, and
+     * the model inferred the channel's niche from the examples rather than the
+     * stated identity — scoring "sweat-proof foundation" 28-42 as an "extreme
+     * vertical mismatch" while nail art scored 88. Few-shot examples outrank
+     * an instruction every time.
+     */
+    const sameNiche = bank.filter((b) => b.title && nicheFit(b.title).niche === fit.niche);
+    const near = (sameNiche.length >= 3 ? sameNiche : bank).slice(0, 8).map((b) => b.title).filter(Boolean);
+    const { nicheContextFor } = await import("../../shared/src/config.js");
     try {
       const res = await chat({
         task: "score",
         maxTokens: 500,
         system:
-          `Rate a video idea 0-100 for: ${NICHE_CONTEXT}. Judge niche fit, novelty vs these existing ideas ` +
-          `[${near.join("; ")}], hook potential, "would my viewer stop scrolling". ` +
+          `Rate a video idea 0-100 for: ${fit.niche ? nicheContextFor(fit.niche) : NICHE_CONTEXT}. ` +
+          (fit.niche ? `This idea is in the "${fit.niche}" vertical, which is core to this studio — do NOT mark it off-topic. ` : "") +
+          `Judge niche fit, novelty vs these existing ideas [${near.join("; ")}], hook potential, ` +
+          `"would my viewer stop scrolling". ` +
           'Reply ONLY JSON: {"score":0-100,"reasons":["..."],"fixInstructions":"..."}',
         user: idea.title || idea.label,
       });
