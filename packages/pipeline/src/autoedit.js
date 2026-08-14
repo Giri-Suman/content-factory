@@ -162,6 +162,79 @@ export function fillerCuts(words) {
     .map((w) => ({ start: Math.max(0, w.start - 0.06), end: w.end + 0.06, kind: "filler" }));
 }
 
+/**
+ * RETAKE DETECTION — when you say the same line twice, keep the last one.
+ *
+ * This is the normal way people film makeup, nails and screencasts: fluff a
+ * sentence, pause, say it again. The earlier attempt is dead footage that
+ * silence-detection cannot see, because the words are perfectly audible.
+ *
+ * Deliberately deterministic (no LLM): near-identical word shingles close
+ * together in time are a retake, and that is a text-matching problem.
+ *
+ * Conservative by construction, because a wrong cut here deletes real content:
+ *   - shingles must be near-identical, not merely similar
+ *   - the two takes must be within RETAKE_WINDOW seconds of each other
+ *   - a single cut may never exceed RETAKE_MAX_CUT seconds
+ *   - total removal is capped at 25% of the footage
+ * Repetition for emphasis is usually further apart or reworded, so it survives.
+ */
+const RETAKE_SHINGLE = 5; // words
+const RETAKE_WINDOW = 45; // seconds between takes
+const RETAKE_MAX_CUT = 25; // seconds for one retake
+
+const normWord = (w) => String(w).toLowerCase().replace(/[^a-z0-9']/g, "");
+
+export function retakeCuts(words, { duration = Infinity } = {}) {
+  if (!words || words.length < RETAKE_SHINGLE * 3) return [];
+  const norm = words.map((w) => normWord(w.word));
+
+  // shingle -> indices where it starts
+  const seen = new Map();
+  for (let i = 0; i + RETAKE_SHINGLE <= norm.length; i++) {
+    const key = norm.slice(i, i + RETAKE_SHINGLE).join(" ");
+    if (key.replace(/\s/g, "").length < 12) continue; // too short to be distinctive
+    (seen.get(key) ?? seen.set(key, []).get(key)).push(i);
+  }
+
+  /**
+   * ONE cut per retake, anchored on where the retake BEGINS.
+   *
+   * Pairing every duplicated shingle independently was wrong: for a 10-word
+   * line repeated at index 0 and 12, shingle [5,17] yields a cut ending at
+   * word 17 — which is inside the good take. Scanning forward and jumping past
+   * the second occurrence keeps each cut bounded by the retake boundary.
+   */
+  const merged = [];
+  let i = 0;
+  while (i + RETAKE_SHINGLE <= norm.length) {
+    const key = norm.slice(i, i + RETAKE_SHINGLE).join(" ");
+    const idxs = seen.get(key);
+    const next = idxs?.find((j) => j > i);
+    if (next === undefined) {
+      i++;
+      continue;
+    }
+    const start = words[i].start;
+    const end = words[next].start;
+    const span = end - start;
+    if (span > 0 && span <= RETAKE_WINDOW && span <= RETAKE_MAX_CUT) {
+      merged.push({ start: Math.max(0, start - 0.05), end: end - 0.02, kind: "retake" });
+      i = next + RETAKE_SHINGLE; // resume after the take we kept
+      continue;
+    }
+    i++;
+  }
+
+  const total = merged.reduce((a, c) => a + (c.end - c.start), 0);
+  if (Number.isFinite(duration) && total > duration * 0.25) {
+    // something is wrong with the transcript (a loop, a stutter) — trust silence
+    // detection instead of deleting a quarter of the video
+    return [];
+  }
+  return merged;
+}
+
 /** LLM spots self-corrections / false starts; returns cut ranges (or []). */
 async function backtrackCuts(words) {
   if (!words || !providerStatus().active) return [];
@@ -378,7 +451,19 @@ export async function autoEdit(argv) {
   const silences = detectSilences(input, cfg);
   const fillers = flags["no-fillers"] ? [] : fillerCuts(words);
   const backtracks = flags["no-backtrack"] ? [] : await backtrackCuts(words);
-  const { keeps } = planKeeps({ silences, extraCuts: [...fillers, ...backtracks], duration: info.duration, ...cfg });
+  // retakes: you fluffed a line and said it again — keep the last attempt.
+  // Deterministic, so it works with no AI tier reachable.
+  const retakes = flags["no-retakes"] ? [] : retakeCuts(words, { duration: info.duration });
+  const { keeps } = planKeeps({
+    silences,
+    extraCuts: [...fillers, ...backtracks, ...retakes],
+    duration: info.duration,
+    ...cfg,
+  });
+  if (retakes.length) {
+    const saved = retakes.reduce((a, c) => a + (c.end - c.start), 0);
+    console.log(`\n  ${retakes.length} retake(s) removed — ${saved.toFixed(1)}s of repeated takes`);
+  }
   if (keeps.length === 0) {
     console.error("nothing to keep — try a lower --noise (e.g. -45dB)");
     return false;

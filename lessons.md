@@ -381,3 +381,11 @@ once; append after every failed attempt or surprise.
   **dedup needs token overlap (with number-word collapsing) against everything
   already committed to — published posts first, since a duplicate of a live
   video splits your own search result.**
+
+- Retake detection paired every duplicated word-shingle independently, so for a
+  10-word line repeated at index 0 and 12, shingle [5,17] produced a cut ending
+  at word 17 — inside the GOOD take. The synthetic test caught it because the
+  test asserted the second take survived, not merely that a cut was produced →
+  **when cutting a timeline from repeated-pattern matches, anchor one cut per
+  event and jump past the match; per-match cuts overlap into the content you
+  meant to keep. And assert what must SURVIVE, not just what gets removed.**

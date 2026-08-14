@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { doctor } from "../src/doctor.js";
 import { c } from "../src/colors.js";
@@ -20,7 +21,7 @@ ${c.bold("factory")} — content-factory command line
                                        deep 6h, digest 08:00 IST  (--fast for test cadences)
   ${c.cyan("factory shorts <id>")}                  cut 1-3 standalone clips from a rendered episode
   ${c.cyan("factory edit <footage.mp4>")}           auto-edit filmed footage: silence cuts + punch-ins
-      --noise=-35dB --min-silence=0.45 --no-punch --no-captions
+      --noise=-35dB --min-silence=0.45 --no-punch --no-captions --no-retakes
   ${c.cyan("factory publish <id>")}                 compliance-check + upload to YouTube (dry-run without --go)
       --public | --unlisted            visibility (default: private) · --at "<iso>" schedules · --go = real upload
   ${c.cyan("factory auth-youtube")}                 one-time OAuth to get your refresh token
@@ -181,6 +182,16 @@ switch (cmd) {
         const r = T.captionFiles(targs[0]);
         console.log(`captions: ${r.cues} cues -> ${path.basename(r.srtFile)} + ${path.basename(r.vttFile)}`);
         console.log("  upload the .srt with the video — YouTube indexes it for search (burned-in text isn't readable)");
+        console.log(`  reading speed: ${r.readingSpeed.medianCps} CPS median — ${r.readingSpeed.reading}`);
+        if (r.advertiser.risk !== "none") console.log(`  advertiser risk ${r.advertiser.risk}: ${r.advertiser.reading}`);
+      } else if (action === "silent" && targs[0]) {
+        const { silentVersion } = await import("../../pipeline/src/render.js");
+        const dir = path.join(process.cwd(), "renders", targs[0]);
+        const src = ["short.mp4", "wide.mp4"].map((f) => path.join(dir, f)).find((f) => existsSync(f));
+        if (!src) throw new Error(`no short.mp4/wide.mp4 in renders/${targs[0]}`);
+        const s = silentVersion(src);
+        console.log(`silent copy -> ${path.relative(process.cwd(), s.file)}`);
+        console.log(`  ${s.note}`);
       } else if (action === "chapters" && targs[0]) {
         const r = T.chapters(targs[0]);
         if (r.note) console.log(r.note);

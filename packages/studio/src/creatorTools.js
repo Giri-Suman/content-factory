@@ -108,7 +108,53 @@ export function captionFiles(renderId) {
   const vttFile = path.join(dir, "captions.vtt");
   writeFileSync(srtFile, srt);
   writeFileSync(vttFile, vtt);
-  return { srtFile, vttFile, cues: cues.length, readingSpeed: readingSpeed(cues) };
+  return {
+    srtFile,
+    vttFile,
+    cues: cues.length,
+    readingSpeed: readingSpeed(cues),
+    advertiser: advertiserScan(cues),
+  };
+}
+
+/**
+ * ADVERTISER-SAFETY SCAN.
+ *
+ * YouTube demonetises or limits ads based on spoken words in the first ~30
+ * seconds far more aggressively than later, and the caption track is what gets
+ * machine-read. This flags rather than censors: bleeping a word you chose to
+ * say is a creative decision, and the false-positive rate on any wordlist is
+ * high enough ("hell" in "hell of a lot", "damn" in a quote) that automatic
+ * replacement would mangle real speech.
+ *
+ * Two tiers, because they carry different consequences: `strong` risks limited
+ * ads outright, `mild` is usually fine outside the opening seconds.
+ */
+const PROFANITY = {
+  strong: /\b(fuck\w*|shit\w*|cunt\w*|bastard|bitch\w*|asshole|dick(?:head)?|motherfuck\w*)\b/gi,
+  mild: /\b(damn|hell|crap|piss\w*|screw(?:ed)?\s+up|bloody|god ?damn)\b/gi,
+};
+
+export function advertiserScan(cues, { earlySec = 30 } = {}) {
+  const hits = [];
+  for (const c of cues) {
+    for (const [tier, re] of Object.entries(PROFANITY)) {
+      for (const m of String(c.text).matchAll(re)) {
+        hits.push({ tier, word: m[0], at: Math.round(c.start * 10) / 10, early: c.start <= earlySec, text: c.text });
+      }
+    }
+  }
+  const earlyStrong = hits.filter((h) => h.tier === "strong" && h.early);
+  return {
+    hits,
+    earlyStrong: earlyStrong.length,
+    risk: earlyStrong.length ? "high" : hits.some((h) => h.tier === "strong") ? "medium" : hits.length ? "low" : "none",
+    reading: earlyStrong.length
+      ? `${earlyStrong.length} strong word(s) in the first ${earlySec}s — the highest-risk position for limited ads`
+      : hits.length
+        ? `${hits.length} flagged word(s), none strong in the opening — usually fine, but check if this is a brand-deal video`
+        : "nothing flagged",
+  };
 }
 
 /**

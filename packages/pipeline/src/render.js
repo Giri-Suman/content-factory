@@ -26,6 +26,28 @@ function loudnorm(file) {
   if (res.status === 0 && existsSync(tmp)) renameSync(tmp, file);
 }
 
+/**
+ * Silent copy for autoplay feeds.
+ *
+ * Instagram, Facebook and X autoplay muted, and a viewer who hears nothing on
+ * tap-to-unmute has already scrolled. A burned-caption silent cut is the
+ * version that works there — and it also gives you something safe to post when
+ * the audio has a licensing question mark on it.
+ *
+ * Stream-copies the video, so it costs a file copy rather than a re-encode.
+ */
+export function silentVersion(mp4File) {
+  if (!existsSync(mp4File)) throw new Error(`no such file: ${mp4File}`);
+  const out = mp4File.replace(/\.mp4$/i, ".silent.mp4");
+  const res = spawnSync(
+    "ffmpeg",
+    ["-y", "-v", "error", "-i", mp4File, "-an", "-c:v", "copy", "-movflags", "+faststart", out],
+    { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 10 }
+  );
+  if (res.status !== 0) throw new Error(`silent export failed: ${(res.stderr || "").slice(-200)}`);
+  return { file: out, note: "no audio track — for muted autoplay feeds; make sure captions are burned in" };
+}
+
 export async function renderScript(argv) {
   const args = argv.filter((a) => !a.startsWith("--"));
   const flags = new Set(argv.filter((a) => a.startsWith("--")));
