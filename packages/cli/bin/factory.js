@@ -933,6 +933,7 @@ switch (cmd) {
       const b = await generateBrief(args);
       console.log(`\n[${b.kind}] ${b.topic}`);
       if (b.duplicateWarning) console.log(`  ⚠ near-duplicate (${b.duplicateWarning.sim}) of idea: ${b.duplicateWarning.title}`);
+      if (b.factualityWarning) console.log(`  ⚠ unsourced specifics — ${b.factualityWarning.note}`);
       console.log(`  status ${b.status}${b.deadline ? ` · deadline ${b.deadline}` : ""}${b.scheduledDate ? ` · slot ${b.scheduledDate}` : ""}`);
       console.log(`  hooks: ${b.payload.yt_short.hook_variants.map((h) => h.slice(0, 60)).join(" | ")}`);
       if (b.payload.template) console.log("  (template mode — add an LLM key for full generation)");
