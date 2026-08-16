@@ -251,13 +251,27 @@ Tiers only fall **down**, never up — you're never charged more than you picked
 
 ---
 
+## Portal or terminal?
+
+**Everything is a button now.** Open **Studio** (localhost:4600/studio), pick your
+vertical, and the commands appear in workflow order — find → plan → make →
+package → ship → learn. Buttons and `factory <cmd>` run exactly the same thing.
+
+Three things stay in the terminal on purpose:
+
+| | Why |
+|---|---|
+| `factory worker` | a daemon that never exits — a button would hang the job runner |
+| `factory auth-youtube` | opens Google's OAuth consent and waits for a paste-back |
+| `factory publish <id> --go` | the one real upload — kept manual so it can never be a mis-click |
+
 ## The portal
 
 ```bash
 npm run dev --prefix apps/mission-control      # localhost:4600
 ```
 
-23 tabs. The ones you'll actually use: **Today** (what needs doing), **Briefs** (approve/kill), **Motion** (watch all 22 effects), **Renders** (preview video), **Publish**, **Settings** (tiers + keys).
+24 tabs. **Studio** is the one to start with — every command, grouped by vertical. Others you will actually use: **Today** (what needs doing), **Briefs** (approve/kill), **Motion** (watch all 22 effects), **Renders** (preview video), **Publish**, **Settings** (tiers + keys).
 
 ---
 
