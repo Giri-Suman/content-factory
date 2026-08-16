@@ -5,6 +5,9 @@ and makeup/nails. It finds what to make, writes it, renders it, checks
 it, and stages it for publishing. ~19,000 lines of plain-JS ESM across 8
 packages, 43 CLI commands, and a Next.js portal.
 
+**Want to DO things rather than understand internals? Read `HANDBOOK.md`** — the
+same capabilities organised by vertical (coding / AI / math / beauty).
+
 This document is the map. `README.md` is the feature reference; this explains
 **how the parts fit together and what state each one is actually in**.
 

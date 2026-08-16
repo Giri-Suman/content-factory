@@ -9,6 +9,10 @@ Trend Radar → Script Studio → Voice (your clone) → Render Farm → Review 
 
 Full master plan: https://claude.ai/code/artifact/eff26ba0-ee88-42f3-a7f5-b7f6d5d2f5b0
 
+**New here?** `HANDBOOK.md` is the task-oriented guide, organised by vertical
+(coding · AI automation · math · makeup/nails). `SYSTEM.md` explains the
+architecture. This file is the feature reference.
+
 ## Quickstart
 
 ```bash
