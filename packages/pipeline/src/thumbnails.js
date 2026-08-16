@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from "nod
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { collection } from "../../shared/src/store.js";
+import { findChrome } from "../../shared/src/chrome.js";
 
 /**
  * P21 Thumbnail Studio. 3 brand-tokened HTML layouts rendered to 1280x720
@@ -11,14 +12,6 @@ import { collection } from "../../shared/src/store.js";
  * behind an env flag (off by default). Judged by the thumbnail judge.
  */
 
-const CHROME_PATHS = [
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
-  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-];
-const findChrome = () => CHROME_PATHS.find((p) => p && existsSync(p));
 
 const BG = "#0d1117";
 const ACCENT = "#ffb224";

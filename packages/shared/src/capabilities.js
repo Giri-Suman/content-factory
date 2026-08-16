@@ -86,6 +86,11 @@ export const CAPABILITIES = [
   { id: "scene-detect", stage: "capture", label: "Scene detection", detail: "ffmpeg-based", check: () => true },
   { id: "smart-reframe", stage: "capture", label: "Smart 16:9 -> 9:16", detail: "motion-energy tracking, not centre-crop", check: () => true },
   { id: "longform-mine", stage: "capture", label: "Shorts from your own long recording", detail: "your footage only", check: () => true },
+  { id: "evidence-capture", stage: "capture", label: "Evidence capture (screenshots)", detail: "system Chrome — landing/pricing/docs/mobile, attachable as claim receipts", check: () => true },
+  {
+    id: "interaction-capture", stage: "capture", label: "Interaction flows (Playwright)", status: "adapter",
+    detail: "the one thing headless Chrome cannot do: click through a flow, fill a form, capture a logged-in state. Playwright ships its own browser bundle (hundreds of MB) — worth it once a tool review needs a walkthrough, not before",
+  },
   {
     id: "obs-control", stage: "capture", label: "OBS recording automation", status: "adapter",
     detail: "OBS WebSocket API — scene switching and hotkey chapter markers. Worth building when recording volume justifies it",

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
+import { findChrome } from "../../shared/src/chrome.js";
 
 /**
  * Step callouts ("Step 2 of 5 — blend the crease") burned onto real footage.
@@ -16,14 +17,6 @@ import { loadEnv, repoRoot } from "../../shared/src/config.js";
  * Also emits a product/tool list card, the other thing every tutorial needs.
  */
 
-const CHROME_PATHS = [
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
-  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-];
-const findChrome = () => CHROME_PATHS.find((p) => p && existsSync(p));
 
 const ACCENT = "#ffb224";
 const FONT = "'Segoe UI', system-ui, sans-serif";

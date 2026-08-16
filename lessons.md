@@ -389,3 +389,19 @@ once; append after every failed attempt or surprise.
   **when cutting a timeline from repeated-pattern matches, anchor one cut per
   event and jump past the match; per-match cuts overlap into the content you
   meant to keep. And assert what must SURVIVE, not just what gets removed.**
+
+- `CHROME_PATHS` was hand-copied into FIVE files (doctor, carousel, prepare,
+  stepCards, thumbnails). Deduping it broke `doctor` because the script removed
+  the array but not a separate USAGE line — the regression caught it, the
+  module-load check did not →
+  **when removing a duplicated constant, grep for its NAME afterwards, not just
+  for the declaration you deleted. And an import-loads check is not a
+  smoke test; only running the command proves it.**
+
+- Chrome resolves `--screenshot=` against ITS OWN working directory, so a
+  relative output path silently writes somewhere else and the caller sees
+  "produced no file". The same code worked and then failed minutes later purely
+  because one call passed an absolute path and the next passed a relative one →
+  **resolve paths to absolute at the boundary of any external process, and
+  create the parent directory — the child will not, and the error it gives you
+  names neither problem.**
