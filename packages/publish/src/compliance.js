@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../../shared/src/config.js";
 import { countToday } from "./log.js";
+import { claimsMap } from "../../studio/src/claims.js";
 
 /**
  * Pre-publish lint. Enforces the master plan's non-negotiables so nothing
@@ -63,6 +64,27 @@ export function checkCompliance(id, { platform = "youtube" } = {}) {
   // 6 — metadata present
   const title = script?.title || (existsSync(path.join(scriptsDir, `${id}.meta.json`)) ? "meta" : null);
   add(title ? "ok" : "warn", title ? "title present" : "no title — set one before upload", "title");
+
+  /**
+   * 7 — unbacked numeric claims.
+   *
+   * A WARN rather than a FAIL: the number may be true and only you know that.
+   * But a price or a duration going out with nothing behind it is the class of
+   * mistake that gets a creator called out, and on beauty content it is a
+   * product claim. Real output invented "This $8 primer" for a product that
+   * was never named, so this is not hypothetical.
+   */
+  try {
+    const briefId = script?.briefId || id.replace(/^brief-/, "");
+    const m = claimsMap(briefId);
+    if (m.unbackedNumeric > 0) {
+      add("warn", `${m.unbackedNumeric} unbacked numeric claim(s) — run \`factory claims map ${briefId}\``, "claims");
+    } else if (m.total) {
+      add("ok", `${m.total} claim(s), every number has a receipt`, "claims");
+    }
+  } catch {
+    /* no brief, or claims unavailable — never block publishing on this check */
+  }
 
   const pass = !checks.some((c) => c.level === "fail");
   return { pass, checks };
