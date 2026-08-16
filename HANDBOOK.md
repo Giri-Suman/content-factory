@@ -56,8 +56,10 @@ f capture tool Cursor https://cursor.com    # landing + pricing + docs + mobile 
 f claims map <briefId>                      # every factual claim + what backs it
 f capture claim <briefId> "Cursor is $20/mo" https://cursor.com/pricing
 f steps <renderId>                          # burn STEP 1/5 callouts
-f edit "D:\footage\screencast.mp4"          # auto-cut a screen recording
+f edit "D:\footage\screencast.mp4" --screencast   # auto-cut + remove dead screen time
 ```
+
+**Screencasts:** `--screencast` adds dead-screen removal — the build waits and reading pauses that silence detection can't see, because you're often still talking over a frozen editor. It only cuts where the screen is frozen **and** you're silent, so explaining something over a still screen survives.
 
 **Tool reviews:** capture the pricing page *before* you claim a price. `capture claim` attaches the screenshot as the receipt — so "$20/month" is a dated screenshot, not a guess.
 

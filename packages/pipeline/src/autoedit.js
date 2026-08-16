@@ -163,6 +163,44 @@ export function fillerCuts(words) {
 }
 
 /**
+ * DEAD SCREEN TIME — the screencast equivalent of silence.
+ *
+ * Silence detection cannot see this. In a coding or tool-demo recording the
+ * expensive dead time is: waiting for a build, reading docs, thinking with a
+ * static editor on screen. Often you are still talking over it, so the audio
+ * track looks busy while nothing at all happens visually.
+ *
+ * Only cut a freeze when the audio is ALSO quiet. A frozen screen with live
+ * narration is usually the most valuable part of a tutorial — you explaining
+ * the thing on screen — and cutting it would gut the video.
+ */
+export function freezeCuts(input, { minFreeze = 2.5, silences = [] } = {}) {
+  const res = run("ffmpeg", ["-hide_banner", "-i", input, "-vf", `freezedetect=n=-60dB:d=${minFreeze}`, "-map", "0:v:0", "-f", "null", "-"]);
+  const freezes = [];
+  let start = null;
+  for (const line of (res.stderr || "").split("\n")) {
+    const s = line.match(/freeze_start:\s*([\d.]+)/);
+    const e = line.match(/freeze_end:\s*([\d.]+)/);
+    if (s) start = parseFloat(s[1]);
+    if (e && start !== null) {
+      freezes.push({ start, end: parseFloat(e[1]) });
+      start = null;
+    }
+  }
+
+  // keep only the portion of each freeze that is ALSO silent
+  const cuts = [];
+  for (const f of freezes) {
+    for (const s of silences) {
+      const from = Math.max(f.start, s.start);
+      const to = Math.min(f.end, s.end);
+      if (to - from >= minFreeze) cuts.push({ start: from + 0.15, end: to - 0.15, kind: "deadscreen" });
+    }
+  }
+  return cuts.filter((c) => c.end > c.start);
+}
+
+/**
  * RETAKE DETECTION — when you say the same line twice, keep the last one.
  *
  * This is the normal way people film makeup, nails and screencasts: fluff a
@@ -454,12 +492,20 @@ export async function autoEdit(argv) {
   // retakes: you fluffed a line and said it again — keep the last attempt.
   // Deterministic, so it works with no AI tier reachable.
   const retakes = flags["no-retakes"] ? [] : retakeCuts(words, { duration: info.duration });
+  // screencast mode: also cut stretches where the SCREEN is dead and you are
+  // not talking — waiting for a build, reading docs. Off by default because on
+  // a talking-head shot a still frame is just you holding a pose.
+  const dead = flags.screencast ? freezeCuts(input, { silences }) : [];
   const { keeps } = planKeeps({
     silences,
-    extraCuts: [...fillers, ...backtracks, ...retakes],
+    extraCuts: [...fillers, ...backtracks, ...retakes, ...dead],
     duration: info.duration,
     ...cfg,
   });
+  if (dead.length) {
+    const saved = dead.reduce((a, c) => a + (c.end - c.start), 0);
+    console.log(`\n  ${dead.length} dead-screen stretch(es) removed — ${saved.toFixed(1)}s of frozen, silent footage`);
+  }
   if (retakes.length) {
     const saved = retakes.reduce((a, c) => a + (c.end - c.start), 0);
     console.log(`\n  ${retakes.length} retake(s) removed — ${saved.toFixed(1)}s of repeated takes`);
