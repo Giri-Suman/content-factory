@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { doctor } from "../src/doctor.js";
 import { c } from "../src/colors.js";
@@ -20,7 +21,7 @@ ${c.bold("factory")} — content-factory command line
                                        deep 6h, digest 08:00 IST  (--fast for test cadences)
   ${c.cyan("factory shorts <id>")}                  cut 1-3 standalone clips from a rendered episode
   ${c.cyan("factory edit <footage.mp4>")}           auto-edit filmed footage: silence cuts + punch-ins
-      --noise=-35dB --min-silence=0.45 --no-punch --no-captions
+      --noise=-35dB --min-silence=0.45 --no-punch --no-captions --no-retakes
   ${c.cyan("factory publish <id>")}                 compliance-check + upload to YouTube (dry-run without --go)
       --public | --unlisted            visibility (default: private) · --at "<iso>" schedules · --go = real upload
   ${c.cyan("factory auth-youtube")}                 one-time OAuth to get your refresh token
@@ -112,6 +113,39 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "capture": {
+    const { capture } = await import("../src/capture.js");
+    try {
+      const ok = await capture(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "claims": {
+    const { claims } = await import("../src/claims.js");
+    try {
+      const ok = await claims(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "capabilities": {
+    const { capabilities } = await import("../src/capabilities.js");
+    try {
+      const ok = await capabilities(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "evidence": {
     const { evidence } = await import("../src/evidence.js");
     try {
@@ -170,6 +204,16 @@ switch (cmd) {
         const r = T.captionFiles(targs[0]);
         console.log(`captions: ${r.cues} cues -> ${path.basename(r.srtFile)} + ${path.basename(r.vttFile)}`);
         console.log("  upload the .srt with the video — YouTube indexes it for search (burned-in text isn't readable)");
+        console.log(`  reading speed: ${r.readingSpeed.medianCps} CPS median — ${r.readingSpeed.reading}`);
+        if (r.advertiser.risk !== "none") console.log(`  advertiser risk ${r.advertiser.risk}: ${r.advertiser.reading}`);
+      } else if (action === "silent" && targs[0]) {
+        const { silentVersion } = await import("../../pipeline/src/render.js");
+        const dir = path.join(process.cwd(), "renders", targs[0]);
+        const src = ["short.mp4", "wide.mp4"].map((f) => path.join(dir, f)).find((f) => existsSync(f));
+        if (!src) throw new Error(`no short.mp4/wide.mp4 in renders/${targs[0]}`);
+        const s = silentVersion(src);
+        console.log(`silent copy -> ${path.relative(process.cwd(), s.file)}`);
+        console.log(`  ${s.note}`);
       } else if (action === "chapters" && targs[0]) {
         const r = T.chapters(targs[0]);
         if (r.note) console.log(r.note);
@@ -911,6 +955,7 @@ switch (cmd) {
       const b = await generateBrief(args);
       console.log(`\n[${b.kind}] ${b.topic}`);
       if (b.duplicateWarning) console.log(`  ⚠ near-duplicate (${b.duplicateWarning.sim}) of idea: ${b.duplicateWarning.title}`);
+      if (b.factualityWarning) console.log(`  ⚠ unsourced specifics — ${b.factualityWarning.note}`);
       console.log(`  status ${b.status}${b.deadline ? ` · deadline ${b.deadline}` : ""}${b.scheduledDate ? ` · slot ${b.scheduledDate}` : ""}`);
       console.log(`  hooks: ${b.payload.yt_short.hook_variants.map((h) => h.slice(0, 60)).join(" | ")}`);
       if (b.payload.template) console.log("  (template mode — add an LLM key for full generation)");

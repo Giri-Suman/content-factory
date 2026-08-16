@@ -1,3 +1,5 @@
+import { assertCommercialSafe } from "../../shared/src/licenses.js";
+
 /**
  * Four-tier AI. Every AI feature picks a TIER, not a provider — you choose
  * what each job is worth:
@@ -202,13 +204,13 @@ export const SERVICES = {
     label: "Voice",
     note: "free = Windows TTS (robotic but usable) · best = YOUR cloned voice",
     tiers: {
-      free: [{ id: "sapi", label: "Windows SAPI (local)", costPerChar: 0, needs: () => process.platform === "win32" }],
+      free: [{ id: "sapi", licenseId: "windows-sapi", label: "Windows SAPI (local)", costPerChar: 0, needs: () => process.platform === "win32" }],
       cheap: [
-        { id: "eleven-flash", label: "ElevenLabs Flash", model: "eleven_flash_v2_5", costPerChar: 0.00005, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
+        { id: "eleven-flash", licenseId: "elevenlabs", label: "ElevenLabs Flash", model: "eleven_flash_v2_5", costPerChar: 0.00005, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
       ],
       // no `medium` — ElevenLabs has two products, not three
       best: [
-        { id: "eleven-v2", label: "ElevenLabs multilingual v2 (your clone)", model: "eleven_multilingual_v2", costPerChar: 0.00018, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
+        { id: "eleven-v2", licenseId: "elevenlabs", label: "ElevenLabs multilingual v2 (your clone)", model: "eleven_multilingual_v2", costPerChar: 0.00018, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
       ],
     },
   },
@@ -217,18 +219,18 @@ export const SERVICES = {
     note: "free = brand-tokened HTML (already excellent) · paid adds generated backgrounds",
     tiers: {
       free: [{ id: "html", label: "HTML + system Chrome", costPerImage: 0, needs: () => true }],
-      cheap: [{ id: "flux-schnell", label: "Flux schnell (fal.ai)", model: "fal-ai/flux/schnell", costPerImage: 0.003, needs: () => Boolean(process.env.FAL_KEY) }],
-      best: [{ id: "flux-pro", label: "Flux 1.1 pro (fal.ai)", model: "fal-ai/flux-pro/v1.1", costPerImage: 0.04, needs: () => Boolean(process.env.FAL_KEY) }],
+      cheap: [{ id: "flux-schnell", licenseId: "flux.2-klein", label: "Flux schnell (fal.ai)", model: "fal-ai/flux/schnell", costPerImage: 0.003, needs: () => Boolean(process.env.FAL_KEY) }],
+      best: [{ id: "flux-pro", licenseId: "flux.2-klein", label: "Flux 1.1 pro (fal.ai)", model: "fal-ai/flux-pro/v1.1", costPerImage: 0.04, needs: () => Boolean(process.env.FAL_KEY) }],
     },
   },
   transcribe: {
     label: "Footage transcription",
     note: "all tiers run LOCALLY at $0 — the tier only trades speed for accuracy",
     tiers: {
-      free: [{ id: "whisper-base", label: "whisper base (local)", model: "base", costPerMin: 0, needs: () => true }],
-      cheap: [{ id: "whisper-small", label: "whisper small (local, better)", model: "small", costPerMin: 0, needs: () => true }],
-      medium: [{ id: "whisper-medium", label: "whisper medium (local)", model: "medium", costPerMin: 0, needs: () => true }],
-      best: [{ id: "whisper-large", label: "whisper large-v3 (local, best)", model: "large-v3", costPerMin: 0, needs: () => true }],
+      free: [{ id: "whisper-base", licenseId: "faster-whisper", label: "whisper base (local)", model: "base", costPerMin: 0, needs: () => true }],
+      cheap: [{ id: "whisper-small", licenseId: "faster-whisper", label: "whisper small (local, better)", model: "small", costPerMin: 0, needs: () => true }],
+      medium: [{ id: "whisper-medium", licenseId: "faster-whisper", label: "whisper medium (local)", model: "medium", costPerMin: 0, needs: () => true }],
+      best: [{ id: "whisper-large", licenseId: "faster-whisper", label: "whisper large-v3 (local, best)", model: "large-v3", costPerMin: 0, needs: () => true }],
     },
   },
 };
@@ -243,7 +245,12 @@ export function resolveService(service, tiers = {}) {
   const order = TIER_NAMES.slice(0, TIER_NAMES.indexOf(chosen) + 1).reverse();
   for (const tier of order) {
     for (const opt of spec.tiers[tier] || []) {
-      if (opt.needs()) return { ...opt, tier, service };
+      if (!opt.needs()) continue;
+      // Licence gate. This system publishes monetised content, so a
+      // non-commercial model must fail here — before a render is built on it —
+      // rather than being discovered after the fact. Throws by design.
+      if (opt.licenseId) assertCommercialSafe(opt.licenseId, { context: `${service} tier "${tier}"` });
+      return { ...opt, tier, service };
     }
   }
   return null;

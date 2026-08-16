@@ -1,8 +1,12 @@
 # Content Factory — how the whole thing works
 
-A code-first video studio: it finds what to make, writes it, renders it, checks
+A code-first video studio for four verticals — coding, AI automation, math,
+and makeup/nails. It finds what to make, writes it, renders it, checks
 it, and stages it for publishing. ~19,000 lines of plain-JS ESM across 8
-packages, 42 CLI commands, and a Next.js portal.
+packages, 43 CLI commands, and a Next.js portal.
+
+**Want to DO things rather than understand internals? Read `HANDBOOK.md`** — the
+same capabilities organised by vertical (coding / AI / math / beauty).
 
 This document is the map. `README.md` is the feature reference; this explains
 **how the parts fit together and what state each one is actually in**.
@@ -40,8 +44,8 @@ Being precise about this matters more than the feature list.
 
 | | Status |
 |---|---|
-| Render pipeline | **Working.** Produced a real 26.5s video in 4.6 min at $0.00 |
-| AI generation | **Working** on the free tier — real hooks, titles, beats, blog outlines |
+| Render pipeline | **Working.** 54.9s video, ready state, 8 min, $0.00 |
+| AI generation | **Working** on the free tier — 0 placeholders, humanize 100/100 |
 | Trend collection | **Working.** ~357 items/run from 17 sources |
 | Evidence floor | **Working.** 10–13 of 120 clusters clear the bar |
 | Community quotes | **Working.** HN discussions attached, verbatim + attributed |
@@ -50,8 +54,8 @@ Being precise about this matters more than the feature list.
 | Calibration loop | **Starved** — needs published posts with real stats |
 | Effect→retention ranking | **Starved** — needs ~20 tagged published posts |
 
-Current data: **29 briefs (3 real, 26 legacy `[fill:]` templates), 120
-clusters, 18 render dirs, 36 staged post records, 0 actually published.**
+Current data: **31 briefs (5 real since the AI tier came online), 120
+clusters, 19 render dirs, 36 staged post records, 0 actually published.**
 
 The honest summary: the machine works, and it has never been used in anger.
 Every "learning" subsystem — calibration, lesson distillation, effect
@@ -60,7 +64,7 @@ real video unblocks more than any new feature would.
 
 ---
 
-## 3. The 42 commands, by stage
+## 3. The 43 commands, by stage
 
 ### Discover
 | Command | What it does |
@@ -70,6 +74,7 @@ real video unblocks more than any new feature would.
 | `evidence report` | **which clusters actually deserve a video** (the one to trust) |
 | `evidence quotes` | real community language, verbatim and attributed |
 | `evidence ground` | per-member entity-grounding decisions |
+| `capabilities seasonal` | **date-driven demand windows with publish-by dates** |
 | `yt trending\|heat\|watch\|discover\|outliers` | YouTube-side signals (needs API key) |
 | `keywords` | keyword-gap: demand proxy vs supply |
 | `wishlist` | manual autopsies of posts you admire (9 hook patterns) |
@@ -103,6 +108,9 @@ real video unblocks more than any new feature would.
 | `thumbnails` | 2 variants, scored by a judge |
 | `tools captions\|chapters` | `.srt`/`.vtt` sidecars + chapter markers |
 | `humanize` | strip AI-writing tells (see §5) |
+| `tools silent <id>` | audio-free copy for muted autoplay feeds |
+| `capabilities report` | what this machine can actually run |
+| `capabilities licenses` | commercial-safety of every model |
 | `qc` | run the judge network |
 
 ### Publish
@@ -251,6 +259,61 @@ versions change **only with your approval**. Currently starved: no published
 posts to learn from.
 
 ---
+
+### Licence gate — can this model be monetised?
+
+This channel monetises, so model licence is a legal question, not a
+preference. 36 models registered, **4 blocked**: XTTS v2 (Coqui CPML), F5-TTS
+and Fish Speech (CC-BY-NC) — all still recommended by older posts — plus
+Wav2Lip, the subtle one: permissive *code*, but weights trained on LRS2 and
+the dataset licence governs.
+
+`assertCommercialSafe()` **throws** rather than warns, and is wired into
+`resolveService()` so a blocked model can never be selected. Errors name
+safe alternatives of the same kind. Rule: **cut by licence first, then
+quality** — a model that passes your test render but cannot ship is worse
+than a weaker one that can.
+
+### Seasonal calendar — demand that arrives on a date
+
+The radar reports what is spiking *now* and structurally cannot see that
+Diwali nail-art demand starts three weeks out. 18 windows across all four
+categories, India-weighted because that is where the beauty demand is
+(Diwali, Durga Puja, wedding season, Karwa Chauth, Holi) plus math (board
+exams, JEE/NEET) and coding (placement season, Hacktoberfest, appraisals).
+
+Each window carries a **lead time**, so the actionable output is *publish-by*,
+not the event date. Shipping Diwali content on Diwali is late.
+
+### Originality guard — have I already made this?
+
+Token overlap with number-word collapsing, weighted across published posts,
+live briefs and ideas — published weighted highest, because a duplicate of a
+live video splits your own search result. The previous check compared
+lowercased titles for exact equality against the idea bank only, so "5 Python
+tricks" and "Five Python Tricks You Should Know" read as unrelated.
+
+### The four-category fix
+
+`NICHE_CONTEXT` described a coding-only creator and is injected into 17
+modules' prompts, so every LLM judgment scored makeup, nails and math as
+"extreme niche misalignment". Fixed at three levels — the identity string,
+the coded niche regex, and the few-shot examples (which were all coding, and
+outrank an instruction). Measured: Diwali nail art 15 → 95, math 12 → 92,
+beauty 28 → 88, while generic ideas in *every* vertical still score low.
+
+### Capture-lane quality
+
+**Retake detection** removes the earlier attempt when you fluff a line and say
+it again — dead footage silence detection cannot see, because the words are
+audible. Deterministic word-shingle matching, capped at 25% removal.
+
+**Advertiser scan** flags profanity in the caption track, weighting the first
+30 seconds. Flags, never censors.
+
+**No skin smoothing, enforced.** `assertNoSkinSmoothing()` throws if a blur
+filter enters the edit chain: beauty viewers are judging a real product on
+real skin, and a filter destroys the only thing the video is for.
 
 ## 6. Mission Control — the portal
 

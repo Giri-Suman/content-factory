@@ -49,9 +49,40 @@ export function ensureDirs() {
 }
 
 /** Injected into every Content OS LLM prompt (CLAUDE.md: niche context). */
+/**
+ * Injected into every generation and judging prompt (17 modules).
+ *
+ * This used to describe a coding-only creator, which meant every LLM judgment
+ * scored makeup, nails and math as "extreme niche misalignment" — the system
+ * systematically rejected three of the four categories it is meant to serve.
+ * A shared identity string is load-bearing precisely because it is everywhere;
+ * getting it wrong is not a copy problem, it is a correctness problem.
+ *
+ * Use `nicheContextFor(niche)` when the category is known — a beauty brief
+ * judged against the coding audience still scores badly even with this fixed.
+ */
 export const NICHE_CONTEXT =
-  "senior front-end developer creating content on coding, AI automation, and AI tools, " +
-  "for developers and tech-curious freelancers, India + global English audience, timezone IST";
+  "a multi-category content studio covering four verticals: (1) coding and software engineering, " +
+  "(2) AI automation and AI tools, (3) math explainers, and (4) makeup, beauty and nail art. " +
+  "All four are equally core — never treat one as off-topic. India + global English audience, timezone IST";
+
+/** Per-category audience, for when the brief's niche is known. */
+export const NICHE_AUDIENCES = {
+  coding: "working developers and tech-curious freelancers who watch fast, practical engineering content",
+  "ai-automation": "developers and operators automating real workflows with AI tools and agents",
+  math: "math-curious viewers who love visual proofs, paradoxes and 'wait, what?' moments; plus Indian exam prep",
+  makeup: "beauty viewers judging real product results on real skin — technique breakdowns, dupes, honest reviews",
+  nails: "nail-art viewers looking for achievable at-home designs, wear tests and festival looks",
+  cooking: "home cooks who want a repeatable result, not a restaurant performance",
+  fitness: "people training at home who care about form and consistency over intensity",
+};
+
+/** Specialised context. Falls back to the multi-category identity. */
+export function nicheContextFor(niche) {
+  const aud = NICHE_AUDIENCES[niche];
+  if (!aud) return NICHE_CONTEXT;
+  return `a content studio working in the "${niche}" vertical for ${aud}. India + global English audience, timezone IST`;
+}
 
 /* ---------- user config (data/config.json — the portal's settings) ---------- */
 

@@ -327,3 +327,81 @@ once; append after every failed attempt or surprise.
   `avoid` field, so the two cannot drift) prevents the tell instead of scoring
   it → **a detector and a preventer for the same defect should share one
   definition; the detector then becomes a backstop rather than the mechanism.**
+
+- Several best-in-class open models are NON-COMMERCIAL and are exactly the ones
+  older blog posts recommend: XTTS v2 (Coqui CPML), F5-TTS and Fish Speech
+  (CC-BY-NC). Wav2Lip is the subtle one — permissive CODE, but weights trained
+  on LRS2, and the dataset licence governs →
+  **cut by licence FIRST, then quality. A model that passes your test render but
+  cannot ship is worse than a weaker one that can, because you only find out
+  after building on it. The gate must THROW, not warn: a log line nobody reads
+  is not a legal defence.**
+
+- Every pipeline re-encode was missing `-movflags +faststart`, so the moov atom
+  landed at the END of every published short — verified on real output,
+  `moov=-1` within the first 400KB. Players cannot start until the whole file
+  downloads →
+  **check the moov position on actual output, not the flag list. Remotion's own
+  encode already did it, which is exactly why the missing flag on the SEVEN
+  re-encode paths went unnoticed.**
+
+- The trend radar structurally cannot see seasonal demand: it reports what is
+  spiking now, and nothing spikes to announce that Diwali nail-art demand starts
+  in three weeks →
+  **date-driven demand needs its own calendar with a LEAD TIME per event. The
+  actionable field is publish-by, not the event date — shipping Diwali content
+  on Diwali is late.**
+
+- `NICHE_CONTEXT` described a coding-only creator and is injected into 17
+  modules' prompts, so every LLM judgment scored makeup, nails and math as
+  "extreme niche misalignment". ideaJudge's coded half compounded it with a
+  coding-only regex, docking 20 points from three of the four categories the
+  channel exists to serve →
+  **a shared identity string is load-bearing precisely because it is
+  everywhere. When a system supports N categories, grep the identity constant
+  before assuming the feature works for all of them — this was a correctness
+  bug wearing a copywriting costume.**
+
+- Even after fixing the identity text, a beauty idea still scored 28-42 while
+  nail art scored 88. Cause: the prompt passed the first 8 idea-bank titles as
+  novelty examples, and they were all coding — the model inferred the vertical
+  from the EXAMPLES and ignored the stated identity →
+  **few-shot examples outrank an instruction. If you tell a model what the
+  brand is and then show it eight counter-examples, the examples win. Filter
+  comparison sets to the same category as the item being judged.**
+
+- `\bproof\b` in a math-detection regex matched "sweat-proof foundation" and
+  classified a makeup review as math → **word boundaries do not respect
+  hyphenated compounds; use `(?<![-\w])proof\b` when the term is a common
+  suffix.**
+
+- Originality was an exact lowercased title comparison against the idea bank
+  only, so "5 Python tricks" and "Five Python Tricks You Should Know" were
+  treated as unrelated, and anything already PUBLISHED was invisible to it →
+  **dedup needs token overlap (with number-word collapsing) against everything
+  already committed to — published posts first, since a duplicate of a live
+  video splits your own search result.**
+
+- Retake detection paired every duplicated word-shingle independently, so for a
+  10-word line repeated at index 0 and 12, shingle [5,17] produced a cut ending
+  at word 17 — inside the GOOD take. The synthetic test caught it because the
+  test asserted the second take survived, not merely that a cut was produced →
+  **when cutting a timeline from repeated-pattern matches, anchor one cut per
+  event and jump past the match; per-match cuts overlap into the content you
+  meant to keep. And assert what must SURVIVE, not just what gets removed.**
+
+- `CHROME_PATHS` was hand-copied into FIVE files (doctor, carousel, prepare,
+  stepCards, thumbnails). Deduping it broke `doctor` because the script removed
+  the array but not a separate USAGE line — the regression caught it, the
+  module-load check did not →
+  **when removing a duplicated constant, grep for its NAME afterwards, not just
+  for the declaration you deleted. And an import-loads check is not a
+  smoke test; only running the command proves it.**
+
+- Chrome resolves `--screenshot=` against ITS OWN working directory, so a
+  relative output path silently writes somewhere else and the caller sees
+  "produced no file". The same code worked and then failed minutes later purely
+  because one call passed an absolute path and the next passed a relative one →
+  **resolve paths to absolute at the boundary of any external process, and
+  create the parent directory — the child will not, and the error it gives you
+  names neither problem.**

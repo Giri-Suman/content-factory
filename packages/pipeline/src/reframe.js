@@ -106,7 +106,7 @@ export async function reframe(argv = []) {
   mkdirSync(path.dirname(out), { recursive: true });
 
   console.log(`\nreframing ${det.w}x${det.h} -> 1080x1920, crop x=${x} (${focus})...`);
-  const r = ff(["-y", "-v", "error", "-i", file, "-vf", `crop=${det.cropW}:${det.h}:${x}:0,scale=1080:1920`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "copy", out]);
+  const r = ff(["-y", "-v", "error", "-i", file, "-vf", `crop=${det.cropW}:${det.h}:${x}:0,scale=1080:1920`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "copy", out]);
   if (r.status !== 0 || !existsSync(out)) {
     console.error(`reframe FAILED: ${(r.stderr || "").slice(-200)}`);
     return false;

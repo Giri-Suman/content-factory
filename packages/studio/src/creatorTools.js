@@ -108,7 +108,85 @@ export function captionFiles(renderId) {
   const vttFile = path.join(dir, "captions.vtt");
   writeFileSync(srtFile, srt);
   writeFileSync(vttFile, vtt);
-  return { srtFile, vttFile, cues: cues.length };
+  return {
+    srtFile,
+    vttFile,
+    cues: cues.length,
+    readingSpeed: readingSpeed(cues),
+    advertiser: advertiserScan(cues),
+  };
+}
+
+/**
+ * ADVERTISER-SAFETY SCAN.
+ *
+ * YouTube demonetises or limits ads based on spoken words in the first ~30
+ * seconds far more aggressively than later, and the caption track is what gets
+ * machine-read. This flags rather than censors: bleeping a word you chose to
+ * say is a creative decision, and the false-positive rate on any wordlist is
+ * high enough ("hell" in "hell of a lot", "damn" in a quote) that automatic
+ * replacement would mangle real speech.
+ *
+ * Two tiers, because they carry different consequences: `strong` risks limited
+ * ads outright, `mild` is usually fine outside the opening seconds.
+ */
+const PROFANITY = {
+  strong: /\b(fuck\w*|shit\w*|cunt\w*|bastard|bitch\w*|asshole|dick(?:head)?|motherfuck\w*)\b/gi,
+  mild: /\b(damn|hell|crap|piss\w*|screw(?:ed)?\s+up|bloody|god ?damn)\b/gi,
+};
+
+export function advertiserScan(cues, { earlySec = 30 } = {}) {
+  const hits = [];
+  for (const c of cues) {
+    for (const [tier, re] of Object.entries(PROFANITY)) {
+      for (const m of String(c.text).matchAll(re)) {
+        hits.push({ tier, word: m[0], at: Math.round(c.start * 10) / 10, early: c.start <= earlySec, text: c.text });
+      }
+    }
+  }
+  const earlyStrong = hits.filter((h) => h.tier === "strong" && h.early);
+  return {
+    hits,
+    earlyStrong: earlyStrong.length,
+    risk: earlyStrong.length ? "high" : hits.some((h) => h.tier === "strong") ? "medium" : hits.length ? "low" : "none",
+    reading: earlyStrong.length
+      ? `${earlyStrong.length} strong word(s) in the first ${earlySec}s — the highest-risk position for limited ads`
+      : hits.length
+        ? `${hits.length} flagged word(s), none strong in the opening — usually fine, but check if this is a brand-deal video`
+        : "nothing flagged",
+  };
+}
+
+/**
+ * Reading-speed check (characters per second).
+ *
+ * A cue that is on screen too briefly to read is worse than no cue: the viewer
+ * stops trying, and on a Short they leave. ~20 CPS is the broadcast-subtitle
+ * ceiling for comfortable reading; above ~25 most people cannot finish the line.
+ *
+ * Reported, not enforced — the timings come from real speech, so the fix is to
+ * shorten the LINE, which is a writing decision.
+ */
+export function readingSpeed(cues, { ceiling = 20, hard = 25 } = {}) {
+  const rated = cues
+    .map((c) => {
+      const dur = Math.max(0.1, c.end - c.start);
+      return { text: c.text, cps: Math.round((c.text.replace(/\s+/g, " ").length / dur) * 10) / 10, dur };
+    })
+    .sort((a, b) => b.cps - a.cps);
+  const tooFast = rated.filter((r) => r.cps > ceiling);
+  const unreadable = rated.filter((r) => r.cps > hard);
+  return {
+    medianCps: rated.length ? rated[Math.floor(rated.length / 2)].cps : 0,
+    tooFast: tooFast.length,
+    unreadable: unreadable.length,
+    worst: rated.slice(0, 3),
+    reading: unreadable.length
+      ? `${unreadable.length} cue(s) above ${hard} CPS — most viewers cannot finish these lines; shorten the text`
+      : tooFast.length
+        ? `${tooFast.length} cue(s) above ${ceiling} CPS — readable but rushed`
+        : "comfortable reading speed throughout",
+  };
 }
 
 /* ---------------- 2. chapters ---------------- */

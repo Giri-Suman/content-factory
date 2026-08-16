@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, ensureDirs, paths, repoRoot } from "../../shared/src/config.js";
 import { c } from "./colors.js";
+import { findChrome } from "../../shared/src/chrome.js";
 
 /* ---------- probes ---------- */
 
@@ -35,13 +36,6 @@ function binary(commands) {
   return { ok: false };
 }
 
-const CHROME_PATHS = [
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
-  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-];
 
 /* ---------- check definitions ----------
    status: ok | fail (blocks P0 gate) | todo (user action, later phase)
@@ -89,10 +83,10 @@ function envFileCheck() {
 }
 
 function chromeCheck() {
-  const found = CHROME_PATHS.find((p) => p && existsSync(p));
+  const found = findChrome();
   return found
     ? { status: "ok", detail: path.basename(found) }
-    : { status: "todo", hint: "install Chrome or Edge (Playwright captures + screenshots)" };
+    : { status: "todo", hint: "install Chrome or Edge — HTML-to-PNG and evidence capture both need it" };
 }
 
 function pendingCheck(dir, phase) {

@@ -79,7 +79,20 @@ async function llmPayload(context, kind, lengthTarget = 32) {
       system:
         `You write multi-platform content briefs for this creator: ${NICHE_CONTEXT}.${lessonBlock} ` +
         `Target the YouTube Short at ~${lengthTarget}s (the platform playbook's proven length). ` +
-        "Every hook must be concrete and specific — generic openers ('you won't believe') are banned." +
+        "Every hook must be concrete and specific — generic openers ('you won't believe') are banned. " +
+        /**
+         * Two failures seen in real output that the schema alone did not
+         * prevent: all three hooks opening with the same word ("Confession:"
+         * x3), and beats written as SECTION LABELS ("Hook (0-3s)", "Problem —
+         * sweat and humidity") rather than content. The beats become voiceover
+         * downstream, so a label-shaped beat produces a video that says the
+         * word "Hook" out loud.
+         */
+        "The 3 hooks must use 3 DIFFERENT patterns — one open loop, one contrarian//myth-bust, one result-first — " +
+        "and must not share an opening word or phrase. " +
+        "BEATS ARE SPOKEN LINES, NOT SECTION LABELS: write what the presenter actually says. " +
+        'Never write a beat like "Hook (0-3s)" or "Problem - humidity" or "Call to action"; ' +
+        'write "Primer first, then powder, then a damp sponge to press it in" instead. ' +
         // hooks are SPOKEN, so the voiceover surface is the strictest one present
         preamble({ surface: "voiceover", json: false }) +
         "\n\nReply ONLY JSON:\n" +
@@ -96,8 +109,18 @@ async function llmPayload(context, kind, lengthTarget = 32) {
     const parsed = JSON.parse(res.text.slice(res.text.indexOf("{"), res.text.lastIndexOf("}") + 1));
     const check = validateShape(parsed, PAYLOAD_SHAPE);
     if (!check.ok) throw new Error(check.errors.join(", "));
-    if (!Array.isArray(parsed.yt_short?.hook_variants) || parsed.yt_short.hook_variants.length < 3)
-      throw new Error("yt_short.hook_variants needs 3 entries");
+    const hooks = parsed.yt_short?.hook_variants;
+    if (!Array.isArray(hooks) || hooks.length < 3) throw new Error("yt_short.hook_variants needs 3 entries");
+
+    // three hooks that all open the same way are one hook with three endings —
+    // the whole point is to give you a real choice
+    const openers = hooks.map((h) => String(h).toLowerCase().split(/\s+/).slice(0, 2).join(" "));
+    if (new Set(openers).size < hooks.length) throw new Error(`hooks share an opening ("${openers[0]}") — they must use different patterns`);
+
+    // beats become voiceover downstream; a section label would be spoken aloud
+    const LABEL = /^\s*(hook|intro|problem|solution|result|payoff|outro|cta|call[- ]to[- ]action|conclusion|demo|before\s*[/&-]?\s*after)\b\s*[-–—:(]?/i;
+    const labelled = (parsed.yt_short?.beats || []).filter((b) => LABEL.test(String(b)));
+    if (labelled.length) throw new Error(`beats are section labels, not spoken lines: "${labelled[0]}"`);
     return parsed;
   };
   try {
@@ -109,6 +132,33 @@ async function llmPayload(context, kind, lengthTarget = 32) {
       return null;
     }
   }
+}
+
+/**
+ * Invented specifics — prices, percentages, hard counts — that the topic never
+ * supplied.
+ *
+ * Real output produced "This $8 primer is the only reason my makeup survived",
+ * inventing a price for a product the creator never named. The no-fabrication
+ * instruction did not stop it, and on a monetised beauty channel a made-up
+ * price is a product claim, not a stylistic slip.
+ *
+ * Surfaced as a warning, not a hard failure: the number may be true and only
+ * you know. But you should see it before you approve.
+ */
+export function unsourcedSpecifics(payload) {
+  const text = JSON.stringify(payload || {});
+  const found = [
+    ...(text.match(/[$₹£€]\s?\d[\d,.]*/g) || []),
+    ...(text.match(/\b\d{1,3}(?:\.\d+)?\s?%/g) || []),
+    ...(text.match(/\b\d{2,}\s?(?:x|times)\b/gi) || []),
+  ];
+  const uniq = [...new Set(found)];
+  if (!uniq.length) return null;
+  return {
+    specifics: uniq.slice(0, 6),
+    note: `check these before approving — the model may have invented them: ${uniq.slice(0, 6).join(", ")}`,
+  };
 }
 
 /** Keyless skeleton — deterministic structure, hand-fillable content. */
@@ -241,6 +291,7 @@ export async function generateBrief({ clusterId, wishlistId, topic: rawTopic, se
     seriesId: series?.id || null,
     episodeNum: series?.episodeNum || null,
     duplicateWarning,
+    factualityWarning: unsourcedSpecifics(payload),
     kind: finalKind,
     deadline: finalKind === "trend" ? new Date(Date.now() + 24 * 36e5).toISOString() : null,
     scheduledDate: timing.scheduledDate || null,

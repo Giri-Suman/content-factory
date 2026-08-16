@@ -4,19 +4,12 @@ import path from "node:path";
 import { createHighlighter } from "shiki";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { synthesize } from "./voice.js";
+import { findChrome } from "../../shared/src/chrome.js";
 
 const FPS = 30;
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
 const PUBLIC_DIR = path.join(RENDERER, "public");
 
-const CHROME_PATHS = [
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  path.join(process.env.LOCALAPPDATA || "", "Google\\Chrome\\Application\\chrome.exe"),
-  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-];
-const findChrome = () => CHROME_PATHS.find((p) => p && existsSync(p));
 
 /* ---------- code highlighting (Shiki, precomputed at prepare time) ---------- */
 
