@@ -405,3 +405,33 @@ once; append after every failed attempt or surprise.
   **resolve paths to absolute at the boundary of any external process, and
   create the parent directory — the child will not, and the error it gives you
   names neither problem.**
+
+- `capture url http://169.254.169.254/…` screenshotted the cloud instance
+  metadata endpoint successfully. On most providers that serves credentials, so
+  the portal was one deployment away from handing them to anyone who found the
+  URL →
+  **any feature that fetches a user-supplied URL is an SSRF hole the moment the
+  app leaves localhost. Validate the RESOLVED ADDRESS, never the hostname
+  string — an attacker controls their own DNS, so evil.com can simply resolve
+  to 169.254.169.254.**
+
+- Next only auto-loads `.env` from its OWN directory, not the monorepo root.
+  Putting FACTORY_PASSWORD in the root `.env` left middleware seeing nothing,
+  so the portal would have stayed OPEN — silently, with no error →
+  **an auth control that fails open is worse than no auth control, because you
+  believe you are protected. Load the env explicitly and verify with a real
+  request (expect 307/401) before exposing anything.**
+
+- The auth middleware exempted `/login` but not `/api/login`, so the gate locked
+  you out of itself: logging in required a session, and getting a session
+  required logging in. The first wrong-password test returned "not signed in"
+  instead of "wrong password", which is what exposed it →
+  **the login endpoint must always be exempt from the gate it feeds. And test
+  the WRONG-password path, not just the right one — the failure mode was only
+  visible in the error message.**
+
+- The middleware hashes with WebCrypto (edge runtime) while the login route uses
+  node:crypto. If those two produced different digests, login would appear to
+  succeed and then every following request would fail →
+  **when the same value is computed in two runtimes, assert they match; the
+  bug would otherwise present as "it logs me out immediately".**

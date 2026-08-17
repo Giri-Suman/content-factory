@@ -31,7 +31,7 @@ export async function capture(argv) {
         return false;
       }
       console.log(`\ncapturing the review set for ${name}…\n`);
-      const r = captureToolReview(name, url, {
+      const r = await captureToolReview(name, url, {
         pricingPath: flag(rest, "pricing") || "/pricing",
         docsPath: flag(rest, "docs") || "/docs",
       });
@@ -53,7 +53,7 @@ export async function capture(argv) {
         console.log('  e.g. factory capture claim ms123 "Cursor costs $20 per month" https://cursor.com/pricing');
         return false;
       }
-      const s = captureForClaim(briefId, claimText, url, { preset: flag(rest, "preset") || "pricing" });
+      const s = await captureForClaim(briefId, claimText, url, { preset: flag(rest, "preset") || "pricing" });
       console.log(`\n  captured ${s.file} (${Math.round(s.bytes / 1024)}KB)`);
       console.log(`  attached as the receipt for: "${claimText}"`);
       console.log(`\n  verify with: factory claims map ${briefId}\n`);
@@ -87,7 +87,7 @@ export async function capture(argv) {
         console.log(`  Interaction flows (clicking, forms, login) are the one thing it cannot do.\n`);
         return true;
       }
-      const s = shoot(url, { preset: flag(rest, "preset") || "page", name: flag(rest, "name") });
+      const s = await shoot(url, { preset: flag(rest, "preset") || "page", name: flag(rest, "name") });
       console.log(`  ${s.file}  (${Math.round(s.bytes / 1024)}KB, ${s.preset})`);
       return true;
     }

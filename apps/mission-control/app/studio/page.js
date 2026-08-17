@@ -37,8 +37,63 @@ const TERMINAL_ONLY = [
   ["factory publish <id> --go", "the one real upload. Kept in the terminal so it can never be a mis-click"],
 ];
 
+/**
+ * Upload + pick, for commands that take a file.
+ *
+ * A path like "D:\footage\take1.mp4" only means something on the machine you
+ * were sitting at. Once the portal is reachable from a laptop or phone — which
+ * is exactly when you want the capture lane, right after filming — typing a
+ * path is useless. Upload, then pick.
+ */
+function FilePicker({ value, onChange, uploads, refreshUploads, label }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("label", file.name.replace(/\.[^.]+$/, "").slice(0, 24));
+    const res = await fetch("/api/upload", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: "upload failed" }));
+    setBusy(false);
+    if (!res.ok) return setErr(res.error);
+    await refreshUploads();
+    onChange(res.path);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 260, fontSize: 12 }}>
+          <option value="">{uploads.length ? "pick uploaded footage…" : "no footage uploaded yet"}</option>
+          {uploads.map((u) => (
+            <option key={u.name} value={u.path}>
+              {u.name} · {(u.bytes / 1e6).toFixed(0)}MB
+            </option>
+          ))}
+        </select>
+        <label className="btn ghost sm" style={{ cursor: busy ? "default" : "pointer" }}>
+          {busy ? <span className="spin" /> : null}
+          {busy ? "uploading…" : "Upload"}
+          <input type="file" accept="video/*,audio/*,image/*" style={{ display: "none" }} disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />
+        </label>
+      </div>
+      <input
+        className="mono"
+        placeholder={`…or type a path on the host — ${label}`}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", maxWidth: 500, fontSize: 11.5, marginTop: 6 }}
+      />
+      {err && <div style={{ color: "#ff6b6b", fontSize: 11.5, marginTop: 4 }}>{err}</div>}
+    </div>
+  );
+}
+
 /** One runnable command. Used in both the vertical block and the shared list. */
-function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders }) {
+function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders, uploads, refreshUploads }) {
   const needsPick = c.argKind === "briefId" || c.argKind === "renderId";
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="panel" style={{ padding: 12 }}>
@@ -82,6 +137,14 @@ function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders }) 
                 );
               })}
             </select>
+          ) : c.argKind === "file" ? (
+            <FilePicker
+              value={inputs[c.key]}
+              onChange={(v) => setInputs((i) => ({ ...i, [c.key]: v }))}
+              uploads={uploads}
+              refreshUploads={refreshUploads}
+              label={c.argLabel || "path"}
+            />
           ) : (
             <input
               className="mono"
@@ -123,14 +186,21 @@ export default function StudioPage() {
   const [inputs, setInputs] = useState({});
   const [briefs, setBriefs] = useState([]);
   const [renders, setRenders] = useState([]);
+  const [uploads, setUploads] = useState([]);
   const poll = useRef(null);
 
   useEffect(() => {
     fetch("/api/run").then((r) => r.json()).then((d) => setCommands(d.commands || []));
     fetch("/api/briefs").then((r) => r.json()).then((d) => setBriefs(d.briefs || d.rows || [])).catch(() => {});
     fetch("/api/renders").then((r) => r.json()).then((d) => setRenders(d.renders || [])).catch(() => {});
+    refreshUploads();
     return () => clearInterval(poll.current);
   }, []);
+
+  const refreshUploads = async () => {
+    const d = await fetch("/api/upload").then((r) => r.json()).catch(() => null);
+    if (d?.ok) setUploads(d.files || []);
+  };
 
   const run = async (c) => {
     setBusy(c.key);
@@ -166,7 +236,7 @@ export default function StudioPage() {
   const active = CATS.find((x) => x.id === cat);
   const ownRows = commands.filter((c) => c.cat === cat);
   const sharedRows = commands.filter((c) => c.cat === "all");
-  const rowProps = { busy, out, inputs, setInputs, run, briefs, renders };
+  const rowProps = { busy, out, inputs, setInputs, run, briefs, renders, uploads, refreshUploads };
 
   return (
     <div>
