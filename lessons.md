@@ -435,3 +435,25 @@ once; append after every failed attempt or surprise.
   succeed and then every following request would fail →
   **when the same value is computed in two runtimes, assert they match; the
   bug would otherwise present as "it logs me out immediately".**
+
+- A PowerShell script written as UTF-8 (no BOM) failed to parse with "the string
+  is missing the terminator". Cause: Windows PowerShell 5.1 reads script files as
+  cp1252, so an em dash (E2 80 94) became the three characters `a€"` — and that
+  third byte maps to a QUOTE character, which closed the string early. The
+  script looked perfect in every editor →
+  **PS 5.1 scripts must be ASCII-only or UTF-8 WITH BOM. Prose punctuation
+  (em dashes, smart quotes) in a .ps1 is a parse-time landmine, and the error
+  message points at the string, not the encoding.**
+
+- Bisecting the parse errors was the only thing that found it: the first 100
+  lines parsed clean, the full file did not, and the reported line was correct
+  but the reported CAUSE was misleading →
+  **when a parse error makes no sense, parse progressively larger prefixes.
+  And check the bytes (`cat -A`), not the rendering — the corruption is
+  invisible in a normal editor view.**
+
+- Nearly "fixed" `$tunnelId.json` in a PowerShell string, believing it would be
+  parsed as property access. It is not: PS only does property access in strings
+  via `$(...)`; a bare `$var.prop` expands the variable and leaves `.prop`
+  literal → **verify the bug exists before fixing it; a confident wrong fix to
+  working code is worse than the imagined bug.**

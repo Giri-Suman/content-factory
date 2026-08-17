@@ -1,5 +1,65 @@
 # Deploying the portal
 
+## Zero-cost, from anywhere — the short version
+
+You own **coderfact.com and it is already on Cloudflare**, which makes the free
+path genuinely good rather than a compromise:
+
+```powershell
+.\scripts\go-online.ps1        # once — password, tunnel, boot-start
+.\scripts\factory-online.cmd   # starts portal + tunnel + worker together
+```
+
+Then open **https://factory.coderfact.com** from any device.
+
+| | Cost |
+|---|---|
+| Cloudflare Tunnel | **₹0** — no bandwidth or request charges |
+| Stable subdomain + HTTPS | **₹0** — you already pay for the domain |
+| Cloudflare Access (second gate) | **₹0** up to 50 users |
+| Compute | **₹0** — it is your own PC |
+| AI | **₹0** — the free tier already runs everything |
+
+Nothing here has a trial that expires.
+
+### The one honest catch
+
+**The tunnel only answers while your PC is awake.** That is the real cost of
+"free" — you are the host. Two mitigations:
+
+```powershell
+powercfg /change standby-timeout-ac 0     # never sleep on mains power
+powercfg /change hibernate-timeout-ac 0
+```
+
+The screen can still sleep; that costs nothing. Only standby kills the tunnel.
+With sleep off and the boot task registered, a reboot brings everything back
+by itself — which is as close to "anytime" as free-and-on-your-own-hardware gets.
+
+### If you want truly always-on and still ₹0
+
+**Oracle Cloud Always Free** is the only free tier large enough to actually run
+this: their Ampere ARM allowance is several cores and tens of GB of RAM, free
+with no time limit — far beyond what Google's or AWS's free tiers offer, and
+enough for Remotion.
+
+Worth knowing before you commit a weekend to it:
+
+- **ARM**, so you need the ARM builds of Node, ffmpeg and Chromium. All exist
+  on Ubuntu ARM, but it is not a copy-paste of the x86 steps below.
+- **Capacity is genuinely hard to get** in popular regions; "out of host
+  capacity" on Ampere is common and you may retry for days.
+- A card is required for identity verification.
+- Free-tier terms change. Check Oracle's current page rather than trusting this
+  paragraph — two hardcoded model IDs in this project went stale inside a year,
+  and cloud free tiers move the same way.
+
+My recommendation: **start with the tunnel today** — it works in ten minutes and
+costs nothing. Move to Oracle only if the PC-must-be-awake constraint actually
+bothers you in practice, because it is a real afternoon of ARM debugging.
+
+---
+
 ## Read this first: Vercel and Netlify cannot run this
 
 Not a configuration problem — a shape mismatch. This app is not a website that
