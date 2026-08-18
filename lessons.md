@@ -405,3 +405,248 @@ once; append after every failed attempt or surprise.
   **resolve paths to absolute at the boundary of any external process, and
   create the parent directory — the child will not, and the error it gives you
   names neither problem.**
+
+- `capture url http://169.254.169.254/…` screenshotted the cloud instance
+  metadata endpoint successfully. On most providers that serves credentials, so
+  the portal was one deployment away from handing them to anyone who found the
+  URL →
+  **any feature that fetches a user-supplied URL is an SSRF hole the moment the
+  app leaves localhost. Validate the RESOLVED ADDRESS, never the hostname
+  string — an attacker controls their own DNS, so evil.com can simply resolve
+  to 169.254.169.254.**
+
+- Next only auto-loads `.env` from its OWN directory, not the monorepo root.
+  Putting FACTORY_PASSWORD in the root `.env` left middleware seeing nothing,
+  so the portal would have stayed OPEN — silently, with no error →
+  **an auth control that fails open is worse than no auth control, because you
+  believe you are protected. Load the env explicitly and verify with a real
+  request (expect 307/401) before exposing anything.**
+
+- The auth middleware exempted `/login` but not `/api/login`, so the gate locked
+  you out of itself: logging in required a session, and getting a session
+  required logging in. The first wrong-password test returned "not signed in"
+  instead of "wrong password", which is what exposed it →
+  **the login endpoint must always be exempt from the gate it feeds. And test
+  the WRONG-password path, not just the right one — the failure mode was only
+  visible in the error message.**
+
+- The middleware hashes with WebCrypto (edge runtime) while the login route uses
+  node:crypto. If those two produced different digests, login would appear to
+  succeed and then every following request would fail →
+  **when the same value is computed in two runtimes, assert they match; the
+  bug would otherwise present as "it logs me out immediately".**
+
+- A PowerShell script written as UTF-8 (no BOM) failed to parse with "the string
+  is missing the terminator". Cause: Windows PowerShell 5.1 reads script files as
+  cp1252, so an em dash (E2 80 94) became the three characters `a€"` — and that
+  third byte maps to a QUOTE character, which closed the string early. The
+  script looked perfect in every editor →
+  **PS 5.1 scripts must be ASCII-only or UTF-8 WITH BOM. Prose punctuation
+  (em dashes, smart quotes) in a .ps1 is a parse-time landmine, and the error
+  message points at the string, not the encoding.**
+
+- Bisecting the parse errors was the only thing that found it: the first 100
+  lines parsed clean, the full file did not, and the reported line was correct
+  but the reported CAUSE was misleading →
+  **when a parse error makes no sense, parse progressively larger prefixes.
+  And check the bytes (`cat -A`), not the rendering — the corruption is
+  invisible in a normal editor view.**
+
+- Nearly "fixed" `$tunnelId.json` in a PowerShell string, believing it would be
+  parsed as property access. It is not: PS only does property access in strings
+  via `$(...)`; a bare `$var.prop` expands the variable and leaves `.prop`
+  literal → **verify the bug exists before fixing it; a confident wrong fix to
+  working code is worse than the imagined bug.**
+
+## Assumed a laptop dependency that the code did not actually have
+
+**tried** — answering "do I need the laptop on 24/7?" by measuring how bad a
+collection gap is, then offering a Windows wake-timer task so the machine could
+sleep between collects.
+
+**broke** — the question was right and my framing was wrong. The user pointed out
+the code is already on GitHub. `radar collect` turns out to be **pure Node with
+zero dependencies** — no Chrome, no ffmpeg, no Python (the five `python` hits in
+packages/radar are keyword strings inside regexes). It reads and writes exactly
+one file, `data/trends.json`, 1.1MB. It never needed to run on this machine at
+all, so the whole wake-timer idea was an elaborate solution to a self-inflicted
+constraint. Deleted it.
+
+**rule** — before optimising *around* a constraint, check whether the constraint
+is real. Grep the actual dependency surface of the specific code path. A monorepo
+that needs ffmpeg somewhere does not mean the path you care about needs it: this
+CLI has **88 dynamic imports vs 4 eager**, so `radar collect` loads the radar
+chain and nothing else. Lazy-loading is why `npm ci` can be skipped in CI, and
+that is worth verifying rather than assuming in either direction.
+
+Two things worth keeping from the measurement:
+- **Time the job before choosing a cron cadence.** A real run is 651s. On a
+  private repo (2000 free Actions min/month) that makes every-4h ~1950 min = 98%
+  of budget, and every-6h ~1300 = 65%. Guessing "hourly" would have silently run
+  out of minutes mid-month.
+- **`config.js` populates `process.env` without overriding what is already set**,
+  so CI needs no `.env` file — verified with a sentinel value rather than assumed.
+
+## Signing code you cannot test against the real service
+
+**tried** — writing SigV4 request signing for R2 with no Cloudflare credentials
+available, planning to find out whether it worked on the first real upload.
+
+**broke** — nothing yet, which is the problem. R2 rejects a bad signature with an
+opaque `403 SignatureDoesNotMatch` and tells you nothing about *which* step was
+wrong: the signing-key derivation, the canonical request, the header ordering, or
+the percent-encoding. Debugging that against a live service is guesswork.
+
+**rule** — AWS publishes SigV4 test vectors with the exact canonical request, its
+SHA-256, and the final signature. Check against those and the implementation is
+proven before any credential exists. `test/r2-sigv4.mjs` does this and passes
+6/6, including the documented `aeeed9bb…` signature. To make it testable,
+`signingKey()` takes region and service as parameters instead of closing over the
+module constants — an untestable signing function is one you discover is wrong
+from a 403.
+
+The specific trap worth remembering: **`encodeURIComponent` is not sufficient**.
+AWS requires `!'()*` percent-encoded too, so a key containing any of them signs
+fine locally and 403s in production — a bug that surfaces months later on one
+file. Hence the explicit `rfc3986()` and a test for it.
+
+## A second project on the same Cloudflare account is a real blast radius
+
+**tried** — adding R2 storage while coderfact.com is served from the same
+Cloudflare account.
+
+**broke** — nothing, but the near-miss is worth writing down. The portfolio is a
+**Worker named `coderfact`** (`wrangler.jsonc` in the portfolio repo). Had this
+repo gained a `wrangler` config reusing that name, `wrangler deploy` would have
+silently *overwritten the live portfolio site*. Nothing about R2 warns you.
+
+**rule** — when a second project shares a hosting account, pick the integration
+path with the smallest blast radius, not the most convenient one. Here that meant
+R2's **S3 API only**: no wrangler config, no Workers, no Pages, no DNS record, no
+public bucket, and presigned URLs instead of a custom domain. R2 buckets have no
+domain and no routes, so they cannot collide with a Worker. Also scope the API
+token to the single bucket. Documented in DEPLOY.md so the constraint survives
+the next person who thinks adding a wrangler config would be convenient.
+
+## Readable.toWeb() crashes the server when a video request is aborted
+
+**tried** — adding a Download button to the Renders page, then checking the dev
+server log while verifying it.
+
+**broke** — found a pre-existing landmine, not caused by the change. The video
+route streamed with `Readable.toWeb(createReadStream(...))`. When a browser
+aborts mid-transfer the web-stream controller closes while the fs ReadStream is
+still emitting, and the adapter's `enqueue` throws `ERR_INVALID_STATE` as an
+**uncaughtException**. Node exits on uncaughtException by default, so in
+production (`npm start`, unlike dev) simply opening the Renders page would take
+the portal down: 38 `<video preload="metadata">` elements each open a request,
+read the header, and abort. 38 uncaught exceptions per page load.
+
+**rule** — `Readable.toWeb()` is not safe for a route a browser can abort, and
+video routes are aborted constantly: every seek and every metadata probe is one.
+Build the `ReadableStream` by hand instead — `enqueue` inside try/catch,
+`rs.destroy()` in `cancel()` so file handles are not leaked, and `pause()`
+when `desiredSize <= 0` so a large file does not buffer into memory. Aborts are
+normal traffic, not an error to surface.
+
+Two things this taught about verifying:
+- **Read the server log, not just the page.** The page rendered perfectly — 38
+  players, 38 links, clean browser console — while the server was throwing fatal
+  exceptions on every load. A screenshot would have shown nothing wrong.
+- **Restart before trusting a clean log.** `preview_logs` returns accumulated
+  history, so the old errors kept appearing after the fix and looked like it had
+  not worked. The tell was the stack trace pointing at
+  `webstreams/adapters` — code the new version never calls. A fresh server plus
+  40 deliberately aborted requests gave the unambiguous answer: no errors.
+
+## "Not configured" with a perfectly good .env — the loadEnv() convention
+
+**tried** — reading `process.env.R2_*` directly in a new module, the way most
+code in this repo appears to.
+
+**broke** — `factory r2 status` reported all four variables missing while `.env`
+contained correct values. The message was actively misleading: it named the exact
+variables that were, in fact, set.
+
+**rule** — this repo does NOT auto-load `.env`. `loadEnv()` is called explicitly
+by each entry point (`doctor`, `health`, `prune`, `worker`, `judges`, and two
+spots in the CLI), so any new module reached by a path that skips it sees an
+empty `process.env`. Adding a new command means adding the `loadEnv()` call too.
+
+Fixed at the source instead of per-caller: `r2Config()` now calls a memoised
+`ensureEnv()`, so R2 behaves identically from the CLI, the render hook and the
+portal route without auditing every entry point. Safe because `loadEnv()` never
+overwrites an already-set variable — real environment variables (CI) still win
+over the file, which is what the GitHub Actions workflow depends on.
+
+Worth noting how it was found: the diagnostic printed *value lengths only*, never
+the values. That immediately showed 32/32/64/15 characters — all correctly shaped
+— which ruled out "user pasted it wrong" and pointed straight at the loader. Mask
+secrets when debugging credentials; you almost never need to see them, and length
+alone is usually the diagnostic.
+
+## A gated robots.txt is the same as no robots.txt
+
+**tried** — adding `X-Robots-Tag: noindex` in middleware plus an `app/robots.js`
+so the exposed portal stays out of search results.
+
+**broke** — `/robots.txt` returned a 307 to `/login`. The auth gate matched it
+like any other route, so no crawler could ever read the file telling it to stay
+away. It looked correct in the source and was inert in practice.
+
+**rule** — anything meant to be read by an unauthenticated client must be in the
+middleware's exempt list: `robots.txt`, and the same reasoning already applied to
+`/login` and `/api/login`. Test public files by fetching them **without** a
+session; fetching as yourself hides the bug because your cookie makes it work.
+
+The header is the belt and the file is the braces: `X-Robots-Tag` covers crawlers
+that ignore robots.txt, robots.txt covers the ones that read it before requesting
+anything. Neither affects the root domain — search engines judge subdomains
+separately, so this host being hidden, or offline whenever the laptop sleeps,
+costs coderfact.com nothing.
+
+## Put the resource guard before the thing that costs money, not before the render
+
+**tried** — adding an R2 storage ceiling so renders refuse when the bucket is
+nearly full. First placement was just before the Remotion call, which felt like
+"before the expensive part".
+
+**broke** — in `renderBrief` the expensive part is not the render. The order was
+`compileBrief` (an **AI call that spends real money**) → `prepare` → guard →
+render. So a full bucket would still have billed a script compile before
+refusing. Found only by running it against a real brief and watching
+"compiling brief..." print before the refusal.
+
+**rule** — a guard belongs at the top of the function, ahead of the FIRST thing
+that costs anything: money, an API quota, or minutes. Ask what the first
+irreversible spend is, not what the slowest step is; in an AI pipeline those are
+rarely the same step.
+
+Two related traps from the same change:
+- **The same anchor existed in two functions.** `const outDir = path.join(...)`
+  appears in both `renderScript` and `renderBrief`, so a `replace(..., 1)` put
+  the guard in the wrong one and `produce` — the path that actually matters —
+  was left unguarded. Assert the match count before replacing; a silent
+  `str.replace` that matches nothing, or the wrong one, is worse than an error.
+- **Make the threshold env-tunable so the guard is testable.** `R2_CEILING_GB`
+  exists so the block can be proven with 1.5MB of data instead of by actually
+  storing 9.5GB. A guard nobody can trigger on demand is a guard nobody has
+  verified.
+
+## Object-scoped R2 tokens cannot set bucket lifecycle
+
+**tried** — setting a 48h expiration rule through the S3 API with the same token
+used for uploads.
+
+**broke** — `403 AccessDenied`. Lifecycle is a **bucket-level** operation
+requiring an Admin token; the token here is scoped to *objects*, which is the
+narrower and safer scope deliberately chosen because this Cloudflare account also
+serves a live website.
+
+**rule** — do not widen a credential to make one setup call succeed. The right
+trade was to keep the narrow token and set the rule once in the dashboard, so
+`putLifecycle()` now fails with the exact dashboard path instead of an opaque
+403, and `getLifecycle()` returns `{unknown:true}` rather than throwing so
+`r2 status` still works. Retention is enforced twice for a reason: the bucket
+rule survives the laptop being off, and `factory r2 prune` is exact and immediate
+when it is on. Neither alone covers both cases.

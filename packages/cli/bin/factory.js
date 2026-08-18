@@ -21,7 +21,7 @@ ${c.bold("factory")} — content-factory command line
                                        deep 6h, digest 08:00 IST  (--fast for test cadences)
   ${c.cyan("factory shorts <id>")}                  cut 1-3 standalone clips from a rendered episode
   ${c.cyan("factory edit <footage.mp4>")}           auto-edit filmed footage: silence cuts + punch-ins
-      --noise=-35dB --min-silence=0.45 --no-punch --no-captions --no-retakes
+      --screencast (cut dead screen time) --noise=-35dB --no-punch --no-captions --no-retakes
   ${c.cyan("factory publish <id>")}                 compliance-check + upload to YouTube (dry-run without --go)
       --public | --unlisted            visibility (default: private) · --at "<iso>" schedules · --go = real upload
   ${c.cyan("factory auth-youtube")}                 one-time OAuth to get your refresh token
@@ -111,6 +111,17 @@ switch (cmd) {
     const { reframe } = await import("../../pipeline/src/reframe.js");
     const ok = await reframe(rest);
     process.exit(ok ? 0 : 1);
+    break;
+  }
+  case "r2": {
+    const { r2 } = await import("../src/r2.js");
+    try {
+      const ok = await r2(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
     break;
   }
   case "capture": {

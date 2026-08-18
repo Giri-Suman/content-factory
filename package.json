@@ -11,7 +11,10 @@
   ],
   "scripts": {
     "doctor": "node packages/cli/bin/factory.js doctor",
-    "factory": "node packages/cli/bin/factory.js"
+    "factory": "node packages/cli/bin/factory.js",
+    "sync:trends": "node scripts/sync-trends.mjs",
+    "sync:trends:check": "node scripts/sync-trends.mjs --check",
+    "test:r2": "node test/r2-sigv4.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -44,6 +44,7 @@ node packages/cli/bin/factory.js shorts <rendered-id>     # cut 1-3 clips from a
 #   self-corrections, noise cancellation, loudnorm, grade/vignette/fades,
 #   punch-ins, karaoke captions per aspect, personal dictionary
 node packages/cli/bin/factory.js edit "D:\footage\my-tutorial.mp4"
+#   --screencast: also cut frozen+silent stretches (build waits, reading time)
 #   opt-outs: --no-punch --no-captions --no-denoise --no-fillers --no-backtrack --no-retakes
 #   jargon spelling: copy data/dictionary.example.json -> data/dictionary.json
 ```

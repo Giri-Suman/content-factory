@@ -4,6 +4,7 @@ import { repoRoot } from "../../shared/src/config.js";
 import { screenshot } from "../../shared/src/chrome.js";
 import { collection, newId } from "../../shared/src/store.js";
 import { addReceipt } from "./claims.js";
+import { assertSafeUrl } from "../../shared/src/safeUrl.js";
 
 /**
  * EVIDENCE CAPTURE — first-hand receipts for the coding / AI-automation /
@@ -52,10 +53,14 @@ export const PRESETS = {
  * Capture one URL.
  * @returns {{ id, url, file, bytes, preset, at }}
  */
-export function capture(url, { preset = "page", name = null, settleMs = 3500 } = {}) {
-  if (!/^https?:\/\//i.test(url) && !/^file:\/\//i.test(url)) {
-    throw new Error(`capture needs an http(s) or file URL — got "${String(url).slice(0, 60)}"`);
-  }
+export async function capture(url, { preset = "page", name = null, settleMs = 3500 } = {}) {
+  /**
+   * SSRF guard, checked AFTER DNS resolution — an attacker controls their own
+   * DNS, so validating the hostname string would catch nothing. Verified
+   * before this existed: capturing 169.254.169.254 succeeded, and on a cloud
+   * host that endpoint serves instance credentials.
+   */
+  url = await assertSafeUrl(url);
   const p = PRESETS[preset];
   if (!p) throw new Error(`unknown preset "${preset}" — one of: ${Object.keys(PRESETS).join(", ")}`);
 
@@ -85,8 +90,8 @@ export function capture(url, { preset = "page", name = null, settleMs = 3500 } =
  * This is the whole reason the module exists: "Cursor is $20/month" stops
  * being an assertion and becomes a screenshot of the pricing page, dated.
  */
-export function captureForClaim(briefId, claimText, url, { preset = "pricing", settleMs = 3500 } = {}) {
-  const shot = capture(url, { preset, name: claimText, settleMs });
+export async function captureForClaim(briefId, claimText, url, { preset = "pricing", settleMs = 3500 } = {}) {
+  const shot = await capture(url, { preset, name: claimText, settleMs });
   addReceipt(briefId, claimText, `${shot.file}  (captured ${shot.at.slice(0, 10)} from ${url})`);
   return shot;
 }
@@ -101,7 +106,7 @@ export const evidenceLog = () =>
  * A tool review's standard evidence set. One command, four receipts —
  * landing, pricing, docs and the mobile view.
  */
-export function captureToolReview(toolName, baseUrl, { pricingPath = "/pricing", docsPath = "/docs" } = {}) {
+export async function captureToolReview(toolName, baseUrl, { pricingPath = "/pricing", docsPath = "/docs" } = {}) {
   const root = String(baseUrl).replace(/\/+$/, "");
   const jobs = [
     [`${root}`, "page", `${toolName} landing`],
@@ -113,7 +118,7 @@ export function captureToolReview(toolName, baseUrl, { pricingPath = "/pricing",
   const failures = [];
   for (const [url, preset, name] of jobs) {
     try {
-      shots.push(capture(url, { preset, name }));
+      shots.push(await capture(url, { preset, name }));
     } catch (e) {
       // a missing /pricing or /docs is normal — record it, keep going
       failures.push({ url, error: e.message.slice(0, 120) });

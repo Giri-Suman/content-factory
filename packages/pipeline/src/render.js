@@ -62,6 +62,23 @@ export async function renderScript(argv) {
   const seconds = (props.timeline.totalFrames / props.timeline.fps).toFixed(1);
   console.log(`  timeline: ${props.scenes.length} scenes, ${props.timeline.totalFrames} frames (${seconds}s)`);
 
+  /* Storage gate BEFORE any CPU is spent. Finding out you are out of space
+     after a ten-minute render is the failure this prevents. Skipped silently
+     when R2 is unconfigured, and a network problem must not block a local
+     render either — only a real over-ceiling reading stops the run. */
+  try {
+    const { assertSpace } = await import("../../shared/src/r2.js");
+    await assertSpace();
+  } catch (e) {
+    if (/storage is at/.test(e.message)) {
+      console.error(`
+  ${e.message}
+`);
+      return false;
+    }
+    // anything else (offline, listing failed) is not a reason to refuse to render
+  }
+
   const outDir = path.join(repoRoot, "renders", props.id);
   mkdirSync(outDir, { recursive: true });
 
@@ -106,6 +123,22 @@ export async function renderBrief(argv) {
   if (invalid.length) {
     console.error(`unknown profile(s): ${invalid.join(", ")} — valid: ${Object.keys(PROFILES).join(", ")}`);
     return false;
+  }
+
+  /* Storage gate FIRST — before compileBrief, which is an AI call that costs
+     money, and long before any render CPU. Refusing after paying for the
+     compile would be the same mistake as refusing after the render. */
+  try {
+    const { assertSpace } = await import("../../shared/src/r2.js");
+    await assertSpace();
+  } catch (e) {
+    if (/storage is at/.test(e.message)) {
+      console.error(`
+  ${e.message}
+`);
+      return false;
+    }
+    // offline or a failed listing must not block a local render
   }
 
   const { compileBrief } = await import("../../studio/src/compileBrief.js");
@@ -171,6 +204,23 @@ export async function renderBrief(argv) {
   }
   if (!items.length) console.log(`\n(no PublishItems for this brief yet — "Send to Publish Center" first to auto-attach)`);
   else console.log(`\nattached: ${attached.join(", ") || "none (profiles/platforms mismatch)"}`);
+
+  /* Push off-machine so the video is reachable when this laptop sleeps.
+     Wrapped and non-throwing on purpose: ~10 minutes of CPU already went into
+     this render, and a flaky network must not turn a finished video into a
+     failed job. Silent when R2 is unconfigured. */
+  const r2Files = [...Object.values(made), ...(cover ? [cover] : [])];
+  try {
+    const { pushRender, isConfigured } = await import("../../shared/src/r2.js");
+    if (isConfigured()) {
+      const r = await pushRender(props.id, r2Files);
+      for (const u of r.uploaded) console.log(`  ↑ R2  ${path.basename(u.key)}  ${Math.round(u.bytes / 1024)}KB`);
+      for (const f of r.failed) console.log(`  ✕ R2  ${f.file} — ${f.error}`);
+      if (r.uploaded.length) console.log(`  download links: factory r2 url ${props.id}`);
+    }
+  } catch (e) {
+    console.log(`  R2 push skipped: ${String(e.message).slice(0, 120)}`);
+  }
 
   console.log(`\ndone -> ${outDir}`);
   console.log(`RESULT ${JSON.stringify({ id: props.id, briefId, seconds: Number(seconds), outputs: Object.values(made).map((m) => path.basename(m)), cover: Boolean(cover), attached })}`);

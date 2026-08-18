@@ -56,8 +56,10 @@ f capture tool Cursor https://cursor.com    # landing + pricing + docs + mobile 
 f claims map <briefId>                      # every factual claim + what backs it
 f capture claim <briefId> "Cursor is $20/mo" https://cursor.com/pricing
 f steps <renderId>                          # burn STEP 1/5 callouts
-f edit "D:\footage\screencast.mp4"          # auto-cut a screen recording
+f edit "D:\footage\screencast.mp4" --screencast   # auto-cut + remove dead screen time
 ```
+
+**Screencasts:** `--screencast` adds dead-screen removal — the build waits and reading pauses that silence detection can't see, because you're often still talking over a frozen editor. It only cuts where the screen is frozen **and** you're silent, so explaining something over a still screen survives.
 
 **Tool reviews:** capture the pricing page *before* you claim a price. `capture claim` attaches the screenshot as the receipt — so "$20/month" is a dated screenshot, not a guess.
 
@@ -251,13 +253,27 @@ Tiers only fall **down**, never up — you're never charged more than you picked
 
 ---
 
+## Portal or terminal?
+
+**Everything is a button now.** Open **Studio** (localhost:4600/studio), pick your
+vertical, and the commands appear in workflow order — find → plan → make →
+package → ship → learn. Buttons and `factory <cmd>` run exactly the same thing.
+
+Three things stay in the terminal on purpose:
+
+| | Why |
+|---|---|
+| `factory worker` | a daemon that never exits — a button would hang the job runner |
+| `factory auth-youtube` | opens Google's OAuth consent and waits for a paste-back |
+| `factory publish <id> --go` | the one real upload — kept manual so it can never be a mis-click |
+
 ## The portal
 
 ```bash
 npm run dev --prefix apps/mission-control      # localhost:4600
 ```
 
-23 tabs. The ones you'll actually use: **Today** (what needs doing), **Briefs** (approve/kill), **Motion** (watch all 22 effects), **Renders** (preview video), **Publish**, **Settings** (tiers + keys).
+24 tabs. **Studio** is the one to start with — every command, grouped by vertical. Others you will actually use: **Today** (what needs doing), **Briefs** (approve/kill), **Motion** (watch all 22 effects), **Renders** (preview video), **Publish**, **Settings** (tiers + keys).
 
 ---
 
