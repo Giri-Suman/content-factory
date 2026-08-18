@@ -19,6 +19,24 @@ import { NextResponse } from "next/server";
 
 const COOKIE = "factory_session";
 
+/**
+ * Keep this host out of search results entirely.
+ *
+ * The gate already stops crawlers reaching anything real — they get a 307. But
+ * /login itself answers 200 and is crawlable, so without this the portal can be
+ * indexed under its own subdomain. That does not affect the root domain's
+ * ranking (search engines judge subdomains separately, and a subdomain being
+ * offline while this laptop sleeps costs the root nothing), it is simply not a
+ * page anyone should be able to find.
+ *
+ * Set on EVERY response, including redirects and 401s — a header only on the
+ * protected routes would miss the one page that is actually reachable.
+ */
+function noRobots(res) {
+  res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  return res;
+}
+
 /** Constant-time-ish compare so the response time does not leak the password. */
 function safeEqual(a, b) {
   const x = String(a);
@@ -41,7 +59,7 @@ export async function middleware(request) {
   const password = process.env.FACTORY_PASSWORD;
 
   // No password configured → local mode, everything open.
-  if (!password) return NextResponse.next();
+  if (!password) return noRobots(NextResponse.next());
 
   const { pathname } = request.nextUrl;
   /**
@@ -53,24 +71,27 @@ export async function middleware(request) {
   if (
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
+    // robots.txt must be readable WITHOUT a session or no crawler can obey it —
+    // a gated robots.txt is the same as having none.
+    pathname === "/robots.txt" ||
     pathname === "/login" ||
     pathname === "/api/login"
   ) {
-    return NextResponse.next();
+    return noRobots(NextResponse.next());
   }
 
   const expected = await tokenFor(password);
   const got = request.cookies.get(COOKIE)?.value;
-  if (got && safeEqual(got, expected)) return NextResponse.next();
+  if (got && safeEqual(got, expected)) return noRobots(NextResponse.next());
 
   // API calls get a 401 rather than an HTML redirect, so a fetch fails loudly
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ ok: false, error: "not signed in" }, { status: 401 });
+    return noRobots(NextResponse.json({ ok: false, error: "not signed in" }, { status: 401 }));
   }
   const url = request.nextUrl.clone();
   url.pathname = "/login";
   url.searchParams.set("next", pathname);
-  return NextResponse.redirect(url);
+  return noRobots(NextResponse.redirect(url));
 }
 
 export const config = {

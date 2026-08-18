@@ -96,6 +96,13 @@ export const COMMANDS = [
   { id: "compliance", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Compliance check", desc: "exactly what is blocking publication", primary: true },
   { id: "publish", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Publish dry run", desc: "uploads nothing — shows what would happen", primary: true },
   { id: "center", args: [], stage: "ship", cat: "all", label: "Publish queue", desc: "what is staged and ready" },
+  { id: "r2", args: ["status"], stage: "ship", cat: "all", label: "Off-machine storage", desc: "what is backed up to R2 and what is not", key: "r2-status" },
+  { id: "r2", args: ["push"], argKind: "renderId", stage: "ship", cat: "all", label: "Push a render off this PC", desc: "makes it downloadable anywhere, even with this laptop asleep", key: "r2-push", slow: true },
+  { id: "r2", args: ["push", "--all"], stage: "ship", cat: "all", label: "Push every render", desc: "backfill everything not yet uploaded", key: "r2-push-all", slow: true },
+  { id: "r2", args: ["url"], argKind: "renderId", stage: "ship", cat: "all", label: "Get download links", desc: "shareable links, valid up to 7 days", key: "r2-url" },
+  { id: "r2", args: ["prune"], stage: "ship", cat: "all", label: "Free expired storage", desc: "delete anything past 48h — permanent", key: "r2-prune" },
+  { id: "r2", args: ["prune", "--dry-run"], stage: "ship", cat: "all", label: "Preview what expires", desc: "shows what prune would delete, deletes nothing", key: "r2-prune-dry" },
+  { id: "r2", args: ["rm"], argKind: "renderId", stage: "ship", cat: "all", label: "Delete one from storage", desc: "permanent in R2; the local copy stays", key: "r2-rm", danger: "deletes remote files" },
 
   /* ---------------- learn ---------------- */
   { id: "analytics", args: [], stage: "learn", cat: "all", label: "Pull stats", desc: "real numbers from your channel", slow: true },

@@ -113,6 +113,17 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "r2": {
+    const { r2 } = await import("../src/r2.js");
+    try {
+      const ok = await r2(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "capture": {
     const { capture } = await import("../src/capture.js");
     try {
