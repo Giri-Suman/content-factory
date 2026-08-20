@@ -5,6 +5,9 @@ import { loadEnv, loadUserConfig, repoRoot } from "../../shared/src/config.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
 import { resolveService } from "../../llm/src/tiers.js";
 import { ffprobeDuration } from "./voice.js";
+import { videoArgs } from "../../shared/src/encoder.js";
+import { analyzeFootage, assertTrueColor, deriveGrade } from "./grade.js";
+import { editSettings, transcriptionLanguage } from "../../shared/src/config.js";
 
 /**
  * AI Cut — the Auto-Editor. Filmed talking-head footage in, publish-ready
@@ -109,14 +112,37 @@ function whisperModel() {
   }
 }
 
+/** Is the resolved transcribe tier a cloud one? */
+async function cloudOption() {
+  try {
+    const { resolveService } = await import("../../llm/src/tiers.js");
+    const { loadUserConfig } = await import("../../shared/src/config.js");
+    const opt = resolveService("transcribe", loadUserConfig().serviceTiers || {});
+    return opt?.cloud ? opt : null;
+  } catch {
+    return null;
+  }
+}
+
 function transcribe(input, workDir) {
   const w = whisperCmd();
   if (!w) return null;
   const dict = readDictionary();
   const model = whisperModel();
+  /* LANGUAGE MATTERS. Left to auto-detect, whisper correctly identified a
+     Bengali clip as "bn" and then produced English-looking nonsense from it —
+     3 segments for 93 seconds of continuous speech. The small models are
+     heavily English-biased, so a non-English shoot needs BOTH an explicit
+     language and a larger model; `base` is not usable for Bengali. */
+  /* From SETTINGS, not an env var. transcriptionLanguage() prefers
+     FACTORY_LANGUAGE when set so a one-off run can override, then falls back to
+     what the portal saved. */
+  const lang = transcriptionLanguage();
   const args = [input, "--model", model, "--output_format", "json", "--output_dir", workDir, "--word_timestamps", "True"];
+  if (lang) args.push("--language", lang);
   if (dict.jargon.length) args.push("--initial_prompt", `Glossary: ${dict.jargon.join(", ")}.`);
-  console.log(`  transcribing with ${w.kind} (${model} model)...`);
+  console.log(`  transcribing with ${w.kind} (${model} model${lang ? `, language=${lang}` : ", auto-detect"})...`);
+  if (!lang && model === "base") console.log(`    (base + auto-detect is English-biased — set FACTORY_LANGUAGE and a larger tier for other languages)`);
   const res = run(w.cmd, args, { timeout: 1000 * 60 * 60, env: WHISPER_ENV });
   if (res.status !== 0) {
     console.log(`  transcription failed — captions/filler cuts skipped: ${(res.stderr || "").slice(-200)}`);
@@ -138,8 +164,51 @@ function transcribe(input, workDir) {
   return words;
 }
 
-export function detectSilences(input, { noise, minSilence }) {
-  const res = run("ffmpeg", ["-i", input, "-af", `silencedetect=noise=${noise}:d=${minSilence}`, "-f", "null", "-"]);
+/**
+ * Measure the noise floor so the silence threshold can be set relative to it.
+ * A fixed -35dB is meaningless on footage whose noise floor sits at -24dB.
+ */
+export function noiseFloor(input) {
+  const r = run("ffmpeg", ["-vn", "-i", input, "-af", "aformat=sample_fmts=s16:channel_layouts=mono,volumedetect", "-f", "null", "-"]);
+  const m = (r.stderr || "").match(/mean_volume:\s*(-?[\d.]+) dB/);
+  return m ? Number(m[1]) : null;
+}
+
+export function detectSilences(input, { noise, minSilence, denoise = true, adaptive = true }) {
+  /* THREE fixes here, all found by measuring a real DJI clip that produced ZERO
+     pauses and therefore an edit that did nothing:
+     
+     1. `-vn` — the old call decoded the entire HEVC video just to read audio:
+        44 seconds, versus 1 second without it.
+        
+     2. `aformat=sample_fmts=s16` — THE actual bug. AAC decodes to float, and
+        both afftdn and silencedetect behave differently on float than on s16.
+        Identical audio: 0 pauses as float, 7 as s16. This silently produced
+        "no pauses found" on every AAC source, which is every camera file.
+        
+     3. Denoise BEFORE detecting. The export chain already denoised, but far too
+        late to inform the cut decision. On constant wind/handling noise the
+        floor never drops and nothing reads as silence.
+        
+     Zero pauses is not a harmless miss: one segment means no cuts, and no cuts
+     means no transitions and no punch-ins, since both alternate across segment
+     boundaries. The edit degrades to "the original clip with fades". */
+  let threshold = noise;
+  if (adaptive) {
+    const floor = noiseFloor(input);
+    if (floor != null) {
+      // Sit above the measured floor: quiet enough to be a pause, loud enough
+      // that room tone does not count as speech.
+      const suggested = Math.round(floor - 6);
+      const asked = Number(String(noise).replace(/dB$/i, ""));
+      if (Number.isFinite(asked) && suggested > asked) {
+        threshold = `${suggested}dB`;
+        console.log(`  noise floor ${floor.toFixed(1)}dB — silence threshold ${threshold} (asked ${noise})`);
+      }
+    }
+  }
+  const pre = `aformat=sample_fmts=s16:channel_layouts=mono,aresample=16000,${denoise ? "highpass=f=70,afftdn=nf=-28," : ""}`;
+  const res = run("ffmpeg", ["-vn", "-i", input, "-af", `${pre}silencedetect=noise=${threshold}:d=${minSilence}`, "-f", "null", "-"]);
   const silences = [];
   let start = null;
   for (const line of (res.stderr || "").split("\n")) {
@@ -333,7 +402,7 @@ export function planKeeps({ silences, extraCuts, duration, pad, minKeep, mergeGa
 
 /* ---------------- the single ffmpeg master pass ---------------- */
 
-function buildFilterScript(keeps, { width, height, punch, denoise, keptSec }) {
+function buildFilterScript(keeps, { width, height, punch, denoise, keptSec, grade = null, vertical = "all", transition = "fade", xdur = 0.3 }) {
   const lines = [];
   const pairs = [];
   keeps.forEach((k, i) => {
@@ -345,7 +414,60 @@ function buildFilterScript(keeps, { width, height, punch, denoise, keptSec }) {
     lines.push(`[0:a]atrim=start=${k.start.toFixed(3)}:end=${k.end.toFixed(3)},asetpts=PTS-STARTPTS[a${i}];`);
     pairs.push(`[v${i}][a${i}]`);
   });
-  lines.push(`${pairs.join("")}concat=n=${keeps.length}:v=1:a=1[vcat][acat];`);
+  /* TRANSITIONS between segments.
+  
+     Before this, every cut was a hard cut: `concat` butts segments together and
+     the only fades were at the very start and end of the whole video. That is
+     what made an auto-edit read as "raw clip with the quiet bits missing".
+  
+     xfade OVERLAPS neighbours, so three things have to be tracked carefully:
+  
+     1. Offsets are CUMULATIVE and shrink. Each transition consumes `dur`
+        seconds of total runtime, so segment i starts at
+        (sum of previous durations) - (i * dur). Getting this wrong desyncs
+        audio from video progressively, which looks fine for the first cut and
+        obviously broken by the fourth.
+  
+     2. A transition cannot be longer than the shorter neighbour, or xfade
+        consumes a whole segment. Clamped per pair.
+  
+     3. Audio needs `acrossfade` with the SAME duration, or the audio runs
+        longer than the video by (n-1) * dur.
+  
+     Segments shorter than ~2x the transition are hard-cut instead: dissolving
+     a 0.4s clip leaves nothing of it on screen. */
+  const wantX = transition !== "none" && keeps.length > 1;
+  if (!wantX) {
+    lines.push(`${pairs.join("")}concat=n=${keeps.length}:v=1:a=1[vcat][acat];`);
+  } else {
+    const durs = keeps.map((k) => k.end - k.start);
+    let vPrev = "v0";
+    let aPrev = "a0";
+    let acc = durs[0];
+    for (let i = 1; i < keeps.length; i++) {
+      // never longer than half the shorter neighbour
+      const d = Math.min(xdur, durs[i - 1] / 2, durs[i] / 2);
+      const vOut = `vx${i}`;
+      const aOut = `ax${i}`;
+      if (d < 0.08) {
+        // too short to dissolve — butt them together
+        lines.push(`[${vPrev}][v${i}]concat=n=2:v=1:a=0[${vOut}];`);
+        lines.push(`[${aPrev}][a${i}]concat=n=2:v=0:a=1[${aOut}];`);
+        acc += durs[i];
+      } else {
+        const offset = Math.max(0, acc - d);
+        lines.push(`[${vPrev}][v${i}]xfade=transition=${transition}:duration=${d.toFixed(3)}:offset=${offset.toFixed(3)}[${vOut}];`);
+        lines.push(`[${aPrev}][a${i}]acrossfade=d=${d.toFixed(3)}[${aOut}];`);
+        acc += durs[i] - d;
+      }
+      vPrev = vOut;
+      aPrev = aOut;
+    }
+    lines.push(`[${vPrev}]null[vcat];`);
+    lines.push(`[${aPrev}]anull[acat];`);
+    // the whole video is now shorter than the sum of its parts
+    keptSec = acc;
+  }
 
   /**
    * NEVER add a skin-smoothing filter here.
@@ -362,8 +484,13 @@ function buildFilterScript(keeps, { width, height, punch, denoise, keptSec }) {
    */
   // finishing: grade + vignette + sharpen + fades (video), denoise + loudnorm + fades (audio)
   const fadeOut = Math.max(0, keptSec - 0.45).toFixed(2);
+  /* The grade is MEASURED from this footage (see grade.js), not a fixed guess.
+     It may legitimately be empty when the material needs nothing — applying a
+     correction to already-correct footage is itself a defect. Sharpening and
+     the vignette stay unconditional: they shape presentation, not colour. */
+  const measured = grade && grade.filter ? `${grade.filter},` : "";
   lines.push(
-    `[vcat]eq=contrast=1.05:saturation=1.08:brightness=0.01,unsharp=5:5:0.5:5:5:0.0,vignette=angle=PI/5,` +
+    `[vcat]${measured}unsharp=5:5:0.5:5:5:0.0,vignette=angle=PI/5,` +
       `fade=t=in:st=0:d=0.35,fade=t=out:st=${fadeOut}:d=0.45[vc];`
   );
   const audioChain = [
@@ -374,6 +501,8 @@ function buildFilterScript(keeps, { width, height, punch, denoise, keptSec }) {
   lines.push(`[acat]${audioChain}[ac]`);
   const chain = lines.join("\n");
   assertNoSkinSmoothing(chain);
+  // Second half of the same promise: no colour push on colour-critical work.
+  assertTrueColor(chain, vertical);
   return chain;
 }
 
@@ -459,8 +588,12 @@ export async function autoEdit(argv) {
   );
   const input = args[0];
   if (!input || !existsSync(input)) {
-    console.error("usage: factory edit <footage.mp4> [--noise=-35dB] [--min-silence=0.45]");
+    console.error("usage: factory edit <footage.mp4> [--beauty] [--screencast] [--noise=-35dB] [--min-silence=0.45]");
+    console.error("  --beauty   makeup/nails: colour is measured and corrected, never pushed");
     console.error("       [--no-punch] [--no-captions] [--no-denoise] [--no-fillers] [--no-backtrack]");
+    console.error("       [--no-transcript]  skip whisper entirely - for footage in a language the");
+    console.error("                          local model handles badly. Silence cuts, punch-ins,");
+    console.error("                          grade, denoise and loudness all still run.");
     return false;
   }
 
@@ -480,8 +613,45 @@ export async function autoEdit(argv) {
   /* 1 — probe + transcript */
   const info = probe(input);
   console.log(`\n${path.basename(input)} — ${info.width}x${info.height}, ${info.duration.toFixed(1)}s`);
-  const wantWords = !flags["no-captions"] || !flags["no-fillers"] || !flags["no-backtrack"];
-  const words = wantWords ? transcribe(input, buildDir) : null;
+  /* --no-transcript: skip whisper entirely.
+  
+     `--no-captions` alone does NOT skip it — the condition below is an OR, so
+     filler and backtrack detection keep it alive and you save nothing. That is
+     the wrong default for footage whose language the local model cannot handle:
+     on a Bengali clip `base` produced 3 segments for 93 seconds of speech, and
+     cutting fillers or retakes from a transcript that wrong is worse than not
+     cutting at all — it removes real speech based on words nobody said.
+     
+     Everything that does NOT depend on words still runs: silence cuts,
+     punch-ins, the measured grade, denoise and loudness. Those are audio- and
+     pixel-level and completely language-independent. Whisper is also the
+     slowest stage, so skipping it is the single biggest time saving available
+     on a long capture. */
+  /* Settings first, CLI flags override. Previously every one of these was a
+     flag only, so the portal could not express them and a preference had to be
+     retyped on every run. */
+  const opt = editSettings(flags);
+  const noTranscript = !opt.transcript;
+  const wantWords = !noTranscript && (opt.captions || opt.fillers || !flags["no-backtrack"]);
+  if (noTranscript) console.log("  --no-transcript: skipping whisper (no captions, no filler/retake cuts)");
+  let words = null;
+  if (wantWords) {
+    /* Cloud transcription only when the tier explicitly resolves to it. Falls
+       back to local on any failure — a network problem must not lose the edit,
+       and a silent downgrade is announced rather than hidden. */
+    const cloud = await cloudOption();
+    if (cloud) {
+      try {
+        const { transcribeCloud } = await import("./transcribeCloud.js");
+        const r = await transcribeCloud(input, { language: transcriptionLanguage() });
+        words = r.words;
+        console.log(`  transcribed by ${r.provider}${r.language ? ` (${r.language})` : ""}: ${words.length} words`);
+      } catch (e) {
+        console.log(`  cloud transcription failed (${String(e.message).slice(0, 120)}) - falling back to local`);
+      }
+    }
+    if (!words) words = transcribe(input, buildDir);
+  }
   if (wantWords && !words) console.log("  (no whisper — silence cuts only, no captions)");
 
   /* 2 — the cut plan */
@@ -491,7 +661,7 @@ export async function autoEdit(argv) {
   const backtracks = flags["no-backtrack"] ? [] : await backtrackCuts(words);
   // retakes: you fluffed a line and said it again — keep the last attempt.
   // Deterministic, so it works with no AI tier reachable.
-  const retakes = flags["no-retakes"] ? [] : retakeCuts(words, { duration: info.duration });
+  const retakes = !opt.retakes ? [] : retakeCuts(words, { duration: info.duration });
   // screencast mode: also cut stretches where the SCREEN is dead and you are
   // not talking — waiting for a build, reading docs. Off by default because on
   // a talking-head shot a still frame is just you holding a pose.
@@ -522,15 +692,37 @@ export async function autoEdit(argv) {
   if (!providerStatus().active && !flags["no-backtrack"]) console.log("  (backtracking needs an LLM key — skipped)");
 
   /* 3 — master pass: cut + punch + denoise + loudnorm + grade + fades */
+
+  /* ANALYSE BEFORE GRADING. The old pipeline applied one fixed correction to
+     every video, which is a guess — and on makeup/nails a harmful one, because
+     it pushed saturation on footage whose entire purpose is showing a real
+     shade. Measure the file, then correct only what is actually wrong. */
+  const vertical = flags.beauty || flags.makeup || flags.nails ? "beauty" : flags.screencast ? "coding" : "all";
+  process.stdout.write("analysing footage... ");
+  const stats = analyzeFootage(input);
+  const grade = deriveGrade(stats, { vertical });
+  console.log(stats ? `${stats.frames} frames sampled` : "could not analyse");
+  for (const n of grade.notes) console.log(`  ${n}`);
+  if (grade.filter) console.log(`  grade: ${grade.filter}`);
+  else console.log(`  grade: none needed — the footage is already right`);
+
   const filterPath = path.join(buildDir, "filter.txt");
-  writeFileSync(filterPath, buildFilterScript(keeps, { ...info, punch: cfg.punch, denoise: !flags["no-denoise"], keptSec }));
+  /* Transition style is a setting, not a hardcode: "fade" is the safe default,
+     but a beauty shoot and a screencast want different pacing. --no-transitions
+     restores the old hard-cut behaviour. */
+  const transition = !opt.transitions ? "none" : String(flags.transition || "fade");
+  const xdur = Number(flags["transition-dur"]) || 0.3;
+  if (transition !== "none" && keeps.length > 1) {
+    console.log(`  transitions: ${transition} ${xdur}s between ${keeps.length} segments`);
+  }
+  writeFileSync(filterPath, buildFilterScript(keeps, { ...info, /* 1 = no zoom; the filter gates on punch > 1 */ punch: opt.punch ? cfg.punch : 1, denoise: opt.denoise, keptSec, grade, vertical, transition, xdur }));
   const master = path.join(buildDir, "master.mp4");
   process.stdout.write("cutting + finishing (denoise/grade/fades)... ");
   const cut = run("ffmpeg", [
     "-y", "-v", "error", "-i", input,
     "-filter_complex_script", filterPath,
     "-map", "[vc]", "-map", "[ac]",
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "aac", "-b:a", "192k",
+    ...videoArgs(), "-movflags", "+faststart", "-c:a", "aac", "-b:a", "192k",
     master,
   ]);
   if (cut.status !== 0 || !existsSync(master)) {
@@ -542,7 +734,7 @@ export async function autoEdit(argv) {
   /* 4 — karaoke captions, one ASS per aspect */
   let wideAss = null;
   let vertAss = null;
-  if (words && !flags["no-captions"]) {
+  if (words && opt.captions) {
     const mapped = remapWords(
       words.filter((w) => !FILLER.test(w.word.replace(/[^a-zA-Z]/g, ""))),
       keeps
@@ -558,7 +750,7 @@ export async function autoEdit(argv) {
 
   /* 5 — exports */
   const isVertical = info.height > info.width;
-  const enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "copy"];
+  const enc = [...videoArgs(), "-movflags", "+faststart", "-c:a", "copy"];
   const outputs = [];
   const shortOut = path.join(outDir, "short.mp4");
   if (isVertical) {
@@ -578,6 +770,23 @@ export async function autoEdit(argv) {
     console.error("export failed — no outputs written");
     return false;
   }
+  /* Push off-machine, exactly as renderBrief does. Without this an edit lives
+     only on this laptop's disk and nobody else can ever see it - which for the
+     makeup/nails workflow means the entire output is invisible to the person
+     who filmed it. Best-effort and non-throwing: the edit already succeeded and
+     a flaky network must not turn it into a failure. */
+  try {
+    const { pushRender, isConfigured } = await import("../../shared/src/r2.js");
+    if (isConfigured()) {
+      const r = await pushRender(id, made);
+      for (const u of r.uploaded) console.log(`  R2 up  ${path.basename(u.key)}  ${Math.round(u.bytes / 1024)}KB`);
+      for (const f of r.failed) console.log(`  R2 fail  ${f.file} - ${f.error}`);
+      if (r.uploaded.length) console.log(`  shareable links:  factory r2 url ${id}`);
+    }
+  } catch (e) {
+    console.log(`  R2 push skipped: ${String(e.message).slice(0, 120)}`);
+  }
+
   console.log(`\ndone -> ${made.map((o) => path.relative(repoRoot, o)).join(", ")}\n`);
   console.log(
     `RESULT ${JSON.stringify({ id, outputs: made, kept: keptSec, original: info.duration, fillers: fillers.length, backtracks: backtracks.length, captions: Boolean(wideAss || vertAss) })}`

@@ -650,3 +650,574 @@ trade was to keep the narrow token and set the rule once in the dashboard, so
 `r2 status` still works. Retention is enforced twice for a reason: the bucket
 rule survives the laptop being off, and `factory r2 prune` is exact and immediate
 when it is on. Neither alone covers both cases.
+
+## Two collectors need a merge, not a copy — and check the data shape first
+
+**tried** — syncing cloud-collected trends by replacing the local file with the
+remote one, guarded by "refuse if local is bigger" so a smaller remote could not
+clobber accumulated history.
+
+**broke** — the guard fired on the very first real sync, and it was right to, but
+the whole model was wrong. Actual numbers: local 497 trends, remote 292, only
+**271 shared**. Each side held records the other did not — 226 local-only, 21
+cloud-only. Copying in *either* direction destroys real data. "Bigger is
+authoritative" is not true once two collectors run independently.
+
+**rule** — when the same store is written from two places, the reconcile is a
+**union**, not a choice. `trends` is a map keyed by id, so this was always
+possible; I just never looked at the shape. The tell was sitting in the output
+the whole time: item counts printed as `? items` because the counter assumed
+`trends` was an array when it is an object. **An unexplained `?` in your own
+diagnostic is a bug report — chase it before trusting anything else the tool says.**
+
+Merging records needs domain thinking, not `Object.assign`:
+- `first_seen` takes the **earliest**, `last_seen` the **latest**. Velocity is
+  derived from how long an item has been observed, so widening that window with
+  the other side's sightings is the entire point of syncing. The merge widened
+  271 records and velocity coverage went 153 -> 158.
+- `used` and `alerted` OR together. Work already done on either side must never
+  be un-marked by a sync.
+- Assert the invariant afterwards: `first_seen > last_seen` must be 0. It is the
+  cheapest possible check that the merge did what you think.
+
+Related Windows trap hit while debugging this: Git Bash rewrote
+`git show origin/master:.github/...` into `origin\master;.github\...`, producing a
+confident but false "file is MISSING on master". Set `MSYS_NO_PATHCONV=1` for git
+revision:path arguments, and when two checks of the same fact disagree, suspect
+the tooling before the repo.
+
+## The ops portal cannot move to Workers — build beside it, not instead of it
+
+**tried** — promising an "always-on portal" as a one-file change, on the basis
+that 34 of 37 API routes call helpers from `lib/factory.js` rather than touching
+the filesystem directly.
+
+**broke** — that reading was wrong. **30 of the 37 routes import `node:` builtins
+themselves** (`fs`, `path`, `child_process`), which the Cloudflare Workers runtime
+does not provide. `lib/factory.js` is the single *execution* boundary, not the
+single *Node* boundary, and those are different things. Porting would have meant
+rewriting 30 routes and maintaining local and cloud builds of the same app —
+against the standing "don't break existing functionality" constraint.
+
+**rule** — before claiming a port is small, grep for the RUNTIME dependency
+(`from "node:`), not the architectural one. A tidy internal seam says nothing
+about which primitives the leaves reach for.
+
+What worked instead: a separate read-only static page generated from R2 and
+deployed to Pages, reusing the existing `listObjects`/`presignGet`/`usage`
+functions and touching none of the 37 routes or 27 pages. Read-only is a
+security property here rather than a limitation — the URL is meant to be shared,
+and the ops portal can run 46 commands on the host.
+
+Three details worth keeping:
+- **Bake presigned URLs into the HTML.** Fetching R2 from the browser would need
+  either a public bucket (which needs a domain, so a DNS record) or CORS on a
+  signed API. Baking them in needs neither, so the bucket stays private. Links
+  last 7 days and retention deletes at 48h, so the video always expires first.
+- **Deploy with `--project-name` and no wrangler config.** A `wrangler.*` file in
+  this repo reusing the name `coderfact` would overwrite the portfolio Worker on
+  deploy. There is still no wrangler config here, and there should not be one.
+- **A truncated download in a test is usually the test.** Checking the baked link
+  first returned 12KB of a 1.4MB video and looked like a real bug; the cause was
+  my own regex extraction plus incomplete `&amp;` unescaping. Extracting it with
+  a real HTML parser gave HTTP 200 and all 1,425,841 bytes. `&amp;` in HTML source
+  is correct — browsers decode it.
+
+## Pages Functions are found relative to the WORKING directory, not the asset dir
+
+**tried** — `wrangler pages deploy data/viewer --project-name=...` with the
+function at `data/viewer/functions/api/request.js`.
+
+**broke** — the deploy succeeded, uploaded the assets, and silently produced no
+Function. `/api/request` returned the static index.html instead of JSON. Nothing
+in the output said a function had been skipped; the absence of "Compiled Worker
+successfully" was the only signal, and absence is easy to miss.
+
+**rule** — wrangler 4.x auto-detects `./functions` relative to the **current
+working directory**, not the asset directory passed as an argument, and there is
+no `--functions-directory` flag any more. `cd` into the deploy directory first:
+`cd data/viewer && wrangler pages deploy .`. Then the output reads "Compiled
+Worker successfully" and "Uploading Functions bundle" — check for those two lines
+rather than trusting "Deployment complete".
+
+Two neighbouring traps from the same piece of work:
+- **A Pages deploy defaults to a PREVIEW branch.** The first deploy went to
+  branch `master` while the project's production branch was `main`, so the stable
+  `*.pages.dev` root 404'd while a hashed preview URL worked fine. Pass
+  `--branch=main` (or set the production branch) or the shareable URL is dead.
+- **Generated output directories are gitignored.** The function source initially
+  lived in `data/viewer/functions/`, inside a gitignored tree — it would have
+  vanished on a clean checkout. Source belongs in `packages/`, copied into the
+  deploy directory at build time.
+
+## Measure the encoder, do not assume the software one is better
+
+**tried** — accepting `libx264 -preset veryfast -crf 19` as the encoder
+everywhere, and reaching for faster x264 presets when long-video timings looked
+bad.
+
+**broke** — nothing was broken, but a ~2x speedup was sitting unused. This
+machine is an **i3-7020U: 2 cores, 15W**, so x264 is fighting for the only CPU
+there is — while the HD Graphics 620 has Quick Sync sitting idle, and ffmpeg
+already had `h264_qsv` compiled in.
+
+Measured, 63s of 1080p, SSIM against the source:
+
+    x264 veryfast crf19   SSIM 0.998603   1.88x   4.22MB   <- was the default
+    QSV global_quality 21 SSIM 0.998571   3.85x   5.48MB
+    QSV global_quality 18 SSIM 0.998847   3.66x   6.77MB   <- chosen
+    x264 ultrafast        (not measured for SSIM)  3.40x  24.67MB
+
+**rule** — benchmark the encoder on the actual hardware before optimising
+settings. The obvious lever (a faster x264 preset) was the worst option:
+`ultrafast` was SLOWER than hardware encoding *and* produced a 4.6x larger file.
+gq18 is both faster and higher quality than the previous default, so this was not
+a quality trade at all — but that only became knowable by measuring.
+
+Details worth keeping:
+- **SSIM, not file size.** Bigger output looked like worse value until measured;
+  gq18 is larger *and* closer to the source. VMAF would be the better metric but
+  is unusable here — it timed out after 7 minutes on a 63s clip on 2 cores.
+- **Check `pix_fmt` and `color_range` after switching encoders.** QSV can emit
+  full-range `yuvj420p` where x264 emits limited `yuv420p`, which shows up as a
+  washed-out or crushed picture. Verified here: source and output are both
+  `yuvj420p pc bt470bg`, so the range was preserved.
+- **Probe, do not trust `-encoders`.** `h264_qsv` is listed on essentially every
+  Windows ffmpeg build and fails at runtime without the Intel driver. Detection
+  encodes one real frame, and falls back to x264 — mandatory, because GitHub
+  runners have no iGPU.
+- **The indirect win is bigger than the number.** On 2 cores, moving encoding to
+  the iGPU stops it competing with whisper for the only CPUs available.
+
+## A cold-start measurement is not a benchmark
+
+**tried** — timing whisper on a 63s clip and extrapolating: 0.86x realtime, so a
+60-minute video would need ~70 minutes just to transcribe. Reported that.
+
+**broke** — that first run **downloaded the model**. Warm, the same command runs
+at **3.38x realtime** — a 60-minute video transcribes in ~18 minutes, not 70. The
+alarming conclusion was an artifact, and it also made four timeouts look
+dangerous when only two actually were.
+
+**rule** — discard the first run of anything that fetches a model, fills a cache,
+or JITs. Run it twice and use the second. `--compute_type int8` then measured as
+no change at all, because ctranslate2 already defaults to int8 on CPU — another
+thing the cold-start noise would have hidden.
+
+## "Nothing here yet" and "it is broken" look identical
+
+**tried** — shipping a public page that lists finished videos, on the assumption
+that seeing the files was what someone waiting actually needed.
+
+**broke** — nothing technically, but the page could not answer any of the
+questions a person actually has: is my request being worked on? is the laptop
+even on? when will it run? An empty list reads exactly like a broken system, and
+the natural response is to refresh every thirty seconds or ask the owner — which
+is the dependency the whole queue existed to remove.
+
+**rule** — an asynchronous system owed to someone else needs a STATUS surface,
+not just a RESULTS surface. The laptop now writes a heartbeat to R2 at four
+points (awake / working / idle-empty / idle-done) and the page reads it live, so
+it can say "asleep, 2 waiting, next run at about 07:30 pm (in 2h 30m)".
+
+Things that made the messages actually useful:
+- **Name the job and give it a duration.** "Making \"why 0.999 = 1\" now —
+  started 4 min ago, these usually take about 11 min" answers the real question.
+  "In progress" does not. The ETAs come from measured job history, not guesses.
+- **Treat a stale heartbeat as asleep.** A crash mid-job leaves `state:"working"`
+  written forever; without a staleness window the page cheerfully reports work
+  that stopped hours ago. 20 minutes, then it reads as asleep.
+- **Do NOT clamp timestamp deltas with `Math.max(0, ...)`.** It makes a FUTURE
+  timestamp read as "just now", so clock skew or a bad write reports a dead
+  machine as healthy. Caught by testing a skewed beat explicitly; the guard is
+  now a two-sided window.
+- **Degrade to the useful half.** With the R2 binding missing the banner shows
+  "Status unavailable — the video list below still works", and the videos,
+  download links and request form all still function. Verified in a browser
+  against the live deployment.
+
+## The header claimed "go back to sleep"; the code never did
+
+**tried** — writing `wake-and-drain.ps1` with a header block opening
+"Wake on a schedule, drain the queue, go back to sleep."
+
+**broke** — the script waked and drained. Nothing in it slept. The only thing
+that would eventually suspend the machine was Windows' own 30-minute idle
+timeout, so a 1-minute brief job left the laptop awake for half an hour — the
+opposite of the "less laptop usage" this was built for. The comment was aspiration
+written at the same time as the code, and it read as documentation afterwards.
+
+**rule** — grep your own comments against your own code before trusting either.
+`grep -nE 'sleep|suspend' wake-and-drain.ps1` returned six hits and every one was
+a comment. A doc block describing intended behaviour is indistinguishable from
+one describing real behaviour, and the second is the only kind worth having.
+
+Sleeping turned out to need real guards, not a bare suspend call:
+- **Someone at the keyboard.** Waking at 14:00 to run a job while its owner is
+  using the machine, then suspending it under them, is hostile. `GetLastInputInfo`
+  gives real idle time.
+- **cloudflared running.** That means the portal is deliberately being served;
+  sleeping kills factory.coderfact.com. Verified this fires — the dry run refused
+  for exactly this reason.
+- **Work still running.** ffmpeg/whisper alive means the drain is not done.
+- **`disableWakeEvent` must be FALSE** in `SetSuspendState`. Setting it true
+  suspends the machine and disarms the next scheduled wake, stranding the queue
+  permanently — a bug that would look like "the laptop just never woke up again".
+
+Chain it with `&`, not `&&`: the machine must still sleep when a job FAILED,
+otherwise one bad render leaves it awake indefinitely.
+
+**PowerShell escaping trap while doing this:** inside a double-quoted PowerShell
+string the escape character is a BACKTICK, not a backslash. `\"` produced
+"Unexpected token" errors; `` `" `` is correct. And verifying it by reconstructing
+the command through bash -> powershell -Command adds another quoting layer that
+fails on its own — extract the real lines from the real file and run those instead.
+
+## Big files belong on disk, not through a browser
+
+**tried** — routing all footage through the portal's upload endpoint, since that
+was the answer for "the portal is remote now, D:\footage\take1.mp4 means nothing".
+
+**broke** — it is the wrong tool above a certain size. A 300MB+ capture over a
+home connection takes longer than the edit itself, and the laptop has to stay
+awake for the whole transfer, which is exactly the dependency the queue was built
+to remove. Upload is right for a phone clip and wrong for a long capture.
+
+**rule** — offer a filesystem drop folder alongside the upload, pointing at the
+SAME directory (`data/footage/`) so both routes converge and nothing downstream
+needs to know which was used. Copying over a network share, from a USB stick, or
+straight off a camera moves the same bytes with no browser and no size ceiling.
+
+The security detail that matters: a queue entry stores a **basename only**, and
+`resolveInInbox()` re-validates it at run time — the file may have been deleted
+since queueing, and without the check a queued job is a way to point the pipeline
+at any file on disk. Verified refusals: `../../.env`, `..\..\.env`,
+`C:/Windows/System32/calc.exe`, `subdir/x.mp4`, non-video extensions, and
+missing files. Re-validating at RUN time rather than only at QUEUE time is the
+part worth copying — the two moments can be hours apart.
+
+Small thing that mattered: the first estimate printed "~0 min of laptop time" for
+a 43s clip. A progress estimate that rounds to zero reads as broken; it now says
+"under a minute".
+
+## Auto white balance is wrong for beauty footage — built it, measured it, removed it
+
+**tried** — replacing a fixed grade (`eq=contrast=1.05:saturation=1.08`) with one
+derived from the footage: sample with ffmpeg `signalstats`, then correct
+exposure, contrast and white balance from measured YAVG/UAVG/VAVG/SATAVG.
+
+**broke** — twice, and only testing found either.
+
+1. **`colorbalance` was a NO-OP.** Measured U/V identical to one decimal across
+   `bm=0.06`, `0.15` and `0.30` — a 5x strength range. The pipeline was
+   computing a correction, printing it in the notes, and changing nothing. A
+   grade that reports work it did not do is worse than no grade, because the
+   log says the problem was handled.
+
+2. **Grey-world is the wrong model for skin.** Auto-WB from frame averages
+   assumes an average scene is neutral. A beauty close-up is not an average
+   scene: a correctly lit, correctly balanced skin plate measures **U 110 /
+   V 150**, because skin genuinely is warm and 128/128 is grey. The code read
+   correct skin as a "cast towards yellow" and prescribed
+   `rm=-0.175:bm=0.138` — which would have drained the warmth out of accurate
+   skin. I had built a colour-accuracy feature that destroyed colour accuracy on
+   the one vertical it existed for.
+
+**rule** — correcting colour without a reference (a grey card, or knowing which
+pixels are skin) is guessing, and on work where colour IS the product, guessing
+is exactly what to avoid. Removed it; exposure correction stays because luma has
+no such ambiguity. Shipping less that is right beats shipping more that is wrong.
+
+Two habits this reinforced:
+- **Verify a filter actually changes the output**, not just that ffmpeg accepted
+  it. Exit code 0 and a plausible filter string prove nothing. Measure before
+  and after, and sweep the strength — a flat response across 5x is the tell.
+- **Test with representative material.** Three separate wrong conclusions came
+  from testing on convenient footage: a dark Manim render (no midtones for a
+  cast to live in), then `testsrc2` colour bars (saturated primaries, almost no
+  midtones either). Only a skin-tone plate showed the real behaviour. For a
+  beauty feature, test on something skin-coloured.
+
+Also fixed while here: the underexposure threshold was `yavg < 70`, so a clip
+measuring exactly 70 reported "exposure fine". Now 85, with the 25 floor kept so
+deliberately dark footage (a Manim short measures ~17) is still left alone.
+
+## signalstats reports in the source bit depth, not 0-255
+
+**tried** — deriving exposure correction from ffmpeg `signalstats` YAVG, treating
+it as 0-255 because that is what 8-bit video reports.
+
+**broke** — on a real DJI clip the pipeline printed
+`overexposed (mean luma 559/255) - pulled down 6.0%`. 559 out of 255 is
+impossible, and the absurd number was the only visible symptom of a real defect:
+the file is **10-bit** (`yuv420p10le`), signalstats reports on 0-1023 for it, and
+559/1023 is 139 in 8-bit terms — perfectly normal exposure. The grade darkened
+correctly-exposed footage by 6% and reported it as a fix.
+
+**rule** — normalise measurement output to one scale at the point of
+measurement, before any threshold sees it. `analyzeFootage` now reads `pix_fmt`,
+derives the depth, and scales every channel by `255 / (2**depth - 1)`. This is
+not an edge case: DJI, iPhone and most current cameras shoot 10-bit by default,
+so the naive version was wrong for the majority of real camera footage while
+being right on every test file I had generated with x264 defaults.
+
+**A nonsensical number in your own output is a bug report.** "559/255" was
+printed to the console on a successful run and could easily have been skimmed
+past — the run exited 0, produced a video, and uploaded it. Ratios that exceed
+their own stated maximum deserve a stop, not a scroll.
+
+## Zero pauses is not a harmless miss — it silently disables the whole edit
+
+**tried** — shipping the auto-editor and trusting its output because it exited 0
+and produced a video.
+
+**broke** — a real 93-second DJI clip produced `0 pauses + 0 fillers -> 1 cuts`,
+and the user reported the result as "value less: no transitions, no effects,
+nothing". They were right, and the cause was one bug with a wide blast radius:
+ONE segment means no cuts, and no cuts means no transitions and no punch-ins,
+because both alternate across segment boundaries. The edit degrades to "the
+original clip with fades on it" and reports success.
+
+**Three separate defects, all in `detectSilences`:**
+
+1. **`aformat=sample_fmts=s16` was missing — the real one.** AAC decodes to
+   float, and both `afftdn` and `silencedetect` behave differently on float than
+   on s16. Identical audio: **0 pauses as float, 7 as s16.** This meant silence
+   detection was quietly broken for every AAC source — which is every camera
+   file. It only ever looked correct because my own test clips were made by
+   extracting to PCM WAV first.
+
+2. **Denoise ran too late.** The export chain denoised, but detection ran on raw
+   audio. On constant wind/handling noise the floor never drops, so nothing
+   registers as silence. Denoised first: 7 pauses at -30dB, 24 at -25dB.
+
+3. **A fixed -35dB threshold is meaningless.** Her noise floor measured -24.2dB,
+   so -35dB was below it and unreachable. The threshold is now derived from a
+   measured floor (`floor - 6dB`).
+
+**rule** — when a stage reports "found nothing", treat that as a claim to verify,
+not a result to pass along. Nothing-found and broken-detector are the same
+output, and the one that produces a plausible video is the dangerous one.
+
+Related: **`-vn` when analysing audio.** The old call decoded the entire HEVC
+video to read its audio track — 44 seconds versus 1 second with `-vn`.
+
+## Small whisper models are English-biased — an explicit language is not optional
+
+**broke** — whisper correctly auto-detected a Bengali clip as `bn`, then emitted
+English-looking nonsense: 3 segments for 93 seconds of continuous speech, reading
+"Lafante.js, Remotion, Manim and CoderFact". The captions were confidently wrong
+rather than obviously absent, which is worse.
+
+**rule** — auto-detect identifies the language but does not make a small model
+competent at it. Non-English work needs BOTH an explicit `--language` and a
+larger model; `base` is not usable for Bengali. `FACTORY_LANGUAGE` now passes the
+language through, and the run prints which language and model it used so a bad
+transcript is traceable instead of mysterious.
+
+## xfade offsets are cumulative AND shrinking
+
+**tried** — adding crossfades between the segments an auto-edit produces, having
+previously used plain `concat` (hard cuts only, with fades just at the very start
+and end — which is what made the output read as "raw clip with the quiet bits
+removed").
+
+**broke** — nothing shipped broken, because the offset arithmetic was checked
+against measured output. It is the part worth writing down, since getting it
+wrong fails in a way that looks fine at first:
+
+  - `xfade` OVERLAPS its two inputs, so each transition removes `dur` seconds
+    from the total. Segment i must start at
+    `(sum of previous durations) - (i * dur)`, not at the running sum. Using the
+    naive sum drifts by `dur` per cut: invisible on the first transition,
+    obviously broken by the fourth.
+  - Audio needs `acrossfade` at the SAME duration, or audio ends up
+    `(n-1) * dur` longer than video — a slow desync rather than an error.
+  - A transition longer than half a neighbour eats the whole segment, so it is
+    clamped per pair, and anything under 0.08s becomes a hard cut. Dissolving a
+    0.4s clip leaves none of it on screen.
+
+Verified rather than assumed: 5 segments totalling 90.10s with 4 x 0.3s
+transitions predicts 88.90s. Actual video 88.86s, audio 88.90s, **A/V drift
+0.045s**. Check the drift, not just that ffmpeg exited 0.
+
+## Cloud transcription is the one place footage leaves the machine
+
+Groq's hosted whisper large-v3 fixes what local `base` cannot (Bengali) and
+takes seconds where local large-v3 would take ~2.9 hours for a 60-minute video
+on this CPU. Worth having — but it is the ONLY step in this project that sends
+anything off the machine, and everything else is local by construction.
+
+So it is gated three ways rather than being a config value someone finds later:
+requires `GROQ_API_KEY` **and** the transcribe tier set to `best`; uploads
+**audio only, never video**; and prints what it is doing on every single run.
+Someone filming another person deserves to know their voice is being sent
+somewhere, and a setting buried in a file is not knowing.
+
+Failure falls back to local and says so. A silent downgrade would mean captions
+quietly getting worse with no signal.
+
+## Only self-contained jobs can move to the cloud first
+
+**tried** — planning to move rendering to GitHub Actions now that the repo can
+be public (unlimited minutes).
+
+**broke** — most jobs cannot go yet, and the reason is state, not compute.
+`brief`, `produce` and `edit` all read local `data/` collections that are not
+synced anywhere: `factory-data` carries only `trends.json`. A render workflow for
+those would need the whole store mirrored first.
+
+**rule** — when moving work to a new environment, order the jobs by how much
+local state they depend on, not by how slow they are. `factory math "<topic>"`
+needs nothing but a string: it writes its own Manim scene, renders it, and is
+done. It also happens to be the most expensive local job (~11 min measured), so
+the self-contained one and the valuable one are the same job. Start there and the
+first cloud run proves the path without also debugging a state sync.
+
+Two environment differences worth encoding rather than discovering:
+- **Runners have no Intel iGPU**, so `FACTORY_FORCE_X264=1` is set explicitly.
+  `encoder.js` probes by encoding a real frame rather than trusting
+  `-encoders`, so this is belt-and-braces — but a workflow that silently fell
+  back would be indistinguishable from one that was slow for another reason.
+- **A runner's disk is deleted when it exits.** Without R2 configured the video
+  simply vanishes, so the workflow uploads an artifact as a fallback and says
+  plainly in the summary which of the two happened. A render that succeeded and
+  then evaporated is the worst possible outcome.
+
+Also: rendering needs `npm ci` in `renderers/code-report` (Remotion, React) and
+apt `libcairo2-dev libpango1.0-dev` for Manim. Radar needed neither, which is why
+the collect workflow skips install entirely — the two are not interchangeable
+templates.
+
+## A setting somebody has to be told about is not a setting
+
+**tried** — adding transcription language as `FACTORY_LANGUAGE`, an environment
+variable, because that was the quickest way to make the pipeline honour it.
+
+**broke** — nothing technically, but it was the wrong home. The whole point of
+the language option is that whisper's small models are English-biased and get
+non-English audio confidently wrong; the person who needs it is the one filming
+in Bengali, not the one editing `.env`. An env var is a setting only for whoever
+already knows it exists.
+
+**rule** — options that change OUTPUT QUALITY belong in the portal next to the
+thing they affect. `.env` is for credentials and machine-specific paths. The
+language picker now sits directly above the Transcription tier selector, because
+choosing "Bengali" and leaving the tier on `base` produces exactly the garbage
+this was meant to prevent — so the UI says so at the point of choosing.
+
+Precedence is env > config > auto-detect: a one-off run can still override
+without editing settings, which is what an env var is actually good for.
+
+Validation matters here more than usual: the value reaches a whisper command
+line, so it is checked against a known list rather than sanitised. Verified
+rejections: `evil`, `; rm -rf /`, `../../etc/passwd`, and a trailing null byte;
+`BN` normalises to `bn`. An allowlist is the right shape when the set of valid
+values is small and known — sanitising a string you will pass to a subprocess is
+a losing game.
+
+## Do not insert into JSX by string-matching — read the structure first
+
+**tried** — adding two settings sections to `settings/page.js` with a Python
+script that found an anchor string and spliced JSX in before it.
+
+**broke** — three times, in three different ways:
+
+1. The first insert landed after the LAST line starting with `import `, which
+   was `import {` — the opening line of a MULTI-LINE import. Result:
+   `cannot import as reserved word`, because the new statement was spliced into
+   the middle of another one.
+2. Both `<section>` blocks landed AFTER the component's closing brace
+   (`}<section className=...`). They looked present to `grep` — 11 matches for
+   "language" — and were outside the function, so nothing rendered and the page
+   500'd.
+3. That grep count is what made me believe it had worked. Counting occurrences
+   proves text exists somewhere in a file, not that it is in the right scope.
+
+**rule** — for structured code, find the insertion point by reading the
+structure (where does the component end? where does the return close?), not by
+matching a nearby string. `grep -n 'Auto-edit\|^}\|^  );'` took one command and
+showed both blocks sitting past line 381's closing brace — the check I should
+have run after the first edit rather than the fourth.
+
+**And verify with the thing that actually parses it.** `node --check` does not
+understand JSX, so it reported "syntax ok" on a file Next could not compile at
+all. The dev-server error log was the only source of truth, and it named the
+exact line both times.
+
+Related: an env var set in the middle of testing (`FACTORY_LANGUAGE=hi`) leaked
+into later assertions in the same process. Delete it explicitly rather than
+assuming the next call starts clean.
+
+## Groq and Grok are different companies
+
+**tried** — the user asked to "add the grok staff" for transcription, and I built
+against **Groq** (groq.com), which hosts whisper-large-v3 on a free tier.
+
+**broke** — the key they added starts `xai-`, which is an **xAI** key. xAI makes
+the **Grok** chatbot; Groq is an inference-hardware company. The names differ by
+one letter and one is a homophone of the other. Confirmed rather than assumed:
+`api.groq.com/openai/v1/models` returned `401 Invalid API Key`.
+
+The distinction matters beyond the key prefix: **xAI has no speech-to-text
+endpoint at all**, so this is not a matter of pointing at a different URL. Grok
+is text and vision; there is nothing to transcribe with.
+
+**rule** — when a product name is ambiguous, verify the credential against the
+API before building on it, and say which company you mean in the setup docs.
+`.env.example` now names "console.groq.com" explicitly and states that keys start
+`gsk_`, because "add your Groq key" is exactly the instruction that produced an
+xAI key.
+
+## needs() predicates read process.env — which nothing had loaded
+
+**broke** — with a key present, `resolveService('transcribe', {transcribe:'best'})`
+still resolved to the LOCAL model. The tier options gate on
+`needs: () => Boolean(process.env.GROQ_API_KEY)`, and this repo does not
+auto-load `.env` — each entry point calls `loadEnv()` itself. Nothing had, so
+every key-dependent tier was invisible and silently degraded to a lesser option.
+
+This is the **third** instance of the same root cause: R2 reported "not
+configured" with a correct `.env`, and the same bug was latent in the whole tier
+system. It only looked fine in tests because those called `loadEnv()` explicitly.
+
+**rule** — if a module's behaviour depends on `process.env`, it must ensure the
+environment is loaded itself rather than trusting a caller to have done it. Fixed
+with a memoised `ensureEnv()` in `tiers.js`, matching `r2.js`. A silent downgrade
+to a worse option is the worst failure shape available: it produces output, so
+nothing reports a problem.
+
+## Groq rejects WAV and opus with a bare 500
+
+**tried** — uploading 16kHz mono opus to Groq's transcription endpoint, chosen
+because it is the smallest format whisper can use losslessly.
+
+**broke** — `500 Internal Server Error`, with nothing in the message about
+format. Isolated by holding the audio and every parameter constant and varying
+only the container:
+
+    wav                 -> HTTP 500
+    opus in ogg         -> HTTP 500
+    mp3                 -> HTTP 200
+
+**rule** — a 500 from a third-party API is not necessarily your bug, but it is
+worth one bisect before assuming so. Switching the container fixed it, and MP3
+at 32kbps mono is also 7x smaller than WAV (93 seconds: 0.4MB vs 2.8MB), which
+matters against the 25MB upload cap.
+
+The payoff, on the footage that started all of this: local `base` produced 3
+segments of English nonsense ("Lafante.js, Remotion, Manim and CoderFact") from
+93 seconds of Bengali. Groq returned **151 words, 19 segments, in 7 seconds**,
+in actual Bengali script.
+
+## Two companies, one letter apart, both wired in now
+
+`GROQ_API_KEY` (gsk_) is Groq — transcription only. `XAI_API_KEY` (xai-) is xAI
+— LLM only. They do not overlap and neither substitutes for the other. The user
+supplied an xAI key when asked for a Groq one, which cost a round trip; both
+`.env.example` blocks now name the company, the domain and the key prefix
+explicitly, and cross-reference each other.
+
+xAI slots in as the FIRST option in the `cheap` tier rather than `free`, because
+it is paid — a paid option in a tier labelled free would quietly spend money.
+Verified the free tier is unchanged and xai leads cheap only when the key exists.

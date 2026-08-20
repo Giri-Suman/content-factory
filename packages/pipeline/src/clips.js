@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { chat } from "../../llm/src/llm.js";
+import { videoArgs } from "../../shared/src/encoder.js";
 
 /**
  * Shorts factory: mine an already-rendered episode for 1-3 self-contained
@@ -119,7 +120,7 @@ export async function makeClips(argv) {
     const res = spawnSync(
       "ffmpeg",
       ["-y", "-v", "error", "-i", source, "-ss", startS.toFixed(3), "-t", durS.toFixed(3),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", "-c:a", "aac", out],
+        ...videoArgs({ source: "render" }), "-movflags", "+faststart", "-c:a", "aac", out],
       { encoding: "utf8", timeout: 300000, windowsHide: true }
     );
     if (res.status === 0) results.push(out);

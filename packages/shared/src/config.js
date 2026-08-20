@@ -97,6 +97,87 @@ export const DEFAULT_CONFIG = {
   thumbnailTimedSwap: false,
 };
 
+/**
+ * Transcription language.
+ *
+ * Whisper auto-detects, but small models are heavily English-biased: a Bengali
+ * clip was correctly detected as "bn" and then transcribed into English
+ * nonsense. Setting this explicitly is the difference between usable captions
+ * and confidently wrong ones, so it belongs in the portal rather than in an env
+ * var somebody has to be told about.
+ *
+ * "" means auto-detect, which is right for English and a trap for everything
+ * else — the UI says so.
+ */
+/**
+ * EDIT DEFAULTS — the on/off switches for the auto-editor.
+ *
+ * These were CLI flags only, which meant the portal buttons could never express
+ * them and every preference had to be retyped. They are preferences about how
+ * your videos should look, so they belong in settings; a CLI flag still wins for
+ * a one-off run.
+ *
+ * Each entry carries its own description because a checkbox labelled
+ * "transitions" tells you nothing about what turning it off does.
+ */
+export const EDIT_OPTIONS = [
+  { key: "transitions", label: "Transitions between cuts", def: true, help: "Crossfade instead of hard-cutting. Off = punchier, and how it behaved before." },
+  { key: "punch", label: "Punch-in zooms", def: true, help: "Alternate segments zoom slightly. Adds movement to a static shot." },
+  { key: "denoise", label: "Noise reduction", def: true, help: "High-pass plus FFT denoise. Also lets pauses be detected at all on noisy footage." },
+  { key: "captions", label: "Burned captions", def: true, help: "Needs a transcript. Turn off for languages the local model handles badly." },
+  { key: "fillers", label: "Cut filler words", def: true, help: "Removes um/uh. Needs a transcript, so only as good as the transcription." },
+  { key: "retakes", label: "Cut retakes", def: true, help: "Drops the fluffed take when a line is repeated. Needs a transcript." },
+  { key: "transcript", label: "Transcribe at all", def: true, help: "Off skips whisper entirely - much faster, and the right choice when captions would be wrong anyway." },
+];
+
+export const EDIT_DEFAULTS = Object.fromEntries(EDIT_OPTIONS.map((o) => [o.key, o.def]));
+
+/** Settings, with any CLI flag taking precedence. */
+export function editSettings(flags = {}) {
+  const saved = { ...EDIT_DEFAULTS, ...(loadUserConfig().edit || {}) };
+  // `--no-x` flags invert; presence means "turn this off for this run".
+  for (const o of EDIT_OPTIONS) {
+    if (flags[`no-${o.key}`]) saved[o.key] = false;
+    if (flags[o.key] === true) saved[o.key] = true;
+  }
+  return saved;
+}
+
+export const LANGUAGES = [
+  { code: "", label: "Auto-detect (fine for English)" },
+  { code: "en", label: "English" },
+  { code: "bn", label: "Bengali / বাংলা" },
+  { code: "hi", label: "Hindi / हिन्दी" },
+  { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "mr", label: "Marathi" },
+  { code: "gu", label: "Gujarati" },
+  { code: "ur", label: "Urdu" },
+  { code: "ar", label: "Arabic" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "pt", label: "Portuguese" },
+  { code: "id", label: "Indonesian" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "zh", label: "Chinese" },
+];
+
+export const isLanguage = (c) => LANGUAGES.some((l) => l.code === String(c ?? ""));
+
+/**
+ * The language the pipeline should transcribe in.
+ * Env wins over config so a one-off run can override without editing settings.
+ */
+export function transcriptionLanguage() {
+  const env = process.env.FACTORY_LANGUAGE;
+  if (env && isLanguage(env)) return env;
+  if (env) return env; // an unlisted but valid ISO code is still worth honouring
+  const cfg = loadUserConfig();
+  return cfg.language || null;
+}
+
 export function loadUserConfig() {
   if (existsSync(CONFIG_PATH)) {
     try {

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
+import { videoArgs } from "../../shared/src/encoder.js";
 
 /**
  * Smart 16:9 -> 9:16 reframe.
@@ -20,7 +21,7 @@ import { loadEnv, repoRoot } from "../../shared/src/config.js";
  * signal is weak rather than guessing.
  */
 
-const ff = (args) => spawnSync("ffmpeg", args, { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 15 });
+const ff = (args) => spawnSync("ffmpeg", args, { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 90 });
 
 function probeSize(file) {
   const r = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration", "-of", "csv=p=0", file], { encoding: "utf8", windowsHide: true });
@@ -106,7 +107,7 @@ export async function reframe(argv = []) {
   mkdirSync(path.dirname(out), { recursive: true });
 
   console.log(`\nreframing ${det.w}x${det.h} -> 1080x1920, crop x=${x} (${focus})...`);
-  const r = ff(["-y", "-v", "error", "-i", file, "-vf", `crop=${det.cropW}:${det.h}:${x}:0,scale=1080:1920`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "copy", out]);
+  const r = ff(["-y", "-v", "error", "-i", file, "-vf", `crop=${det.cropW}:${det.h}:${x}:0,scale=1080:1920`, ...videoArgs(), "-movflags", "+faststart", "-c:a", "copy", out]);
   if (r.status !== 0 || !existsSync(out)) {
     console.error(`reframe FAILED: ${(r.stderr || "").slice(-200)}`);
     return false;

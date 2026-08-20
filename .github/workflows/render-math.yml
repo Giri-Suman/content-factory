@@ -1,0 +1,123 @@
+# =============================================================================
+#  Render a math short in the cloud. No laptop.
+# =============================================================================
+#  WHY MATH FIRST: it is the only job that needs NOTHING but a topic. Briefs,
+#  edits and produce all depend on local state in data/ that is not synced to
+#  the cloud, so they cannot run here yet. `factory math "<topic>"` writes its
+#  own Manim scene, renders it and is done - self-contained by construction.
+#
+#  It is also the job worth moving: ~11 minutes of full-tilt CPU on a 2-core
+#  15W laptop, measured across four runs. That is the single largest block of
+#  laptop time in the system.
+#
+#  MINUTES: on a PRIVATE repo this competes with trend collection for 2000
+#  free minutes a month. On a PUBLIC repo Actions minutes are unlimited, which
+#  is the only reason rendering here is worth doing at all - a 2-core runner is
+#  not faster than the laptop, it is just not the laptop.
+#
+#  The result is pushed to R2, so it appears on the public page without anyone
+#  touching this machine.
+# =============================================================================
+
+name: render math short
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Math topic (e.g. "why 0.999... equals 1")'
+        required: true
+        type: string
+      demo:
+        description: "Render the bundled demo instead (ignores topic, needs no AI key)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: render-math
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # ~5x the measured 11min local; a hung render must not burn the budget
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Manim needs cairo and pango headers; ffmpeg is already on the image.
+      - name: System dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libcairo2-dev libpango1.0-dev pkg-config
+          ffmpeg -version | head -1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Manim
+        run: pip install --quiet manim
+
+      # Remotion + React live in the renderer workspace, not the root. Radar was
+      # dependency-free; rendering is not.
+      - name: Install renderer
+        working-directory: renderers/code-report
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Render
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FREE_MODEL: ${{ secrets.OPENROUTER_FREE_MODEL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          # No Intel iGPU on a runner, so the encoder must fall back to x264.
+          # encoder.js probes rather than trusting `-encoders`, so this is
+          # belt-and-braces rather than required.
+          FACTORY_FORCE_X264: "1"
+        run: |
+          if [ "${{ inputs.demo }}" = "true" ]; then
+            node packages/cli/bin/factory.js math gauss-sum --demo
+          else
+            node packages/cli/bin/factory.js math "${{ inputs.topic }}"
+          fi
+
+      # The render pushes itself to R2 on completion, but only if R2 is
+      # configured. Say plainly which happened rather than leaving it implied.
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "### Math short"
+            echo ""
+            if [ "${{ inputs.demo }}" = "true" ]; then echo "- demo scene"; else echo "- topic: **${{ inputs.topic }}**"; fi
+            if [ -d renders ]; then
+              echo "- outputs:"
+              find renders -name '*.mp4' -newermt '-2 hours' -printf '  - `%p` (%sB)\n' 2>/dev/null || true
+            else
+              echo "- no renders/ directory - the render did not complete"
+            fi
+            if [ -z "${{ secrets.R2_BUCKET }}" ]; then
+              echo ""
+              echo "R2 is not configured as a secret, so the video stays on this runner and is DELETED when it exits."
+              echo "Add R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET to keep it."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Without R2 the video would vanish with the runner. An artifact is the
+      # fallback so a run is never wasted.
+      - name: Upload as artifact (fallback if R2 is unset)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: math-short
+          path: renders/**/*.mp4
+          if-no-files-found: warn
+          retention-days: 7

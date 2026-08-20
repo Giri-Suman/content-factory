@@ -18,6 +18,10 @@ export default function SettingsPage() {
   const [config, setConfig] = useState(null);
   const [env, setEnv] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [language, setLanguage] = useState("");
+  const [languages, setLanguages] = useState([]);
+  const [edit, setEdit] = useState({});
+  const [editOptions, setEditOptions] = useState([]);
   const [quotaToday, setQuotaToday] = useState(0);
   const [jobruns, setJobruns] = useState([]);
   const [keywords, setKeywords] = useState("");
@@ -41,6 +45,10 @@ export default function SettingsPage() {
         setFlags(d.flags || null);
         setAiTiers(d.aiTiers || null);
         setSvcTiers(d.serviceTiers || null);
+        setLanguage(d.language ?? "");
+        setEdit(d.edit || {});
+        setEditOptions(d.editOptions || []);
+        setLanguages(d.languages || []);
       });
   }, []);
 
@@ -368,6 +376,59 @@ export default function SettingsPage() {
           </table>
         )}
       </div>
+      <section className="card" style={{ marginBottom: 18 }}>
+      <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>Auto-edit</h2>
+      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 12px" }}>
+      What the editor does to your footage. A command-line flag still overrides
+      any of these for a single run.
+      </p>
+      {editOptions.map((o) => (
+      <label key={o.key} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid var(--border)", cursor: "pointer" }}>
+      <input
+      type="checkbox"
+      checked={edit[o.key] !== false}
+      onChange={(e) => {
+      const next = { ...edit, [o.key]: e.target.checked };
+      setEdit(next);
+      put({ edit: next });
+      }}
+      style={{ marginTop: 3 }}
+      />
+      <span>
+      <strong style={{ fontSize: 13 }}>{o.label}</strong>
+      <span className="muted" style={{ display: "block", fontSize: 12 }}>{o.help}</span>
+      </span>
+      </label>
+      ))}
+      </section>
+
+      <section className="card" style={{ marginBottom: 18 }}>
+      <h2 style={{ fontSize: 15, margin: "0 0 4px" }}>Spoken language</h2>
+      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 10px" }}>
+      What language your footage is in. Whisper can auto-detect, but the smaller
+      models are English-biased — a Bengali clip was detected correctly and then
+      transcribed into English nonsense. Set this and captions get much better.
+      </p>
+      <select
+      value={language}
+      onChange={(e) => {
+      setLanguage(e.target.value);
+      put({ language: e.target.value });
+      }}
+      style={{ padding: "8px 10px", borderRadius: 7, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", fontSize: 13, minWidth: 260 }}
+      >
+      {languages.map((l) => (
+      <option key={l.code || "auto"} value={l.code}>{l.label}</option>
+      ))}
+      </select>
+      {language && language !== "en" && (
+      <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+      For {language}, raise <strong>Transcription</strong> below to <strong>best</strong>.
+      The default base model is not usable for non-English audio.
+      </p>
+      )}
+      </section>
+
     </div>
   );
 }
