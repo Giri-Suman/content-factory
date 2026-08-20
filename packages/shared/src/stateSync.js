@@ -75,6 +75,44 @@ export function stateFiles() {
  * Most of these change rarely, so a sync is usually a handful of small PUTs
  * rather than 71.
  */
+/**
+ * Commands the always-on portal can offer, as data.
+ *
+ * Workers cannot import this repo's ESM modules, so the registry is published
+ * as JSON alongside the state. Generated from COMMANDS on every push, which is
+ * what stops the page and the CLI drifting apart - a button that appears and
+ * then fails is worse than a missing button.
+ *
+ * `laptop` marks the ones that spawn ffmpeg, Chrome, Manim or whisper. Those
+ * are not hidden: the portal queues them and says when they will run.
+ */
+const LAPTOP_IDS = new Set([
+  "render", "produce", "math", "edit", "reframe", "longform", "shorts", "steps",
+  "thumbnails", "batch", "motion", "dryrun", "capture", "qc", "tools",
+]);
+
+async function pushCommandManifest() {
+  const { COMMANDS, STAGES, keyOf } = await import("./commands.js");
+  const manifest = {
+    at: new Date().toISOString(),
+    stages: STAGES,
+    commands: COMMANDS.map((c) => ({
+      key: keyOf(c),
+      label: c.label,
+      desc: c.desc,
+      stage: c.stage,
+      cat: c.cat,
+      argKind: c.argKind || null,
+      argLabel: c.argLabel || null,
+      slow: Boolean(c.slow),
+      danger: c.danger || null,
+      laptop: LAPTOP_IDS.has(c.id),
+    })),
+  };
+  await putObject(`${PREFIX}/_commands.json`, JSON.stringify(manifest, null, 2), { contentType: "application/json" });
+  return manifest.commands.length;
+}
+
 export async function pushState({ force = false } = {}) {
   if (!isConfigured()) throw new Error("R2 is not configured");
   const remote = new Map((await listObjects(`${PREFIX}/`)).map((o) => [o.key, o]));
@@ -104,7 +142,8 @@ export async function pushState({ force = false } = {}) {
   };
   await putObject(`${PREFIX}/_manifest.json`, JSON.stringify(manifest, null, 2), { contentType: "application/json" });
 
-  return { pushed, skipped, total: files.length };
+  const commands = await pushCommandManifest();
+  return { pushed, skipped, total: files.length, commands };
 }
 
 /**

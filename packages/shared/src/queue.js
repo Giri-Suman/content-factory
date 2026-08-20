@@ -36,25 +36,29 @@ import { deleteObject, isConfigured, listObjects, putObject } from "./r2.js";
  * anything that spends real money or publishes is NOT here and should not be.
  */
 export const JOB_KINDS = {
-  math: {
-    label: "Math short",
-    input: "topic",
-    describe: (j) => `math short: ${j.input}`,
-    maxInput: 200,
-  },
-  brief: {
-    label: "Brief an idea",
-    input: "topic",
-    describe: (j) => `brief: ${j.input}`,
-    maxInput: 200,
-  },
-  edit: {
-    label: "AI Cut footage from the inbox",
-    input: "file name in data/footage",
-    describe: (j) => `edit: ${j.input}`,
-    maxInput: 300,
-  },
+  math: { label: "Math short", input: "topic", describe: (j) => `math short: ${j.input}`, maxInput: 200 },
+  brief: { label: "Brief an idea", input: "topic", describe: (j) => `brief: ${j.input}`, maxInput: 200 },
+  edit: { label: "AI Cut footage", input: "file name in data/footage", describe: (j) => `edit: ${j.input}`, maxInput: 300 },
 };
+
+/**
+ * ANY registry command can be queued, not just the three above.
+ *
+ * The portal at factory.coderfact.com is always up, but half its commands spawn
+ * ffmpeg, Chrome, Manim or whisper and therefore need the laptop. Rather than
+ * greying those out, they are QUEUED: the page says what will happen and when,
+ * and the laptop runs them the next time it wakes.
+ *
+ * SAFETY IS UNCHANGED. A queue entry still cannot name a command — `cmd` is a
+ * registry KEY, validated against the table, and argv is rebuilt locally from
+ * that key. A hostile write can request a video about a rude topic; it cannot
+ * request a shell.
+ *
+ * Deliberately NOT queueable: `publish --go` (the one real upload, kept a
+ * manual terminal action), `worker` (a daemon), and `auth-youtube` (interactive
+ * OAuth). Those are excluded by the registry itself, which never lists them.
+ */
+export const COMMAND_KIND = "command";
 
 const PREFIX = "queue";
 const STATES = ["pending", "running", "done", "failed"];
@@ -62,25 +66,42 @@ const STATES = ["pending", "running", "done", "failed"];
 const keyFor = (state, id) => `${PREFIX}/${state}/${id}.json`;
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
-/** Reject anything not on the allowlist, and cap input length. */
-const VERTICALS = new Set(["all", "beauty", "coding", "ai-automation", "math"]);
+/** Verticals a queued job can carry, so colour protection survives the queue. */
+export const VERTICALS = new Set(["all", "beauty", "makeup", "nails", "coding", "ai-automation", "math"]);
 
-export function validate({ kind, input, requestedBy, vertical }) {
-  const spec = JOB_KINDS[kind];
-  if (!spec) throw new Error(`unknown job kind "${kind}" — allowed: ${Object.keys(JOB_KINDS).join(", ")}`);
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+/**
+ * Validate a job.
+ *
+ * Two shapes, one record:
+ *   { kind: "command", cmd: "<registry key>" }  any of the 76 portal commands
+ *   { kind: "math"|"brief"|"edit", input }      the original three
+ *
+ * SAFETY IS THE SAME EITHER WAY. `cmd` is a registry KEY, never a command line;
+ * the drainer rebuilds argv locally from that key. A hostile write can ask for a
+ * video about a rude topic. It cannot ask for a shell.
+ */
+export function validate({ kind, input, requestedBy, cmd, vertical = "all" }) {
+  const who = String(requestedBy || "portal").slice(0, 40);
+  const v = VERTICALS.has(String(vertical)) ? String(vertical) : "all";
   const text = String(input ?? "").trim();
+
+  if (CONTROL.test(text)) throw new Error("input contains control characters");
+  if (text.length > 300) throw new Error("input too long (max 300 characters)");
+
+  if (kind === COMMAND_KIND) {
+    if (!cmd) throw new Error("a command job needs a registry key");
+    return { kind, cmd: String(cmd).slice(0, 60), input: text, requestedBy: who, vertical: v };
+  }
+
+  const spec = JOB_KINDS[kind];
+  if (!spec) throw new Error(`unknown job kind "${kind}" - allowed: ${Object.keys(JOB_KINDS).join(", ")}, ${COMMAND_KIND}`);
   if (!text) throw new Error(`"${kind}" needs ${spec.input}`);
   if (text.length > spec.maxInput) throw new Error(`input too long (max ${spec.maxInput} characters)`);
-  // Control characters would corrupt logs and could smuggle terminal escapes.
-  if (/[\u0000-\u001f\u007f]/.test(text)) throw new Error("input contains control characters");
-  return {
-    kind,
-    input: text,
-    requestedBy: String(requestedBy || "someone").slice(0, 40),
-    // Carried so a queued beauty edit keeps its colour protection. Without it
-    // the job runs as a generic edit and the saturation lock never applies.
-    vertical: VERTICALS.has(String(vertical)) ? String(vertical) : "all",
-  };
+  // Carried so a queued beauty edit keeps its colour protection - without it the
+  // job would run as a generic edit and the saturation lock would never apply.
+  return { kind, input: text, requestedBy: who, vertical: v };
 }
 
 export async function enqueue(job) {

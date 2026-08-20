@@ -135,6 +135,17 @@ function renderHtml({ groups, stats, generatedAt }) {
   .dl{color:var(--accent);text-decoration:none;border:1px solid var(--accent);border-radius:6px;padding:2px 10px}
   .dl:hover{background:var(--accent);color:#0d1117}
   .empty{max-width:1100px;margin:0 auto;color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:28px;text-align:center}
+  .cmds{max-width:1100px;margin:0 auto 14px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .stagebar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .cmd{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--border)}
+  .cmd .n{flex:1;min-width:0}
+  .cmd .n b{font-size:13px;color:var(--text);font-weight:600}
+  .cmd .n span{display:block;color:var(--muted);font-size:11.5px}
+  .lap{background:var(--border);color:var(--muted);border-radius:99px;padding:1px 7px;font-size:10.5px;white-space:nowrap}
+  .go{background:var(--accent);color:#0d1117;border:0;border-radius:6px;padding:4px 12px;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+  .go:disabled{opacity:.5}
+  #cmdmsg{margin-top:10px;font-size:13px}
+  #cmdmsg.ok{color:#3fb950} #cmdmsg.err{color:#f85149}
   .info{max-width:1100px;margin:0 auto 14px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
   .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
   .tab{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:99px;padding:4px 13px;font:inherit;font-size:12.5px;cursor:pointer}
@@ -177,6 +188,17 @@ function renderHtml({ groups, stats, generatedAt }) {
     Videos are deleted ${RETAIN_HOURS}h after they are made. Download anything you want to keep.
   </div>
 </header>
+
+<section class="cmds">
+  <h2 style="font-size:15px;margin:0 0 4px">Run something</h2>
+  <p class="muted" style="font-size:12.5px;margin:0 0 10px">
+    Everything the factory can do. Jobs marked <span class="lap">laptop</span> need that
+    machine - they are queued and run automatically the next time it wakes.
+  </p>
+  <div class="stagebar" id="stagebar"></div>
+  <div id="cmdlist" class="muted" style="font-size:13px">loading...</div>
+  <div id="cmdmsg"></div>
+</section>
 
 <section class="info">
   <div class="tabs">
@@ -302,6 +324,57 @@ ${groups.length ? `<div class="grid">${cards}</div>` : `<div class="empty">Nothi
     loadInfo(t.dataset.t);
   }));
   loadInfo('summary');
+
+  // The full command surface. Laptop jobs are queued rather than hidden - the
+  // page says what will happen and when, which is the whole point of it being
+  // reachable while that machine sleeps.
+  let CMDS = [], STAGE = 'find';
+  async function loadCommands() {
+    const list = document.getElementById('cmdlist');
+    try {
+      const j = await (await fetch('/api/commands', { cache: 'no-store' })).json();
+      if (!j.ok) throw new Error(j.error);
+      CMDS = j.commands;
+      const bar = document.getElementById('stagebar');
+      bar.innerHTML = Object.entries(j.stages).map(([k, lbl]) =>
+        '<button class="tab' + (k === STAGE ? ' on' : '') + '" data-s="' + k + '">' + esc2(lbl) + '</button>').join('');
+      bar.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+        STAGE = b.dataset.s;
+        bar.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+        b.classList.add('on');
+        renderCmds();
+      }));
+      renderCmds();
+    } catch (e) {
+      list.textContent = 'Commands unavailable (' + e.message + ').';
+    }
+  }
+  function renderCmds() {
+    const list = document.getElementById('cmdlist');
+    const rows = CMDS.filter(c => c.stage === STAGE);
+    list.innerHTML = rows.map(c =>
+      '<div class="cmd" data-k="' + esc2(c.key) + '">' +
+      '<span class="n"><b>' + esc2(c.label) + '</b><span>' + esc2(c.desc || '') + '</span></span>' +
+      (c.argKind ? '<input class="ai" placeholder="' + esc2(c.argLabel || c.argKind) + '" style="width:170px;padding:5px 8px;border-radius:6px;background:var(--bg);color:var(--text);border:1px solid var(--border);font:inherit;font-size:12px">' : '') +
+      (c.laptop ? '<span class="lap">laptop</span>' : '') +
+      '<button class="go">' + (c.laptop ? 'Queue' : 'Run') + '</button></div>').join('') || 'Nothing in this stage.';
+    list.querySelectorAll('.cmd').forEach(row => {
+      row.querySelector('.go').addEventListener('click', async () => {
+        const btn = row.querySelector('.go'), msg = document.getElementById('cmdmsg');
+        const input = row.querySelector('.ai')?.value || '';
+        btn.disabled = true; msg.className = ''; msg.textContent = 'queueing...';
+        try {
+          const r = await fetch('/api/commands', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ cmd: row.dataset.k, input, requestedBy: 'portal' }) });
+          const j = await r.json();
+          if (j.ok) { msg.className = 'ok'; msg.textContent = j.queued + ' - ' + j.message; refreshStatus(); }
+          else { msg.className = 'err'; msg.textContent = j.error; }
+        } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+        finally { btn.disabled = false; }
+      });
+    });
+  }
+  loadCommands();
 
   refreshStatus();
   // While something is running, a person WILL sit and watch this. 20s is often

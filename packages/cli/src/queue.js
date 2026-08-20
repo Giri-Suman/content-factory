@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { repoRoot } from "../../shared/src/config.js";
 import { JOB_KINDS, claim, complete, counts, enqueue, fail, list, requeueStuck } from "../../shared/src/queue.js";
+import { COMMANDS, argvFor, keyOf } from "../../shared/src/commands.js";
 import { isConfigured, missingConfig } from "../../shared/src/r2.js";
 import { beat } from "../../shared/src/status.js";
 import { resolveInInbox } from "./inbox.js";
@@ -41,9 +42,19 @@ const ARGV = {
 };
 
 function runJob(job) {
-  const build = ARGV[job.kind];
-  if (!build) throw new Error(`no runner for kind "${job.kind}"`);
-  const argv = build(job);
+  let argv;
+  if (job.kind === "command") {
+    /* A generic job carries a registry KEY. argv is rebuilt here from the
+       registry, never taken from the queue entry - which is what keeps a public
+       write surface from being able to name a command. */
+    const row = COMMANDS.find((c) => keyOf(c) === job.cmd);
+    if (!row) throw new Error(`queued command "${job.cmd}" is not in the registry`);
+    argv = argvFor(row, job.input || undefined);
+  } else {
+    const build = ARGV[job.kind];
+    if (!build) throw new Error(`no runner for kind "${job.kind}"`);
+    argv = build(job);
+  }
   const started = Date.now();
   const res = spawnSync(process.execPath, [CLI, ...argv], {
     cwd: repoRoot,
@@ -76,7 +87,7 @@ export async function queue(argv) {
       if (pending.length) {
         console.log("");
         for (const j of pending) {
-          console.log(`  ${pad(j.kind, 6)} ${pad(j.input.slice(0, 40), 42)} by ${pad(j.requestedBy, 12)} ${j.queuedAt.slice(0, 16).replace("T", " ")}`);
+          console.log(`  ${pad(j.cmd || j.kind, 16)} ${pad((j.input||"").slice(0, 32), 34)} by ${pad(j.requestedBy, 12)} ${j.queuedAt.slice(0, 16).replace("T", " ")}`);
         }
         console.log(`\n  run them:  factory queue drain`);
       }

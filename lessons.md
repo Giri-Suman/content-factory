@@ -1274,3 +1274,33 @@ and none of them implies the others - the local `.env`, GitHub Actions secrets,
 and a Cloudflare Pages binding. "I added the R2 keys" was true for two of the
 three, and the third failed with a message that did not obviously mean
 "different place".
+
+## Queue the laptop-bound work instead of hiding it
+
+**tried** — treating "the portal must be always available" as a hosting problem
+with three answers: keep the laptop awake, rent a server, or accept a read-only
+page.
+
+**broke** — all three were wrong because they assumed the portal is one thing.
+It is two: a surface people look at, and a machine that spawns ffmpeg. Splitting
+them gives a fourth answer that is better than any of the three — the surface
+lives on Pages (always up, free), and the 25 of 76 commands that genuinely need
+the laptop are QUEUED with a message saying when they will run.
+
+**rule** — when a capability cannot be available, check whether it can be
+*deferred* instead. "Queued, runs at about 20:00" is a working feature. A greyed
+out button is not, and neither is a portal that returns 530.
+
+Two things that made this safe rather than clever:
+- **A queue entry carries a registry KEY, never a command line.** The laptop
+  rebuilds argv from its own registry when it drains, so a public write surface
+  can request a video about a rude topic but cannot request a shell.
+- **The registry is published to R2 as data on every `sync push`.** Workers
+  cannot import the repo's ESM, and a hand-maintained copy would drift — a
+  button that appears and then fails is worse than a missing button.
+
+Cost of the region rewrite that enabled this: deleting a block of a file to
+replace it also deleted `PREFIX`, `STATES`, `keyFor` and `newId`, which lived
+between the two functions being replaced. Syntax checked fine; it failed at
+runtime on the first call. When cutting a range out of a file, list what was in
+the range before deciding the range is what you meant.
