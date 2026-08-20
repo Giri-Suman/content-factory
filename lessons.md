@@ -1246,3 +1246,31 @@ the cloud job.** Decisions made on a runner — a brief marked used, a new publi
 item — exist only there until pushed, and the laptop's next pull would silently
 overwrite them with older local state. `if: always()` so it happens even when
 the job failed.
+
+## Split reading from executing, and the always-on problem dissolves
+
+**tried** — treating "make factory.coderfact.com available 24/7" as a hosting
+question, and repeatedly concluding it could not be done without either keeping
+the laptop awake or renting a server.
+
+**broke** — the framing, not the facts. The portal cannot move to Cloudflare
+because 30 of its 37 routes spawn ffmpeg, Chrome, Manim or whisper, and Workers
+has no `child_process`. All of that is true and stays true. But it only applies
+to EXECUTING. Reading the factory's state needs none of it: briefs, clusters,
+publish items and scores are 71 JSON files totalling 3.3MB, and they are already
+synced to R2.
+
+**rule** — when something "cannot be always-on", separate the read path from the
+write path before accepting it. Here the answer was not one portal in a better
+place; it was two surfaces with different requirements — execution stays on the
+machine that has the binaries, information lives on a static page backed by
+object storage, always on and free.
+
+Worth noting how long that took to see: the same constraint had been restated
+several times across the session as though it were one indivisible problem.
+
+Practical trap this exposed: R2 credentials are needed in THREE separate places
+and none of them implies the others - the local `.env`, GitHub Actions secrets,
+and a Cloudflare Pages binding. "I added the R2 keys" was true for two of the
+three, and the third failed with a message that did not obviously mean
+"different place".

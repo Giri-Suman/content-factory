@@ -135,6 +135,16 @@ function renderHtml({ groups, stats, generatedAt }) {
   .dl{color:var(--accent);text-decoration:none;border:1px solid var(--accent);border-radius:6px;padding:2px 10px}
   .dl:hover{background:var(--accent);color:#0d1117}
   .empty{max-width:1100px;margin:0 auto;color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:28px;text-align:center}
+  .info{max-width:1100px;margin:0 auto 14px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:99px;padding:4px 13px;font:inherit;font-size:12.5px;cursor:pointer}
+  .tab.on{background:var(--accent);color:#0d1117;border-color:var(--accent);font-weight:600}
+  .kv{display:flex;gap:22px;flex-wrap:wrap}
+  .kv div{min-width:96px}
+  .kv b{display:block;font-size:19px;color:var(--text)}
+  .row{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:12.5px;align-items:baseline}
+  .row .t{flex:1;color:var(--text);min-width:0}
+  .row .s{color:var(--muted);font-size:11.5px;white-space:nowrap}
   .status{max-width:1100px;margin:0 auto 14px;display:flex;gap:12px;align-items:center;
     background:var(--panel);border:1px solid var(--border);border-left-width:4px;border-radius:10px;padding:13px 16px}
   .status strong{font-size:14px}
@@ -167,6 +177,15 @@ function renderHtml({ groups, stats, generatedAt }) {
     Videos are deleted ${RETAIN_HOURS}h after they are made. Download anything you want to keep.
   </div>
 </header>
+
+<section class="info">
+  <div class="tabs">
+    <button class="tab on" data-t="summary">Overview</button>
+    <button class="tab" data-t="briefs">Briefs</button>
+    <button class="tab" data-t="trends">What to make</button>
+  </div>
+  <div id="infobody" class="muted" style="font-size:13px">loading...</div>
+</section>
 
 <section id="status" class="status loading">
   <div class="dot"></div>
@@ -242,6 +261,48 @@ ${groups.length ? `<div class="grid">${cards}</div>` : `<div class="empty">Nothi
       detail.textContent = 'The video list below still works.';
     }
   }
+  // Live state from R2. This is what makes the factory's INFORMATION available
+  // with the laptop off - execution stays local, reading happens here.
+  const esc2 = (x) => String(x ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  async function loadInfo(which) {
+    const box = document.getElementById('infobody');
+    box.textContent = 'loading...';
+    try {
+      const r = await fetch('/api/info?of=' + which, { cache: 'no-store' });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'unavailable');
+      if (which === 'summary') {
+        const st = Object.entries(j.briefs.byStatus || {}).map(([k,v]) => k + ' ' + v).join(' · ');
+        box.innerHTML = '<div class="kv">' +
+          '<div><b>' + j.briefs.total + '</b>briefs</div>' +
+          '<div><b>' + j.clusters.scored + '</b>scored topics</div>' +
+          '<div><b>' + j.publishItems + '</b>publish items</div>' +
+          '<div><b>' + j.renderFiles + '</b>files stored</div>' +
+          '<div><b>' + j.queuePending + '</b>queued</div>' +
+          '</div>' + (st ? '<div style="margin-top:10px">' + esc2(st) + '</div>' : '');
+      } else if (which === 'briefs') {
+        box.innerHTML = j.briefs.length
+          ? j.briefs.map(b => '<div class="row"><span class="t">' + esc2(b.topic) +
+              (b.hook ? '<br><span class="s">' + esc2(String(b.hook).slice(0,90)) + '</span>' : '') +
+              '</span><span class="s">' + esc2(b.status || '') + (b.deadline ? ' · ' + esc2(String(b.deadline).slice(0,10)) : '') + '</span></div>').join('')
+          : 'No briefs yet.';
+      } else {
+        box.innerHTML = j.clusters.length
+          ? j.clusters.map(c => '<div class="row"><span class="t">' + esc2(c.label) + '</span><span class="s">' +
+              esc2(c.category || '') + ' · score ' + Math.round(c.score) + '</span></div>').join('')
+          : 'No scored topics yet.';
+      }
+    } catch (e) {
+      box.textContent = 'Information unavailable (' + e.message + '). Videos below still work.';
+    }
+  }
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    loadInfo(t.dataset.t);
+  }));
+  loadInfo('summary');
+
   refreshStatus();
   // While something is running, a person WILL sit and watch this. 20s is often
   // enough to feel live without hammering the endpoint.
