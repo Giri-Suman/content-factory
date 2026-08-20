@@ -113,6 +113,39 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "inbox": {
+    const { inbox } = await import("../src/inbox.js");
+    try {
+      const ok = await inbox(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "queue": {
+    const { queue } = await import("../src/queue.js");
+    try {
+      const ok = await queue(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
+  case "viewer": {
+    const { viewer } = await import("../src/viewer.js");
+    try {
+      const ok = await viewer(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "r2": {
     const { r2 } = await import("../src/r2.js");
     try {

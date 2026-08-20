@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { readConfig, writeConfig, readEnvKeys, repoRoot, envSet } from "../../../lib/factory.js";
-import { loadEnv } from "../../../../../packages/shared/src/config.js";
+import { EDIT_DEFAULTS, EDIT_OPTIONS, LANGUAGES, isLanguage, loadEnv } from "../../../../../packages/shared/src/config.js";
 import {
   DEFAULT_SERVICE_TIERS,
   DEFAULT_TIERS,
@@ -67,6 +67,10 @@ export async function GET() {
       tierMeta: TIER_META,
       availability: tierAvailability(),
     },
+    language: config.language || "",
+    edit: { ...EDIT_DEFAULTS, ...(config.edit || {}) },
+    editOptions: EDIT_OPTIONS,
+    languages: LANGUAGES,
     serviceTiers: {
       assigned: { ...DEFAULT_SERVICE_TIERS, ...(config.serviceTiers || {}) },
       tierNames: TIER_NAMES,
@@ -103,6 +107,22 @@ export async function PUT(request) {
     config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
   }
   if (typeof body.autoTune === "boolean") config.autoTune = body.autoTune;
+
+  /* Transcription language. Validated against the known list so the settings
+     endpoint cannot inject an arbitrary string into a whisper command line. */
+  /* Edit toggles. Only known keys, only booleans - the settings endpoint must
+     not be able to write arbitrary shapes into the config the pipeline reads. */
+  if (body.edit && typeof body.edit === "object") {
+    config.edit = { ...(config.edit || {}) };
+    for (const o of EDIT_OPTIONS) {
+      if (typeof body.edit[o.key] === "boolean") config.edit[o.key] = body.edit[o.key];
+    }
+  }
+
+  if (typeof body.language === "string") {
+    const l = body.language.trim().toLowerCase().slice(0, 5);
+    if (isLanguage(l)) config.language = l;
+  }
   // canonicalTier accepts the legacy budget/premium names and normalises them,
   // so an older client can't persist a tier the resolver would silently read
   // as "free". Keys come from the registry, not a second hardcoded list.

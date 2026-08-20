@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { findChrome } from "../../shared/src/chrome.js";
+import { videoArgs } from "../../shared/src/encoder.js";
 
 /**
  * Step callouts ("Step 2 of 5 — blend the crease") burned onto real footage.
@@ -143,7 +144,7 @@ export async function burnSteps(argv = []) {
   console.log(`burning onto ${path.basename(file)}...`);
   const r = spawnSync(
     "ffmpeg",
-    ["-y", "-v", "error", ...inputs, "-filter_complex", chain, "-map", "[out]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-movflags", "+faststart", "-c:a", "copy", outFile],
+    ["-y", "-v", "error", ...inputs, "-filter_complex", chain, "-map", "[out]", "-map", "0:a?", ...videoArgs({ source: "render" }), "-movflags", "+faststart", "-c:a", "copy", outFile],
     { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 20 }
   );
   if (r.status !== 0 || !existsSync(outFile)) {

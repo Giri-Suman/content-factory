@@ -1,4 +1,5 @@
 import { assertCommercialSafe } from "../../shared/src/licenses.js";
+import { loadEnv as loadEnvSync } from "../../shared/src/config.js";
 
 /**
  * Four-tier AI. Every AI feature picks a TIER, not a provider — you choose
@@ -94,6 +95,18 @@ export function tierChain(tier) {
     // $0.18/M out: a capable reasoning model for ~3 hundredths of a cent per
     // call, which makes it the correct default for anything high-volume.
     cheap: [
+      {
+        /* xAI (Grok). A paid key that simply answers, versus OpenRouter's free
+           pool which is per-model rate limited and runs out mid-run - a real
+           edit fell back to heuristics with "Rate limit exceeded:
+           free-models-per-day" and produced 0 filler cuts. Placed ahead of the
+           paid OpenRouter options because it is one hop fewer. */
+        provider: "xai",
+        model: env.XAI_SCORING_MODEL || "grok-4-fast",
+        needs: () => Boolean(env.XAI_API_KEY),
+        costPerCall: 0.0004,
+        label: "Grok 4 Fast (xAI)",
+      },
       {
         provider: "openrouter",
         model: env.OPENROUTER_CHEAP_MODEL || env.OPENROUTER_BUDGET_MODEL || "deepseek/deepseek-v4-flash-0731",
@@ -230,7 +243,14 @@ export const SERVICES = {
       free: [{ id: "whisper-base", licenseId: "faster-whisper", label: "whisper base (local)", model: "base", costPerMin: 0, needs: () => true }],
       cheap: [{ id: "whisper-small", licenseId: "faster-whisper", label: "whisper small (local, better)", model: "small", costPerMin: 0, needs: () => true }],
       medium: [{ id: "whisper-medium", licenseId: "faster-whisper", label: "whisper medium (local)", model: "medium", costPerMin: 0, needs: () => true }],
-      best: [{ id: "whisper-large", licenseId: "faster-whisper", label: "whisper large-v3 (local, best)", model: "large-v3", costPerMin: 0, needs: () => true }],
+      best: [
+        /* Groq FIRST when a key is present: the same large-v3 weights, seconds
+           instead of ~2.9 hours for a 60-minute video on this 2-core CPU. It is
+           the only option here that leaves the machine, so it requires an
+           explicit key — it can never be reached by accident. */
+        { id: "groq-large-v3", licenseId: "faster-whisper", label: "whisper large-v3 (Groq, fast, UPLOADS AUDIO)", model: "large-v3", costPerMin: 0, cloud: true, needs: () => Boolean(process.env.GROQ_API_KEY) },
+        { id: "whisper-large", licenseId: "faster-whisper", label: "whisper large-v3 (local, best)", model: "large-v3", costPerMin: 0, needs: () => true },
+      ],
     },
   },
 };
@@ -238,7 +258,26 @@ export const SERVICES = {
 export const DEFAULT_SERVICE_TIERS = { voice: "free", image: "free", transcribe: "free" };
 
 /** Resolve a service to its usable option, degrading DOWN to free. */
+/**
+ * This repo does not auto-load `.env`; each entry point calls loadEnv() itself.
+ * `needs()` predicates read process.env, so without this a perfectly good key is
+ * invisible and the tier silently resolves to a lesser option — the same failure
+ * R2 hit ("not configured" with a correct .env). Memoised: the answer cannot
+ * change within a run.
+ */
+let _envLoaded = false;
+function ensureEnv() {
+  if (_envLoaded) return;
+  _envLoaded = true;
+  try {
+    loadEnvSync();
+  } catch {
+    /* no .env is a supported state */
+  }
+}
+
 export function resolveService(service, tiers = {}) {
+  ensureEnv();
   const spec = SERVICES[service];
   if (!spec) throw new Error(`unknown service ${service}`);
   const chosen = canonicalTier(tiers[service]) || DEFAULT_SERVICE_TIERS[service];

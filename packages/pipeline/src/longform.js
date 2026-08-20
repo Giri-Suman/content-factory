@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
+import { videoArgs } from "../../shared/src/encoder.js";
 
 /**
  * Long-form -> Shorts miner, for YOUR OWN local footage.
@@ -16,7 +17,7 @@ import { loadEnv, repoRoot } from "../../shared/src/config.js";
  * opening, which is what makes a clip feel like it begins on purpose.
  */
 
-const run = (args) => spawnSync("ffmpeg", args, { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 20 });
+const run = (args) => spawnSync("ffmpeg", args, { encoding: "utf8", windowsHide: true, timeout: 1000 * 60 * 90 });
 
 /**
  * Usable duration = the SHORTER of the video and audio streams. A file whose
@@ -117,7 +118,7 @@ export async function mineLongform(argv = []) {
   for (const [i, p] of picks.entries()) {
     const out = path.join(outDir, `clip-${i + 1}.mp4`);
     const vf = argv.includes("--keep-wide") ? "scale=1920:1080" : "crop=ih*9/16:ih,scale=1080:1920";
-    const r = run(["-y", "-v", "error", "-ss", String(p.start), "-t", String(clipSec), "-i", file, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", "-c:a", "aac", out]);
+    const r = run(["-y", "-v", "error", "-ss", String(p.start), "-t", String(clipSec), "-i", file, "-vf", vf, ...videoArgs(), "-movflags", "+faststart", "-c:a", "aac", out]);
     if (r.status === 0 && existsSync(out)) made.push(out);
   }
 

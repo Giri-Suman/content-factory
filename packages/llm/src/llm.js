@@ -51,11 +51,13 @@ export function providerStatus() {
   const anthropic = Boolean(process.env.ANTHROPIC_API_KEY);
   const openrouter = Boolean(process.env.OPENROUTER_API_KEY);
   const ollama = Boolean(process.env.OLLAMA_MODEL);
+  const xai = Boolean(process.env.XAI_API_KEY);
   return {
     active: resolveProvider(),
     anthropic,
     openrouter,
     ollama,
+    xai,
     freeTierReady: ollama || openrouter,
     scoringModel: modelFor("score"),
     scriptModel: modelFor("script"),
@@ -116,6 +118,42 @@ async function openrouterChat({ system, user, maxTokens, model }) {
   return text;
 }
 
+/**
+ * xAI (Grok). OpenAI-compatible, so this mirrors openrouterChat almost exactly.
+ *
+ * WHY IT EARNS A SLOT: OpenRouter's free pool is per-model rate limited and runs
+ * out — a real edit fell back to heuristics mid-run with
+ * "Rate limit exceeded: free-models-per-day", producing 0 filler cuts and a
+ * template brief. A paid key that simply answers is worth more than a free one
+ * that answers most days.
+ *
+ * NOT to be confused with Groq (transcription). Different company, one letter
+ * apart: xAI keys start `xai-`, Groq keys start `gsk_`.
+ */
+async function xaiChat({ system, user, maxTokens, model }) {
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.XAI_API_KEY}`,
+      "content-type": "application/json",
+    },
+    signal: AbortSignal.timeout(300000),
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`xai ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error(`xai: empty response (${JSON.stringify(data).slice(0, 200)})`);
+  return text;
+}
+
 async function ollamaChat({ system, user, model }) {
   const base = process.env.OLLAMA_URL || "http://localhost:11434";
   const res = await fetch(`${base}/api/chat`, {
@@ -137,7 +175,7 @@ async function ollamaChat({ system, user, model }) {
   return data.message.content;
 }
 
-const CALLERS = { anthropic: anthropicChat, openrouter: openrouterChat, ollama: ollamaChat };
+const CALLERS = { anthropic: anthropicChat, openrouter: openrouterChat, ollama: ollamaChat, xai: xaiChat };
 
 /** Per-task tier assignment from data/config.json (Settings UI writes it). */
 function configuredTiers() {
