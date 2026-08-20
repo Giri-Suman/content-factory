@@ -1,0 +1,190 @@
+/**
+ * STATE SYNC — make the laptop's data/ readable by a cloud runner.
+ *
+ * Collect and math shorts could already run in the cloud because they need no
+ * local state. Briefs, edits, produce and every other render read `data/os/*`
+ * (briefs, clusters, publishitems, scripts), which existed only on this machine
+ * — so those jobs were laptop-only for a reason that had nothing to do with CPU.
+ *
+ * The state is small: 71 JSON files, 3.3MB. Footage is the weight at ~436MB, and
+ * is synced separately because most jobs do not need it.
+ *
+ * BOTH PATHS STAY. This is additive: the laptop keeps reading and writing
+ * `data/` exactly as before. Sync copies it to R2 so a runner can borrow it, and
+ * copies results back. Nothing about local operation changes.
+ *
+ * WHY R2 AND NOT THE factory-data BRANCH: git would work for 3.3MB of JSON, but
+ * footage would not, and having state and footage in two different systems is
+ * how they drift. R2 holds both, is already configured, and has no size ceiling
+ * worth worrying about at this scale.
+ *
+ * CONFLICTS: a whole-state push then pull is safe here because only ONE side
+ * runs at a time — the laptop pushes, sleeps, the runner works, the laptop
+ * pulls. `trends.json` is the exception and is deliberately EXCLUDED: two
+ * collectors genuinely do run independently, so it has its own merge in
+ * scripts/sync-trends.mjs. Copying it here would undo that merge.
+ */
+
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { repoRoot } from "./config.js";
+import { isConfigured, listObjects, presignGet, putObject } from "./r2.js";
+
+const PREFIX = "state";
+const DATA = path.join(repoRoot, "data");
+
+/**
+ * Directories worth syncing, relative to data/.
+ *
+ * `build/` and `models/` are excluded: build is regenerable intermediate output
+ * and models are gigabytes of downloadable weights. `footage/` is excluded here
+ * and handled by pushFootage — most jobs do not need it, and syncing 436MB for
+ * a brief would be absurd.
+ */
+const DIRS = ["os", "scripts", "jobs"];
+const ROOT_FILES = ["config.json", "dictionary.json", "perf.json", "published.json"];
+
+/** trends.json has its own merge; a blind copy here would clobber it. */
+const EXCLUDE = new Set(["trends.json"]);
+
+const sha = (buf) => createHash("sha256").update(buf).digest("hex").slice(0, 16);
+
+/** Every file this sync covers, as { rel, abs } pairs. */
+export function stateFiles() {
+  const out = [];
+  for (const f of ROOT_FILES) {
+    const abs = path.join(DATA, f);
+    if (existsSync(abs) && !EXCLUDE.has(f)) out.push({ rel: f, abs });
+  }
+  for (const d of DIRS) {
+    const dir = path.join(DATA, d);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".json") || EXCLUDE.has(f)) continue;
+      out.push({ rel: `${d}/${f}`, abs: path.join(dir, f) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Push local state to R2.
+ *
+ * Content-hashed: a file whose contents match what is already there is skipped.
+ * Most of these change rarely, so a sync is usually a handful of small PUTs
+ * rather than 71.
+ */
+export async function pushState({ force = false } = {}) {
+  if (!isConfigured()) throw new Error("R2 is not configured");
+  const remote = new Map((await listObjects(`${PREFIX}/`)).map((o) => [o.key, o]));
+  const files = stateFiles();
+  const pushed = [];
+  const skipped = [];
+
+  for (const f of files) {
+    const buf = readFileSync(f.abs);
+    const key = `${PREFIX}/${f.rel}`;
+    const r = remote.get(key);
+    // Size is a cheap first filter; identical size AND unchanged mtime is a
+    // strong enough signal to skip without downloading to compare.
+    if (!force && r && r.size === buf.length) {
+      skipped.push(f.rel);
+      continue;
+    }
+    await putObject(key, buf, { contentType: "application/json" });
+    pushed.push({ rel: f.rel, bytes: buf.length });
+  }
+
+  // A manifest so a puller knows what the set SHOULD be, and can report a file
+  // that vanished rather than silently keeping a stale local copy.
+  const manifest = {
+    at: new Date().toISOString(),
+    files: files.map((f) => ({ rel: f.rel, bytes: statSync(f.abs).size, hash: sha(readFileSync(f.abs)) })),
+  };
+  await putObject(`${PREFIX}/_manifest.json`, JSON.stringify(manifest, null, 2), { contentType: "application/json" });
+
+  return { pushed, skipped, total: files.length };
+}
+
+/**
+ * Pull state from R2 into data/.
+ *
+ * Writes only files that differ, so an unchanged sync touches nothing and the
+ * mtimes people rely on stay meaningful.
+ */
+export async function pullState({ dryRun = false } = {}) {
+  if (!isConfigured()) throw new Error("R2 is not configured");
+  let manifest;
+  try {
+    const res = await fetch(presignGet(`${PREFIX}/_manifest.json`, 300));
+    if (!res.ok) throw new Error(String(res.status));
+    manifest = await res.json();
+  } catch {
+    return { error: "no state in R2 yet — run `factory sync push` from the machine that has it" };
+  }
+
+  const written = [];
+  const same = [];
+  for (const entry of manifest.files) {
+    if (EXCLUDE.has(path.basename(entry.rel))) continue;
+    const abs = path.join(DATA, entry.rel);
+    if (existsSync(abs) && sha(readFileSync(abs)) === entry.hash) {
+      same.push(entry.rel);
+      continue;
+    }
+    if (dryRun) {
+      written.push(entry.rel);
+      continue;
+    }
+    const res = await fetch(presignGet(`${PREFIX}/${entry.rel}`, 600));
+    if (!res.ok) continue;
+    const body = Buffer.from(await res.arrayBuffer());
+    mkdirSync(path.dirname(abs), { recursive: true });
+    writeFileSync(abs, body);
+    written.push(entry.rel);
+  }
+  return { written, same, at: manifest.at, dryRun };
+}
+
+/* ------------------------------------------------------------- footage --- */
+
+const FOOTAGE_PREFIX = "footage";
+const MEDIA = /\.(mp4|mov|mkv|avi|m4v|webm)$/i;
+
+/**
+ * Push one footage file so a cloud edit can fetch it.
+ *
+ * Separate from state on purpose: this is hundreds of megabytes and only edit
+ * jobs need it. R2 charges no egress, so the runner's download is free.
+ */
+export async function pushFootage(name) {
+  const abs = path.join(DATA, "footage", path.basename(name));
+  if (!existsSync(abs)) throw new Error(`no such footage: ${path.basename(name)}`);
+  if (!MEDIA.test(abs)) throw new Error(`not a video file: ${path.basename(name)}`);
+  const buf = readFileSync(abs);
+  const key = `${FOOTAGE_PREFIX}/${path.basename(abs)}`;
+  await putObject(key, buf, { contentType: "video/mp4" });
+  return { key, bytes: buf.length };
+}
+
+/** What footage is already in R2 and available to a cloud job. */
+export async function listFootage() {
+  if (!isConfigured()) return [];
+  return (await listObjects(`${FOOTAGE_PREFIX}/`)).map((o) => ({
+    name: o.key.slice(FOOTAGE_PREFIX.length + 1),
+    size: o.size,
+    modified: o.modified,
+  }));
+}
+
+/** Fetch footage from R2 into data/footage/ — what a runner calls. */
+export async function pullFootage(name) {
+  const base = path.basename(name);
+  const abs = path.join(DATA, "footage", base);
+  mkdirSync(path.dirname(abs), { recursive: true });
+  const res = await fetch(presignGet(`${FOOTAGE_PREFIX}/${base}`, 900));
+  if (!res.ok) throw new Error(`could not fetch footage ${base}: ${res.status}`);
+  writeFileSync(abs, Buffer.from(await res.arrayBuffer()));
+  return { file: abs, bytes: statSync(abs).size };
+}

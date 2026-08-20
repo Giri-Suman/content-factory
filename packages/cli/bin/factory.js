@@ -113,6 +113,17 @@ switch (cmd) {
     process.exit(ok ? 0 : 1);
     break;
   }
+  case "sync": {
+    const { sync } = await import("../src/sync.js");
+    try {
+      const ok = await sync(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "inbox": {
     const { inbox } = await import("../src/inbox.js");
     try {

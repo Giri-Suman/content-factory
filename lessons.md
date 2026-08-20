@@ -1221,3 +1221,28 @@ explicitly, and cross-reference each other.
 xAI slots in as the FIRST option in the `cheap` tier rather than `free`, because
 it is paid — a paid option in a tier labelled free would quietly spend money.
 Verified the free tier is unchanged and xai leads cheap only when the key exists.
+
+## What kept jobs laptop-only was STATE, not CPU
+
+**tried** — assuming briefs, edits and renders could not move to the cloud
+because they are heavy.
+
+**broke** — the assumption. They were laptop-only because they read
+`data/os/*` — briefs, clusters, publishitems, scripts — which existed on one
+machine. Measured: **71 JSON files, 3.3MB.** That is the entire reason those
+jobs could not run anywhere else. Math shorts moved months' worth of CPU to the
+cloud only because they happen to need no state at all.
+
+**rule** — when something "cannot" move to another environment, separate the
+compute reason from the data reason before accepting it. Here the data was
+trivial to move and the compute was never the obstacle.
+
+Footage is the genuine weight (436MB) and is synced per file, on demand, only
+for the jobs that need it. R2's zero egress means the runner's download costs
+nothing, which is what makes this viable at all.
+
+The step that is easy to omit and expensive to forget: **push state BACK after
+the cloud job.** Decisions made on a runner — a brief marked used, a new publish
+item — exist only there until pushed, and the laptop's next pull would silently
+overwrite them with older local state. `if: always()` so it happens even when
+the job failed.
