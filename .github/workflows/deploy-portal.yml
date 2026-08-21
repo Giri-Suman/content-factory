@@ -1,0 +1,83 @@
+# Build and deploy Mission Control to Cloudflare Pages.
+#
+# WHY THIS RUNS IN CI AND NOT ON THE LAPTOP: two reasons, one practical and one
+# architectural.
+#
+#   1. `vercel build` deduplicates identical functions with symlinks, and Windows
+#      refuses to create symlinks unless Developer Mode is on — the local build
+#      compiles perfectly and then dies with EPERM. Linux has no such limit.
+#   2. The point of this portal is that it does not depend on one machine being
+#      awake. A deploy that only worked from that machine would put the
+#      dependency straight back.
+#
+# The build output is ALWAYS uploaded as an artifact, so the portal can be
+# shipped with `wrangler pages deploy` from an already-authenticated machine
+# before any API token exists. The deploy step here is the automated path and
+# skips itself when the token is absent, rather than failing the run.
+#
+# SAFETY: --project-name is passed explicitly and is "content-factory-viewer",
+# never "coderfact". This workflow cannot touch the portfolio site.
+
+name: Deploy portal
+
+on:
+  push:
+    branches: [master, portal-on-pages]
+    paths:
+      - "apps/mission-control/**"
+      - "packages/shared/**"
+      - ".github/workflows/deploy-portal.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-portal
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Build for Cloudflare Pages
+        working-directory: apps/mission-control
+        env:
+          # opts out of `output: "standalone"`, which is only for the laptop portal
+          FACTORY_TARGET: pages
+        run: npx @cloudflare/next-on-pages
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-build
+          path: apps/mission-control/.vercel/output/static
+          retention-days: 7
+          include-hidden-files: true
+
+      - name: Deploy
+        id: deploy
+        if: ${{ github.ref_name == 'master' }}
+        working-directory: apps/mission-control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "No CLOUDFLARE_API_TOKEN secret — skipping deploy."
+            echo "Download the 'portal-build' artifact and run, from an authenticated machine:"
+            echo "  npx wrangler pages deploy <dir> --project-name=content-factory-viewer --branch=main"
+            exit 0
+          fi
+          npx wrangler pages deploy .vercel/output/static \
+            --project-name=content-factory-viewer \
+            --branch=main \
+            --commit-dirty=true

@@ -1,34 +1,28 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Generate thumbnails for a render.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 
-export function GET() {
-  const thumbs = os("thumbnails").map((t) => ({
-    briefId: t.briefId,
-    renderId: `brief-${t.briefId.slice(0, 10)}`,
-    variants: (t.variants || []).map((v) => v.layout),
-    judged: t.judged || [],
-    copy: t.copy,
-    at: t.at,
-  }));
-  return NextResponse.json({ thumbnails: thumbs.sort((a, b) => (b.at || "").localeCompare(a.at || "")) });
-}
+export const runtime = "edge";
 
-// POST {briefId} -> (re)generate + judge thumbnails
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function POST(request) {
-  const { briefId } = await request.json();
-  if (!briefId) return NextResponse.json({ ok: false, error: "missing briefId" }, { status: 400 });
-  const { code, out } = await runCli(["thumbnails", briefId], 120000);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const arg = String(body.renderId || body.id || "").trim();
+  try {
+    const r = await enqueue(env, { cmd: "thumbnails", arg, requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
+  }
 }

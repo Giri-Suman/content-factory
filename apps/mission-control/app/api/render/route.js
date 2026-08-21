@@ -1,16 +1,28 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { scriptsDir, startJob } from "../../../lib/factory.js";
+/**
+ * Render a brief into video.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-// POST {id} -> kicks off a render job for data/scripts/<id>.json
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function POST(request) {
-  const { id } = await request.json();
-  const safeId = path.basename(String(id || "")).replace(/[^a-z0-9-]/gi, "");
-  const file = path.join(scriptsDir, `${safeId}.json`);
-  if (!safeId || !existsSync(file)) {
-    return NextResponse.json({ ok: false, error: "script not found" }, { status: 404 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const arg = String(body.briefId || body.id || "").trim();
+  try {
+    const r = await enqueue(env, { cmd: "produce", arg, requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  const job = startJob("render", ["render", file]);
-  return NextResponse.json({ ok: true, jobId: job.id });
 }

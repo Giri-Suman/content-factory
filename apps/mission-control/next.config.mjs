@@ -26,7 +26,9 @@ export default {
   reactStrictMode: true,
   // the portal executes local binaries and reads the project's own files, so it
   // must run as a Node server — never as a static export
-  output: "standalone",
+  // ...but Pages has no local filesystem and the adapter wants Next default
+  // output, so the Pages build sets FACTORY_TARGET=pages and opts out.
+  ...(process.env.FACTORY_TARGET === "pages" ? {} : { output: "standalone" }),
   env: {
     // surfaced read-only to the client so the UI can warn when it is unlocked
     FACTORY_AUTH_ON: process.env.FACTORY_PASSWORD ? "1" : "",

@@ -1,22 +1,32 @@
-import { NextResponse } from "next/server";
-import { startJob, readEnvKeys } from "../../../lib/factory.js";
+/**
+ * Math shorts — queued, because Manim needs the laptop.
+ *
+ * Rendering a Manim scene takes about 11 minutes and needs Python, LaTeX and
+ * ffmpeg. None of that exists on Workers, so this queues and returns the job id
+ * the UI already polls.
+ */
 
-// POST {topic} | {demo} -> starts a math-short job
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function POST(request) {
-  const { topic, demo } = await request.json();
-  if (demo) {
-    const job = startJob("math", ["math", String(demo), "--demo"]);
-    return NextResponse.json({ ok: true, jobId: job.id });
+  const { env } = getRequestContext();
+  const { topic, demo } = await request.json().catch(() => ({}));
+  // the demo row is a fixed scene that needs no AI key; the topic row needs one,
+  // and the laptop checks that when it runs rather than guessing from here
+  const cmd = demo ? "math-demo" : "math";
+  if (!demo && (!topic || typeof topic !== "string")) {
+    return json({ ok: false, error: "missing topic" }, 400);
   }
-  if (!topic || typeof topic !== "string") {
-    return NextResponse.json({ ok: false, error: "missing topic" }, { status: 400 });
+  try {
+    const r = await enqueue(env, { cmd, arg: demo ? "" : topic, requestedBy: "portal" });
+    return json({ ok: true, queued: true, jobId: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (!readEnvKeys().provider) {
-    return NextResponse.json(
-      { ok: false, error: "writing a math scene needs an LLM provider — add a key in .env, or run a demo" },
-      { status: 400 }
-    );
-  }
-  const job = startJob("math", ["math", topic]);
-  return NextResponse.json({ ok: true, jobId: job.id });
 }

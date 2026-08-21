@@ -1,50 +1,32 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Ranked idea backlog.
+ *
+ * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
+ * pushed by `factory sync push`); anything that used to spawn the CLI now
+ * queues and reports when the laptop will run it.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  // ranked list comes from the CLI so the ranking math lives in ONE place (ideaBank.js)
-  const { code, out } = await runCli(["ideabank", "rank", "--json"], 60000);
-  const line = out.split(/\r?\n/).reverse().find((l) => l.startsWith("RESULT "));
-  const ranked = code === 0 && line ? JSON.parse(line.slice(7)) : os("ideabank");
-  return NextResponse.json({
-    ideas: ranked,
-    series: os("series"),
-    recentPillars: os("myposts")
-      .filter((m) => m.pillar && m.postedAt && Date.now() - new Date(m.postedAt).getTime() < 14 * 864e5)
-      .map((m) => m.pillar),
-  });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "ideabank");
+  return json({ ideas: rows });
 }
 
-// POST {action:"sync"} | {action:"brief", ideaId} | {action:"seriesCreate", name} | {action:"seriesAdd", seriesId, ideaId}
 export async function POST(request) {
-  const { action, ideaId, seriesId, name } = await request.json();
-  if (action === "sync") {
-    const { code, out } = await runCli(["ideabank", "sync"], 240000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-300) });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const r = await enqueue(env, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (action === "brief" && ideaId) {
-    const { code, out } = await runCli(["ideabank", "brief", ideaId], 240000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-400) }, { status: code === 0 ? 200 : 500 });
-  }
-  if (action === "seriesCreate" && name) {
-    const { code, out } = await runCli(["ideabank", "series", "create", name], 60000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-200) });
-  }
-  if (action === "seriesAdd" && seriesId && ideaId) {
-    const { code, out } = await runCli(["ideabank", "series", "add", seriesId, ideaId], 60000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-200) });
-  }
-  return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
 }

@@ -45,7 +45,7 @@ export default function SettingsPage() {
         setFlags(d.flags || null);
         setAiTiers(d.aiTiers || null);
         setSvcTiers(d.serviceTiers || null);
-        setLanguage(d.language ?? "");
+        setLanguage(d.language || "");
         setEdit(d.edit || {});
         setEditOptions(d.editOptions || []);
         setLanguages(d.languages || []);

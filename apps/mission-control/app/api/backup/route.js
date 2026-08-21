@@ -1,36 +1,27 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { repoRoot } from "../../../lib/factory.js";
+/**
+ * Export the factory state as one JSON document.
+ *
+ * The disk version zipped data/. Workers has neither zip nor disk, so this
+ * streams the collections that matter as a single JSON file - which is what the
+ * backup was for: briefs, clusters and publish items, not regenerable build
+ * artifacts.
+ */
 
-// GET -> one JSON bundle of all OS state + config (the "SQLite export" analog)
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { readCollection, readConfig } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const COLLECTIONS = ["briefs", "clusters", "publishitems", "wishlist", "ideabank", "escalations", "costledger", "lessons"];
+
 export async function GET() {
-  const bundle = { exportedAt: new Date().toISOString(), config: null, collections: {} };
-
-  const cfg = path.join(repoRoot, "data", "config.json");
-  if (existsSync(cfg)) {
-    try {
-      bundle.config = JSON.parse(readFileSync(cfg, "utf8"));
-    } catch {
-      /* skip */
-    }
-  }
-
-  const osDir = path.join(repoRoot, "data", "os");
-  if (existsSync(osDir)) {
-    for (const f of readdirSync(osDir).filter((f) => f.endsWith(".json"))) {
-      try {
-        bundle.collections[f.replace(/\.json$/, "")] = JSON.parse(readFileSync(path.join(osDir, f), "utf8")).rows || [];
-      } catch {
-        /* skip corrupt */
-      }
-    }
-  }
-
-  return new NextResponse(JSON.stringify(bundle, null, 2), {
+  const { env } = getRequestContext();
+  const out = { exportedAt: new Date().toISOString(), config: await readConfig(env), collections: {} };
+  for (const c of COLLECTIONS) out.collections[c] = await readCollection(env, c);
+  return new Response(JSON.stringify(out, null, 2), {
     headers: {
       "content-type": "application/json",
-      "content-disposition": `attachment; filename="content-os-backup-${new Date().toISOString().slice(0, 10)}.json"`,
+      "content-disposition": `attachment; filename="content-factory-${new Date().toISOString().slice(0, 10)}.json"`,
     },
   });
 }

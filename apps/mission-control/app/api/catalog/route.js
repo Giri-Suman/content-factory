@@ -1,46 +1,28 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Fan a brief out into other formats.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 
-export function GET() {
-  const formats = os("formatregistry").sort((a, b) => a.num - b.num);
-  const bank = os("ideabank");
-  const leads = os("commentleads").filter((l) => !l.used);
-  const laneCounts = { synthetic: 0, capture: 0, hybrid: 0 };
-  for (const f of formats) if (f.active) laneCounts[f.lane] = (laneCounts[f.lane] || 0) + 1;
-  return NextResponse.json({
-    formats,
-    laneCounts,
-    ideaCount: bank.length,
-    backlog: bank.filter((i) => i.status === "backlog").length,
-    commentLeads: leads.slice(0, 10),
-  });
-}
+export const runtime = "edge";
 
-// POST {action} — seed / compose jobs via the CLI
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function POST(request) {
-  const { action, briefId } = await request.json();
-  const map = {
-    "seed-formats": ["catalog", "seed-formats"],
-    "seed-ideas": ["catalog", "seed-ideas"],
-    newsletter: ["catalog", "newsletter"],
-    comments: ["catalog", "comments"],
-    carousel: ["catalog", "carousel", briefId || ""],
-    blog: ["catalog", "blog", briefId || ""],
-  };
-  const args = map[action];
-  if (!args) return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
-  const { code, out } = await runCli(args, 1000 * 60 * 3);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const arg = String(body.briefId || body.id || "").trim();
+  try {
+    const r = await enqueue(env, { cmd: "catalog-fanout", arg, requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
+  }
 }

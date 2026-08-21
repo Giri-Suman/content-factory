@@ -1,29 +1,29 @@
-import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import { scriptsDir, readJson } from "../../../../lib/factory.js";
+/**
+ * One compiled script.
+ *
+ * Read-only in the cloud: editing a script writes to the laptop's data/scripts,
+ * and a cloud write would be silently overwritten by the next `sync push`.
+ * Saying so is better than accepting an edit that quietly disappears.
+ */
 
-const safe = (id) => path.basename(id).replace(/[^a-z0-9-]/gi, "");
+import { getRequestContext } from "@cloudflare/next-on-pages";
+export const runtime = "edge";
 
-export async function GET(_req, { params }) {
-  const id = safe(params.id);
-  const file = path.join(scriptsDir, `${id}.json`);
-  if (!existsSync(file)) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const script = JSON.parse(readFileSync(file, "utf8"));
-  const meta = readJson(path.join(scriptsDir, `${id}.meta.json`), null);
-  return NextResponse.json({ script, meta });
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+import { readScript } from "../../../../lib/cloud.js";
+
+export async function GET(request, { params }) {
+  const { env } = getRequestContext();
+  const script = await readScript(env, params.id);
+  if (!script) return json({ error: "not found" }, 404);
+  return json({ script });
 }
 
-export async function PUT(request, { params }) {
-  const id = safe(params.id);
-  const file = path.join(scriptsDir, `${id}.json`);
-  if (!existsSync(file)) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const { script } = await request.json();
-  if (!script || !Array.isArray(script.scenes)) {
-    return NextResponse.json({ error: "invalid script" }, { status: 400 });
-  }
-  script.id = id; // the filename is the identity
-  script.reviewedAt = new Date().toISOString(); // a human opened + saved this = the review gate
-  writeFileSync(file, JSON.stringify(script, null, 2));
-  return NextResponse.json({ ok: true });
+export async function PUT() {
+  return json(
+    { ok: false, error: "Scripts are read-only from the cloud portal - edit on the laptop, then `factory sync push`." },
+    405
+  );
 }

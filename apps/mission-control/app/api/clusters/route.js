@@ -1,39 +1,32 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot } from "../../../lib/factory.js";
+/**
+ * Scored topic clusters.
+ *
+ * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
+ * pushed by `factory sync push`); anything that used to spawn the CLI now
+ * queues and reports when the laptop will run it.
+ */
 
-const readJson = (p, fb) => {
-  if (!existsSync(p)) return fb;
-  try {
-    return JSON.parse(readFileSync(p, "utf8"));
-  } catch {
-    return fb;
-  }
-};
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
-// GET -> ranked clusters with resolved member links
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function GET() {
-  const clusters = readJson(path.join(repoRoot, "data", "os", "clusters.json"), { rows: [] }).rows;
-  const trends = readJson(path.join(repoRoot, "data", "trends.json"), { trends: {} }).trends;
-  const resolved = clusters
-    .map((c) => ({
-      ...c,
-      members: (c.memberIds || [])
-        .map((id) => trends[id])
-        .filter(Boolean)
-        .map((t) => ({ id: t.id, title: t.title, url: t.url, source: t.source, points: t.points, velocity: t.velocity })),
-    }))
-    .sort((a, b) => b.opportunityScore - a.opportunityScore);
-  return NextResponse.json({ clusters: resolved });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "clusters");
+  return json({ clusters: rows });
 }
 
-// POST {clusterId} -> Generate Briefs stub (Brief Studio lands in P6)
 export async function POST(request) {
-  const { clusterId } = await request.json();
-  return NextResponse.json({
-    ok: false,
-    stub: true,
-    error: `Brief Studio arrives in P6 — cluster ${clusterId || "?"} noted. For now: factory script "<topic>"`,
-  });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const r = await enqueue(env, { cmd: "score", arg: "", requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
+  }
 }

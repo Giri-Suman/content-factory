@@ -194,3 +194,57 @@ export function queuedMessage({ row, ahead, when }) {
     ? `"${row.label}" is queued. It needs the laptop (ffmpeg/Chrome/Manim), so it runs ${when.text}.${tail}`
     : `"${row.label}" is queued and runs ${when.text}.${tail}`;
 }
+
+/* ------------------------------------------------- scripts and job state --- */
+
+/**
+ * Every drafted script, newest first — the shape the Scripts page expects.
+ *
+ * The disk version stat()ed a directory. R2 gives `uploaded` on the listing, so
+ * ordering needs no extra read, but title and scene types live INSIDE each
+ * object and do cost one read apiece. Capped, because a portal listing does not
+ * need to fan out unboundedly at the edge.
+ */
+export async function listScripts(env, limit = 60) {
+  if (!env?.QUEUE) return [];
+  const listed = await env.QUEUE.list({ prefix: `${STATE}/scripts/`, limit: 300 });
+  const rendered = new Set((await listRenders(env)).map((r) => r.id));
+
+  const rows = listed.objects
+    .filter((o) => o.key.endsWith(".json") && !o.key.endsWith(".meta.json"))
+    .map((o) => ({ o, id: o.key.slice(`${STATE}/scripts/`.length).replace(/\.json$/, "") }))
+    .sort((a, b) => new Date(b.o.uploaded || 0) - new Date(a.o.uploaded || 0))
+    .slice(0, limit);
+
+  return Promise.all(
+    rows.map(async ({ o, id }) => {
+      const s = (await readJson(env, o.key, null)) || {};
+      return {
+        id,
+        title: s.title || id,
+        sceneTypes: (s.scenes || []).map((sc) => sc.type),
+        mtime: o.uploaded ? new Date(o.uploaded).getTime() : 0,
+        rendered: rendered.has(id),
+      };
+    })
+  );
+}
+
+/**
+ * One queued job by id, wherever it currently sits.
+ *
+ * The disk version read a job log the local runner wrote while a child process
+ * streamed into it. There is no child process here: a job is a queue record that
+ * moves pending -> running -> done|failed, so "status" means which prefix holds
+ * it. The UI polls this, so it returns the same {state} vocabulary it did before
+ * and adds `log` only once the laptop has written one.
+ */
+export async function readJob(env, id) {
+  if (!env?.QUEUE) return null;
+  const safe = String(id).split("/").pop();
+  for (const state of ["running", "pending", "done", "failed"]) {
+    const rec = await readJson(env, `queue/${state}/${safe}.json`, null);
+    if (rec) return { ...rec, state: rec.state || state };
+  }
+  return null;
+}

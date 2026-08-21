@@ -26,3 +26,7 @@ media/
 # os noise
 .DS_Store
 Thumbs.db
+
+# Next/Vercel build output for the Pages build (generated, never committed)
+.vercel/
+.next/

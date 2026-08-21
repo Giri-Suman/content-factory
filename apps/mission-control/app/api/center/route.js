@@ -1,58 +1,32 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { repoRoot, runCli, envSet } from "../../../lib/factory.js";
+/**
+ * Publish queue.
+ *
+ * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
+ * pushed by `factory sync push`); anything that used to spawn the CLI now
+ * queues and reports when the laptop will run it.
+ */
 
-const STORE = path.join(repoRoot, "data", "os", "publishitems.json");
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
-const read = () => {
-  if (!existsSync(STORE)) return [];
-  try {
-    return JSON.parse(readFileSync(STORE, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  return NextResponse.json({
-    items: read().sort((a, b) => (a.scheduledFor || "z").localeCompare(b.scheduledFor || "z")),
-    ytOauth: envSet("YT_REFRESH_TOKEN"),
-    autoMode: envSet("PUBLISH_MODE") && envSet("YOUTUBE_APP_VERIFIED"),
-  });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "publishitems");
+  return json({ items: rows });
 }
 
-// POST — API-touching actions go through the CLI; pure-state toggles edit JSON directly
 export async function POST(request) {
-  const { action, briefId, itemId, file, kind, url } = await request.json();
-
-  if (action === "send" && briefId) {
-    const { code, out } = await runCli(["center", "send", briefId], 60000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const r = await enqueue(env, { cmd: "center", arg: "", requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (action === "attach" && itemId && file) {
-    const args = ["center", "attach", itemId, file];
-    if (kind === "thumb") args.push("--thumb");
-    const { code, out } = await runCli(args, 60000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
-  }
-  if (action === "publish" && itemId) {
-    const { code, out } = await runCli(["center", "publish", itemId], 1000 * 60 * 20);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-400) }, { status: code === 0 ? 200 : 500 });
-  }
-  if (action === "live" && itemId) {
-    const args = ["center", "live", itemId];
-    if (url) args.push(url);
-    const { code, out } = await runCli(args, 60000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
-  }
-  if (action === "golden" && itemId) {
-    const rows = read();
-    const i = rows.findIndex((r) => r.id === itemId);
-    if (i === -1) return NextResponse.json({ ok: false }, { status: 404 });
-    rows[i].golden60Done = !rows[i].golden60Done;
-    writeFileSync(STORE, JSON.stringify({ updatedAt: new Date().toISOString(), rows }, null, 2));
-    return NextResponse.json({ ok: true });
-  }
-  return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
 }

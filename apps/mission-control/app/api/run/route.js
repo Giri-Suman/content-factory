@@ -1,61 +1,61 @@
-import { NextResponse } from "next/server";
-import { runCli, startJob } from "../../../lib/factory.js";
-import { COMMANDS, argvFor, keyOf } from "../../../../../packages/shared/src/commands.js";
-
 /**
  * The one endpoint that runs a factory command.
  *
  * Replaces ~20 bespoke routes that each hardcoded their own argv and between
  * them still left 17 commands unreachable from the portal. Adding a row to the
- * registry now makes a command clickable; there is no second place to update.
+ * registry makes a command clickable; there is no second place to update.
  *
- * SAFETY: it will only run rows that exist in the registry, and it builds argv
- * from the row rather than from the request. The client sends a KEY and an
- * optional single input — never a command line. That means a crafted request
- * cannot invent flags, chain shell syntax, or reach a command the registry
- * does not list.
+ * WHAT CHANGED IN THE CLOUD: the disk version split commands two ways — slow
+ * ones spawned a job, quick ones ran inline and returned their output. Workers
+ * cannot spawn anything, so EVERY command now queues and the laptop runs it.
+ * The response says so, and returns a jobId the UI already knows how to poll.
+ *
+ * SAFETY: it will only queue rows that exist in the registry, and the queue
+ * record stores a KEY, never a command line — argv is rebuilt on the laptop from
+ * that key. A crafted request cannot invent flags, chain shell syntax, or reach
+ * a command the registry does not list. That matters more here than it did on
+ * localhost, because this endpoint faces the internet.
  */
 
-const byKey = new Map(COMMANDS.map((c) => [keyOf(c), c]));
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCommands } from "../../../lib/cloud.js";
+import { COMMANDS, keyOf } from "../../../../../packages/shared/src/commands.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+/** The registry as the UI wants it, used until the laptop has pushed a manifest. */
+const fromRegistry = () =>
+  COMMANDS.map((c) => ({
+    key: keyOf(c),
+    label: c.label,
+    desc: c.desc,
+    stage: c.stage,
+    cat: c.cat,
+    argKind: c.argKind || null,
+    argLabel: c.argLabel || null,
+    slow: Boolean(c.slow),
+    danger: c.danger || null,
+    laptop: null, // unknown until the manifest says; the UI shows it as unqualified
+  }));
 
 export async function GET() {
-  // the catalog, so the UI never hardcodes a command
-  return NextResponse.json({
-    ok: true,
-    commands: COMMANDS.map((c) => ({
-      key: keyOf(c),
-      id: c.id,
-      label: c.label,
-      desc: c.desc,
-      stage: c.stage,
-      cat: c.cat,
-      argKind: c.argKind || null,
-      argLabel: c.argLabel || null,
-      primary: Boolean(c.primary),
-      slow: Boolean(c.slow),
-      danger: c.danger || null,
-    })),
-  });
+  const { env } = getRequestContext();
+  // Prefer the manifest: it carries the `laptop` flag and is exactly what
+  // enqueue() validates against, so the catalog cannot drift from what will run.
+  const man = await readCommands(env);
+  return json({ ok: true, commands: man?.commands || fromRegistry(), synced: Boolean(man) });
 }
 
 export async function POST(request) {
-  const { key, input = "" } = await request.json();
-  const cmd = byKey.get(key);
-  if (!cmd) return NextResponse.json({ ok: false, error: `unknown command "${key}"` }, { status: 400 });
-
-  let argv;
+  const { env } = getRequestContext();
+  const { key, input = "", requestedBy = "portal" } = await request.json().catch(() => ({}));
   try {
-    argv = argvFor(cmd, input);
+    const r = await enqueue(env, { cmd: key, arg: input, requestedBy });
+    return json({ ok: true, queued: true, jobId: r.record.id, mode: "job", message: queuedMessage(r) });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
+    return json({ ok: false, error: e.message }, 400);
   }
-
-  // Long jobs stream into the job log; quick reads answer inline so the UI
-  // does not have to poll for a two-second command.
-  if (cmd.slow) {
-    const job = startJob(cmd.id, argv);
-    return NextResponse.json({ ok: true, jobId: job.id, mode: "job" });
-  }
-  const { out } = await runCli(argv, 180000);
-  return NextResponse.json({ ok: true, text: out, mode: "inline" });
 }

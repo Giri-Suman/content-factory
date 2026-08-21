@@ -1,62 +1,32 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { repoRoot, runCli, envSet } from "../../../lib/factory.js";
+/**
+ * Idea wishlist.
+ *
+ * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
+ * pushed by `factory sync push`); anything that used to spawn the CLI now
+ * queues and reports when the laptop will run it.
+ */
 
-const STORE = path.join(repoRoot, "data", "os", "wishlist.json");
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
-const read = () => {
-  if (!existsSync(STORE)) return [];
-  try {
-    return JSON.parse(readFileSync(STORE, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  const rows = read().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  return NextResponse.json({
-    entries: rows,
-    hasYtKey: envSet("YOUTUBE_API_KEY"),
-  });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "wishlist");
+  return json({ wishlist: rows });
 }
 
-// POST {url} (YouTube) | {manual:{...}} | {action:"poll"} — all via the CLI (never import factory packages here)
 export async function POST(request) {
-  const body = await request.json();
-
-  if (body.action === "poll") {
-    const { code, out } = await runCli(["wishlist", "poll"], 180000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-300) });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const r = await enqueue(env, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-
-  if (body.manual) {
-    const tmpDir = path.join(repoRoot, "data", "os");
-    mkdirSync(tmpDir, { recursive: true });
-    const tmp = path.join(tmpDir, `manual-${Date.now()}.tmp.json`);
-    writeFileSync(tmp, JSON.stringify(body.manual));
-    const { code, out } = await runCli(["wishlist", "manual", tmp], 180000);
-    return code === 0
-      ? NextResponse.json({ ok: true, out })
-      : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
-  }
-
-  if (body.url) {
-    const { code, out } = await runCli(["wishlist", "add", body.url], 180000);
-    return code === 0
-      ? NextResponse.json({ ok: true, out })
-      : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: false, error: "missing url / manual / action" }, { status: 400 });
-}
-
-// DELETE — direct JSON rewrite (same convention as writeConfig in lib/factory.js)
-export async function DELETE(request) {
-  const id = new URL(request.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ ok: false }, { status: 400 });
-  const rows = read().filter((r) => r.id !== id);
-  writeFileSync(STORE, JSON.stringify({ updatedAt: new Date().toISOString(), rows }, null, 2));
-  return NextResponse.json({ ok: true });
 }

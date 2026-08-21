@@ -1,19 +1,28 @@
-import { NextResponse } from "next/server";
-import { existsSync } from "node:fs";
-import { startJob } from "../../../lib/factory.js";
+/**
+ * AI Cut footage - queue the edit.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-// POST {file, noPunch?, noCaptions?, noDenoise?, noFillers?, noise?} -> AI-cut footage on local disk
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function POST(request) {
-  const { file, noPunch, noCaptions, noDenoise, noFillers, noise } = await request.json();
-  if (!file || typeof file !== "string" || !existsSync(file)) {
-    return NextResponse.json({ ok: false, error: "file not found on disk — paste the full path to your footage" }, { status: 400 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const arg = String(body.file || body.path || body.input || "").trim();
+  try {
+    const r = await enqueue(env, { cmd: "edit-beauty", arg, requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  const args = ["edit", file];
-  if (noPunch) args.push("--no-punch");
-  if (noCaptions) args.push("--no-captions");
-  if (noDenoise) args.push("--no-denoise");
-  if (noFillers) args.push("--no-fillers");
-  if (noise && /^-\d{1,3}dB$/.test(noise)) args.push(`--noise=${noise}`);
-  const job = startJob("edit", args);
-  return NextResponse.json({ ok: true, jobId: job.id });
 }

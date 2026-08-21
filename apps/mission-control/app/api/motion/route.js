@@ -1,42 +1,28 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { repoRoot, startJob } from "../../../lib/factory.js";
-import { EFFECTS, benchResults, effectPerformance, getEffect, suggestEffects } from "../../../../../packages/studio/src/motionLab.js";
+/**
+ * Motion effect catalog.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-export async function GET(request) {
-  const u = new URL(request.url);
-  const scene = u.searchParams.get("scene");
-  const niche = u.searchParams.get("niche");
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 
-  const bench = Object.fromEntries(benchResults().map((b) => [b.effectId, b]));
-  const perf = effectPerformance();
-  const previewDir = path.join(repoRoot, "renders", "_motion");
+export const runtime = "edge";
 
-  return NextResponse.json({
-    ok: true,
-    effects: EFFECTS.map((e) => ({
-      ...e,
-      measured: bench[e.id] || null,
-      yours: perf[e.id] || null,
-      hasPreview: existsSync(path.join(previewDir, `${e.id}.mp4`)),
-    })),
-    suggested: scene ? suggestEffects({ sceneType: scene, niche: niche || "coding", limit: 6 }) : [],
-    hasResults: Object.keys(perf).length > 0,
-  });
-}
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function POST(request) {
-  const { action, id, seconds = 3 } = await request.json();
-
-  if (action === "bench") {
-    if (!getEffect(id)) return NextResponse.json({ ok: false, error: "unknown effect" }, { status: 400 });
-    const job = startJob("motion-bench", ["motion", "bench", id, `--seconds=${seconds}`]);
-    return NextResponse.json({ ok: true, jobId: job.id });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const arg = "";
+  try {
+    const r = await enqueue(env, { cmd: "motion-list", arg, requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (action === "benchAll") {
-    const job = startJob("motion-bench", ["motion", "bench", "--all", "--seconds=3"]);
-    return NextResponse.json({ ok: true, jobId: job.id });
-  }
-  return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
 }

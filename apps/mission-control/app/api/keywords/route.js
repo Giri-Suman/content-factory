@@ -1,46 +1,32 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Keyword gap analysis.
+ *
+ * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
+ * pushed by `factory sync push`); anything that used to spawn the CLI now
+ * queues and reports when the laptop will run it.
+ */
+
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  const p = path.join(repoRoot, "data", "os", "keywords.json");
-  let rows = [];
-  if (existsSync(p)) {
-    try {
-      rows = JSON.parse(readFileSync(p, "utf8")).rows || [];
-    } catch {
-      rows = [];
-    }
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  const qp = path.join(repoRoot, "data", "os", "quota.json");
-  let unitsToday = 0;
-  if (existsSync(qp)) {
-    try {
-      unitsToday = JSON.parse(readFileSync(qp, "utf8")).rows.filter((r) => r.date === today && r.job === "yt-kwgap").reduce((a, r) => a + r.units, 0);
-    } catch {
-      /* 0 */
-    }
-  }
-  return NextResponse.json({
-    keywords: rows.sort((a, b) => b.opportunity - a.opportunity),
-    unitsToday,
-    budget: 2200,
-  });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "keywords");
+  return json({ keywords: rows });
 }
 
-// POST {} -> run the gap pass | {keyword} -> brief it (wishlist-style topic brief)
 export async function POST(request) {
-  const { keyword } = await request.json().catch(() => ({}));
-  if (keyword) {
-    // brief a keyword directly via the draft path (topic brief), same as Trends "Draft topic"
-    const { code, out } = await runCli(["brief", "topic", keyword], 240000);
-    // brief CLI only takes ids/top; instead route through draft-topic which exists
-    return code === 0
-      ? NextResponse.json({ ok: true, out })
-      : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const r = await enqueue(env, { cmd: "keywords", arg: "", requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  const { code, out } = await runCli(["keywords", "run"], 1000 * 60 * 5);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
 }

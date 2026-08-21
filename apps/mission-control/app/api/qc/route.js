@@ -1,45 +1,32 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Quality gates and escalations.
+ *
+ * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
+ * pushed by `factory sync push`); anything that used to spawn the CLI now
+ * queues and reports when the laptop will run it.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  const crits = os("critiques");
-  const judges = ["idea", "script", "metadata", "visual", "audio"];
-  const perJudge = judges.map((j) => {
-    const rows = crits.filter((c) => c.judge === j);
-    const passes = rows.filter((c) => c.verdict === "pass").length;
-    return { judge: j, total: rows.length, passes, passRate: rows.length ? Math.round((passes / rows.length) * 100) : null };
-  });
-  const recentFailures = crits.filter((c) => c.verdict === "fail").slice(-15).reverse();
-  const escalations = os("escalations").filter((e) => !e.resolved);
-  return NextResponse.json({ perJudge, recentFailures, escalations, total: crits.length });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "escalations");
+  return json({ escalations: rows });
 }
 
-// POST {briefId} -> run QC chain | {resolve: escalationId}
 export async function POST(request) {
-  const { briefId, resolve } = await request.json();
-  if (resolve) {
-    const p = path.join(repoRoot, "data", "os", "escalations.json");
-    if (existsSync(p)) {
-      const store = JSON.parse(readFileSync(p, "utf8"));
-      const row = (store.rows || []).find((e) => e.id === resolve);
-      if (row) row.resolved = true;
-      writeFileSync(p, JSON.stringify(store, null, 2));
-    }
-    return NextResponse.json({ ok: true });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const r = await enqueue(env, { cmd: "qc", arg: String(body.briefId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (!briefId) return NextResponse.json({ ok: false, error: "missing briefId" }, { status: 400 });
-  const { code, out } = await runCli(["qc", "brief", briefId], 1000 * 60 * 5);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-500) }, { status: code === 0 ? 200 : 500 });
 }

@@ -1,20 +1,40 @@
-import { NextResponse } from "next/server";
-import { readTrends, readConfig, runCli } from "../../../lib/factory.js";
+/**
+ * Trend radar — read from R2, scan by queueing.
+ *
+ * A radar scan sweeps 17 sources and takes about 11 minutes, so it was never
+ * going to run inside a Worker request. GET is the part that matters day to day
+ * and is now fully cloud-side; POST queues `radar-collect` and says when it runs.
+ */
+
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readConfig, readTrends } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+const top = (trends) =>
+  trends
+    .filter((t) => !t.used)
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+    .slice(0, 120);
 
 export async function GET() {
-  const trends = readTrends()
-    .filter((t) => !t.used)
-    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
-    .slice(0, 120);
-  return NextResponse.json({ trends, config: readConfig() });
+  const { env } = getRequestContext();
+  const [trends, config] = await Promise.all([readTrends(env), readConfig(env)]);
+  return json({ trends: top(trends), config });
 }
 
-// POST = run a radar scan (blocks up to ~4 min, the UI shows a spinner)
-export async function POST() {
-  const { code, out } = await runCli(["radar"]);
-  const trends = readTrends()
-    .filter((t) => !t.used)
-    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
-    .slice(0, 120);
-  return NextResponse.json({ ok: code === 0, log: out.slice(-4000), trends, config: readConfig() });
+export async function POST(request) {
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const [trends, config] = await Promise.all([readTrends(env), readConfig(env)]);
+  try {
+    const r = await enqueue(env, { cmd: "radar-collect", arg: "", requestedBy: body.requestedBy || "portal" });
+    // trends/config still returned so the page can render while it waits
+    return json({ ok: true, queued: true, id: r.record.id, log: queuedMessage(r), trends: top(trends), config });
+  } catch (e) {
+    return json({ ok: false, error: e.message, trends: top(trends), config }, 400);
+  }
 }

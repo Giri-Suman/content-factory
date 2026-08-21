@@ -1,15 +1,28 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { rendersDir, startJob } from "../../../lib/factory.js";
+/**
+ * Cut standalone clips from a finished render.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-// POST {id} -> mines 1-3 clips from renders/<id>/short.mp4
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function POST(request) {
-  const { id } = await request.json();
-  const safeId = path.basename(String(id || "")).replace(/[^a-z0-9-]/gi, "");
-  if (!safeId || !existsSync(path.join(rendersDir, safeId, "short.mp4"))) {
-    return NextResponse.json({ ok: false, error: "no rendered episode for that id" }, { status: 404 });
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  const arg = String(body.renderId || body.id || "").trim();
+  try {
+    const r = await enqueue(env, { cmd: "shorts", arg, requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  const job = startJob("shorts", ["shorts", safeId]);
-  return NextResponse.json({ ok: true, jobId: job.id });
 }

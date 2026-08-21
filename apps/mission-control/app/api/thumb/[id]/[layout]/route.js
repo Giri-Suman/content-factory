@@ -1,19 +1,21 @@
-import { readFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import { rendersDir } from "../../../../../lib/factory.js";
+/**
+ * Serve a generated thumbnail from R2.
+ */
 
-// Serves renders/<id>/thumbs/<layout>.png (and cover.png at the render root).
-export function GET(_request, { params }) {
-  const id = path.basename(params.id);
-  const layout = path.basename(params.layout);
-  const candidates = [
-    path.join(rendersDir, id, "thumbs", layout),
-    path.join(rendersDir, id, layout), // cover.png / ig-cover.png at root
-  ];
-  const filePath = candidates.find((p) => layout.endsWith(".png") && existsSync(p));
-  if (!filePath) return new Response("not found", { status: 404 });
-  return new Response(readFileSync(filePath), {
-    status: 200,
-    headers: { "Content-Type": "image/png", "Cache-Control": "no-cache" },
-  });
+import { getRequestContext } from "@cloudflare/next-on-pages";
+
+export const runtime = "edge";
+
+export async function GET(request, { params }) {
+  const { env } = getRequestContext();
+  if (!env?.QUEUE) return new Response("storage not bound", { status: 500 });
+  const id = String(params.id).split("/").pop();
+  const layout = String(params.layout).split("/").pop().replace(/[^a-z0-9._-]/gi, "");
+  const obj = await env.QUEUE.get(`renders/${id}/${layout}`);
+  if (!obj) return new Response("not found", { status: 404 });
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  if (!headers.get("content-type")) headers.set("content-type", "image/png");
+  headers.set("cache-control", "public, max-age=3600");
+  return new Response(obj.body, { headers });
 }
