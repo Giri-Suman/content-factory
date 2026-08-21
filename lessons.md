@@ -1304,3 +1304,33 @@ replace it also deleted `PREFIX`, `STATES`, `keyFor` and `newId`, which lived
 between the two functions being replaced. Syntax checked fine; it failed at
 runtime on the first call. When cutting a range out of a file, list what was in
 the range before deciding the range is what you meant.
+
+## One portal, and laptop jobs QUEUE rather than disappear
+
+**tried** — splitting the factory across two hostnames: an always-on read-only
+page, and `ops.` for the real portal when the laptop happened to be awake.
+
+**broke** — the framing, again. Two addresses meant remembering which one did
+what, and `ops.` was down most of the time by design. What was actually wanted
+was ONE address that is always up, shows everything, and is honest about what
+has to wait.
+
+**rule** — when a capability is unavailable right now, queue it and say WHEN,
+rather than hiding it or greying it out. "Render the demo is queued. It needs the
+laptop, so it will run at about 20:00 (in 1h 43m). 3 jobs ahead of it." is more
+useful than a disabled button, and it removes the second hostname entirely.
+
+The safety property survives the move to a public endpoint unchanged: the client
+sends a registry KEY, never a command line. The key is checked against a manifest
+published by `sync push`, and argv is rebuilt on the laptop from that key alone.
+Verified against the live endpoint - `{"cmd":"; rm -rf /"}` returns
+`unknown command`, and a missing argument returns
+`Brief a specific idea needs Topic or angle` rather than queueing something
+broken.
+
+**Do not trust a derived timestamp from a stale record.** The first version read
+`nextWake` straight from the heartbeat and produced "at about 03:30 (in 0 min)" -
+that value had been computed 26 hours earlier and was long past. `wakeTimes` is
+the durable fact; the next occurrence has to be recomputed at read time. Same
+class of bug as clamping a negative age to zero: a stale derived value looks like
+a fresh one unless something checks.

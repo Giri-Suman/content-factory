@@ -156,6 +156,15 @@ function renderHtml({ groups, stats, generatedAt }) {
   .row{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--border);font-size:12.5px;align-items:baseline}
   .row .t{flex:1;color:var(--text);min-width:0}
   .row .s{color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .lap{background:var(--border);border-radius:4px;padding:0 5px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+  .cmd{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border)}
+  .cmd .meta{flex:1;min-width:0}
+  .cmd .nm{font-size:13px;color:var(--text)}
+  .cmd .ds{font-size:11.5px;color:var(--muted);display:block;margin-top:1px}
+  .cmd input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font:inherit;font-size:12px;width:180px}
+  .cmd button{background:var(--accent);color:#0d1117;border:0;border-radius:6px;padding:5px 13px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .cmd button:disabled{opacity:.45;cursor:default}
+  .stagehead{margin:16px 0 2px;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em}
   .status{max-width:1100px;margin:0 auto 14px;display:flex;gap:12px;align-items:center;
     background:var(--panel);border:1px solid var(--border);border-left-width:4px;border-radius:10px;padding:13px 16px}
   .status strong{font-size:14px}
@@ -218,17 +227,14 @@ function renderHtml({ groups, stats, generatedAt }) {
 </section>
 
 <section class="ask">
-  <h3>Ask for something</h3>
-  <p>Queued for the laptop. It runs the next time that machine is awake — you do not have to wait for it now.</p>
-  <form id="f">
-    <select name="kind">
-      <option value="math">Math short</option>
-      <option value="brief">Brief an idea</option>
-    </select>
-    <input name="input" placeholder="e.g. why 0.999... equals 1" maxlength="200" required>
-    <input name="requestedBy" placeholder="your name" maxlength="40">
-    <button>Queue it</button>
-  </form>
+  <h3>Run something</h3>
+  <p>
+    Every command the factory has. The ones marked <span class="lap">laptop</span> need
+    that machine for ffmpeg, Chrome, Manim or whisper - they are queued and run when it
+    next wakes. You will be told when.
+  </p>
+  <div id="cmdfilter" class="tabs"></div>
+  <div id="cmdlist">loading commands...</div>
   <div id="msg"></div>
 </section>
 
@@ -324,6 +330,71 @@ ${groups.length ? `<div class="grid">${cards}</div>` : `<div class="empty">Nothi
     loadInfo(t.dataset.t);
   }));
   loadInfo('summary');
+
+  /* THE COMMAND SURFACE. Every command, grouped by stage. Laptop ones are shown
+     and queued rather than hidden - being told "this runs at 14:00" is more use
+     than a greyed-out button. */
+  let CMDS = null, STAGE_LABELS = {}, activeStage = 'all';
+  async function loadCommands() {
+    const list = document.getElementById('cmdlist');
+    try {
+      const r = await fetch('/api/commands', { cache: 'no-store' });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'unavailable');
+      CMDS = j.commands; STAGE_LABELS = j.stages || {};
+      const stages = [...new Set(CMDS.map(c => c.stage))];
+      document.getElementById('cmdfilter').innerHTML =
+        ['all', ...stages].map(st => '<button class="tab' + (st==='all'?' on':'') + '" data-s="' + st + '">' +
+          esc2(st === 'all' ? 'Everything' : (STAGE_LABELS[st] || st)) + '</button>').join('');
+      document.querySelectorAll('#cmdfilter .tab').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('#cmdfilter .tab').forEach(x => x.classList.remove('on'));
+        b.classList.add('on'); activeStage = b.dataset.s; renderCommands();
+      }));
+      renderCommands();
+    } catch (e) {
+      list.textContent = 'Commands unavailable (' + e.message + ').';
+    }
+  }
+
+  function renderCommands() {
+    const list = document.getElementById('cmdlist');
+    const rows = CMDS.filter(c => activeStage === 'all' || c.stage === activeStage);
+    const byStage = {};
+    for (const c of rows) (byStage[c.stage] ||= []).push(c);
+    list.innerHTML = Object.entries(byStage).map(([st, cs]) =>
+      (activeStage === 'all' ? '<div class="stagehead">' + esc2(STAGE_LABELS[st] || st) + '</div>' : '') +
+      cs.map(c =>
+        '<div class="cmd" data-k="' + esc2(c.key) + '">' +
+          '<span class="meta"><span class="nm">' + esc2(c.label) +
+            (c.laptop ? ' <span class="lap">laptop</span>' : '') +
+            (c.slow ? ' <span class="lap">slow</span>' : '') +
+          '</span><span class="ds">' + esc2(c.desc || '') + '</span></span>' +
+          (c.argKind ? '<input placeholder="' + esc2(c.argLabel || c.argKind) + '">' : '') +
+          '<button>Run</button>' +
+        '</div>').join('')
+    ).join('');
+    list.querySelectorAll('.cmd').forEach(el => {
+      el.querySelector('button').addEventListener('click', () => runCmd(el));
+    });
+  }
+
+  async function runCmd(el) {
+    const btn = el.querySelector('button'), inp = el.querySelector('input');
+    const msg = document.getElementById('msg');
+    btn.disabled = true; msg.className = ''; msg.textContent = 'queueing...';
+    try {
+      const r = await fetch('/api/run', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cmd: el.dataset.k, arg: inp ? inp.value : '', requestedBy: 'portal' })
+      });
+      const j = await r.json();
+      if (j.ok) { msg.className = 'ok'; msg.textContent = j.message; if (inp) inp.value = ''; refreshStatus(); }
+      else { msg.className = 'err'; msg.textContent = j.error || 'could not queue'; }
+    } catch (e) {
+      msg.className = 'err'; msg.textContent = 'network error - ' + e.message;
+    } finally { btn.disabled = false; }
+  }
+  loadCommands();
 
   // The full command surface. Laptop jobs are queued rather than hidden - the
   // page says what will happen and when, which is the whole point of it being
