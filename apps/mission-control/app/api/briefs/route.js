@@ -1,53 +1,35 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Briefs — read from R2, generate by queueing.
+ *
+ * Ported from the disk version: `readFileSync(data/os/briefs.json)` becomes an
+ * R2 read of the same file, pushed there by `factory sync push`. Generating a
+ * brief used to spawn the CLI; on Workers it queues, and the response says when
+ * the laptop will run it.
+ */
 
-const STORE = path.join(repoRoot, "data", "os", "briefs.json");
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
-const read = () => {
-  if (!existsSync(STORE)) return [];
-  try {
-    return JSON.parse(readFileSync(STORE, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
-const write = (rows) => writeFileSync(STORE, JSON.stringify({ updatedAt: new Date().toISOString(), rows }, null, 2));
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  return NextResponse.json({ briefs: read().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "briefs");
+  return json({ briefs: rows.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
 }
 
-// POST {clusterId} | {wishlistId} -> generate via the CLI
 export async function POST(request) {
-  const { clusterId, wishlistId } = await request.json();
-  const target = clusterId || wishlistId;
-  if (!target) return NextResponse.json({ ok: false, error: "missing clusterId/wishlistId" }, { status: 400 });
-  const { code, out } = await runCli(["brief", target], 240000);
-  return code === 0
-    ? NextResponse.json({ ok: true, out })
-    : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
-}
-
-// PATCH {id, status?|payload?|checklistState?|lane?} — direct JSON edit per repo convention
-export async function PATCH(request) {
-  const { id, status, payload, checklistState, lane } = await request.json();
-  const rows = read();
-  const i = rows.findIndex((r) => r.id === id);
-  if (i === -1) return NextResponse.json({ ok: false, error: "unknown brief" }, { status: 404 });
-  const becameApproved = status === "approved" && rows[i].status !== "approved";
-  if (status && ["draft", "approved", "killed"].includes(status)) rows[i].status = status;
-  if (payload && typeof payload === "object") rows[i].payload = payload;
-  if (Array.isArray(checklistState)) rows[i].checklistState = checklistState.map(Boolean);
-  if (lane === "synthetic" || lane === "capture") rows[i].lane = lane; // P20 manual override
-  if (becameApproved && !rows[i].pipeline) rows[i].pipeline = { state: "approved", updatedAt: new Date().toISOString(), history: [{ state: "approved", at: new Date().toISOString() }] };
-  rows[i].updatedAt = new Date().toISOString();
-  write(rows);
-  // P14: approval auto-enters the Idea Bank · P24: and fans out derivatives
-  if (becameApproved) {
-    await runCli(["ideabank", "enter", id], 120000).catch(() => {});
-    await runCli(["catalog", "fanout", id], 120000).catch(() => {});
+  const { env } = getRequestContext();
+  const body = await request.json().catch(() => ({}));
+  // The old route spawned `factory brief ...`. Same intent, queued instead.
+  const cmd = body.topic ? "brief-topic" : "brief";
+  try {
+    const r = await enqueue(env, { cmd, arg: body.topic || "", requestedBy: body.requestedBy || "portal" });
+    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  return NextResponse.json({ ok: true, brief: rows[i] });
 }
