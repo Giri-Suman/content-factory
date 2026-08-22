@@ -209,3 +209,29 @@ export function verifyRegistry(cliCommandIds) {
  */
 export const jobIdentity = (job) =>
   [job.cmd || job.kind || "", String(job.input ?? "").trim().toLowerCase(), job.vertical || ""].join("|");
+
+/**
+ * Where the dedupe marker for a job identity lives.
+ *
+ * WHY A MARKER AND NOT A LIST SCAN: R2 LIST is eventually consistent. Checking
+ * for an existing job by listing the pending prefix missed a job written one
+ * second earlier, so two fast clicks still produced two jobs - measured, not
+ * theorised: click 1 created a job, click 2 could not see it and created a
+ * second, click 3 (a few seconds later) saw it and deduped. GET by key IS
+ * strongly consistent, so the check has to be a keyed read, which means the key
+ * must be derivable from the request itself.
+ *
+ * The marker stores the full identity so a hash collision cannot silently merge
+ * two different jobs - the reader compares the identity and ignores a marker
+ * that does not match.
+ */
+const fnv1a = (s) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+};
+
+export const dedupeKey = (identity) => `queue/dedupe/${fnv1a(identity)}.json`;

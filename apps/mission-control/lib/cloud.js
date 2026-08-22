@@ -23,7 +23,7 @@
  * followed, and it matters more here because the endpoint is public.
  */
 
-import { jobIdentity } from "../../../packages/shared/src/commands.js";
+import { dedupeKey, jobIdentity } from "../../../packages/shared/src/commands.js";
 
 const STATE = "state";
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -142,21 +142,39 @@ export const readCommands = (env) => readJson(env, `${STATE}/_commands.json`, nu
 /**
  * The identical request, if it is already waiting or running.
  *
- * Reads bodies rather than relying on the object key, because the key is just
- * an id - the queue's own format, which claim/complete depend on, so encoding a
- * dedupe hash into it would break moving jobs between states. Pending is capped
- * at 50 and running is normally 0 or 1, and the reads run in parallel, so this
- * is one round trip on a button click.
+ * Every read is a GET BY KEY, never a list. R2 list is eventually consistent
+ * and a list-based check demonstrably missed a job written one second earlier -
+ * click 1 created a job, click 2 could not see it and created a second, click 3
+ * finally saw it. Keyed reads are strongly consistent, which is the whole
+ * reason the marker exists.
+ *
+ * The marker is a hint, not truth: normally it counts only while the job it
+ * names is really in pending or running, so a leftover marker cannot block a
+ * finished job from being re-run. The exception is `graceMs` - a marker written
+ * seconds ago whose job is not visible yet means a concurrent request is
+ * mid-write, and that IS a duplicate even though the job cannot be read.
  */
-async function findDuplicate(env, cmd, input) {
-  const want = jobIdentity({ cmd, input });
+async function findDuplicate(env, want, { graceMs = 0 } = {}) {
+  const marker = await readJson(env, dedupeKey(want), null);
+  // the full identity is stored so a hash collision cannot merge two jobs
+  if (!marker || marker.identity !== want) return null;
   for (const state of ["pending", "running"]) {
-    const listed = await env.QUEUE.list({ prefix: `queue/${state}/`, limit: 100 });
-    const rows = await Promise.all(listed.objects.map((o) => readJson(env, o.key, null)));
-    const hit = rows.find((r) => r && jobIdentity(r) === want);
-    if (hit) return hit;
+    const job = await readJson(env, `queue/${state}/${marker.jobId}.json`, null);
+    if (job) return job;
+  }
+  if (graceMs && marker.at && Date.now() - Date.parse(marker.at) < graceMs) {
+    // the winner of the race has claimed the identity but not finished writing
+    return { id: marker.jobId, state: "pending", queuedAt: marker.at, cmd: marker.cmd || "", input: marker.input || "" };
   }
   return null;
+}
+
+const newJobId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+/** Position in the queue, by key order - ids carry a time prefix. */
+async function aheadOfJob(env, id) {
+  const listed = await env.QUEUE.list({ prefix: "queue/pending/", limit: 100 });
+  return listed.objects.filter((o) => o.key < `queue/pending/${id}.json`).length;
 }
 
 export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
@@ -172,21 +190,44 @@ export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
   if (text.length > 300) throw new Error("input too long (max 300)");
   if (CONTROL.test(text)) throw new Error("input contains control characters");
 
-  // Asking twice for the same thing is one request, not two. The button is
-  // clickable again the moment the page renders, and a page that says "queued"
-  // invites a second click from anyone who is not sure the first one landed.
-  const already = await findDuplicate(env, cmd, text);
-  if (already) {
-    const aheadOfIt = (await env.QUEUE.list({ prefix: "queue/pending/", limit: 100 })).objects.filter(
-      (o) => o.key < `queue/pending/${already.id}.json`
-    ).length;
-    return { record: already, row, ahead: aheadOfIt, when: await whenWillItRun(env), duplicate: true };
-  }
+  const want = jobIdentity({ cmd, input: text });
+  const duplicateOf = async (job) => ({
+    record: job,
+    row,
+    ahead: await aheadOfJob(env, job.id),
+    when: await whenWillItRun(env),
+    duplicate: true,
+  });
+
+  // Asking twice for the same thing is one request, not two. A page that says
+  // "queued" with nothing visible invites a second click from anyone unsure the
+  // first one landed - which is exactly how three identical renders happened.
+  const already = await findDuplicate(env, want);
+  if (already) return duplicateOf(already);
 
   const pending = await env.QUEUE.list({ prefix: "queue/pending/", limit: 60 });
   if (pending.objects.length >= 50) throw new Error("queue is full - wait for it to drain");
 
-  const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const id = newJobId();
+  const marker = { identity: want, jobId: id, cmd, input: text, at: new Date().toISOString() };
+
+  /* CLAIM THE IDENTITY BEFORE WRITING THE JOB.
+     Checking-then-writing cannot stop two requests that both read "absent"
+     before either writes. `etagDoesNotMatch: "*"` makes this a create-only put,
+     so R2 decides the winner and returns null to the loser. */
+  const won = await env.QUEUE.put(dedupeKey(want), JSON.stringify(marker), {
+    httpMetadata: { contentType: "application/json" },
+    onlyIf: { etagDoesNotMatch: "*" },
+  });
+
+  if (won === null) {
+    // Someone else holds it. Grace window: their job may not be readable yet.
+    const other = await findDuplicate(env, want, { graceMs: 15000 });
+    if (other) return duplicateOf(other);
+    // Held by a marker whose job is long gone - take it over outright.
+    await env.QUEUE.put(dedupeKey(want), JSON.stringify(marker), { httpMetadata: { contentType: "application/json" } });
+  }
+
   const record = {
     id,
     kind: "command",

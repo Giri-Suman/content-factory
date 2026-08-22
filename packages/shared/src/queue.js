@@ -28,7 +28,7 @@
  */
 
 import { deleteObject, isConfigured, listObjects, putObject } from "./r2.js";
-import { jobIdentity } from "./commands.js";
+import { dedupeKey, jobIdentity } from "./commands.js";
 
 /**
  * What may be queued, and the shape of its input.
@@ -118,14 +118,34 @@ export function validate({ kind, input, requestedBy, cmd, vertical = "all" }) {
 export async function enqueue(job) {
   const clean = validate(job);
   const want = jobIdentity(clean);
-  for (const state of ["pending", "running"]) {
-    const existing = (await list(state)).find((j) => jobIdentity(j) === want);
-    if (existing) return { ...existing, duplicate: true };
+
+  /* Keyed reads only. R2 LIST is eventually consistent, so scanning the pending
+     prefix missed a job written a second earlier and two fast clicks still
+     produced two jobs. The marker is a hint: it counts only while the job it
+     names is still pending or running, which makes a stale marker harmless. */
+  const marker = await readJsonOrNull(dedupeKey(want));
+  if (marker && marker.identity === want) {
+    for (const state of ["pending", "running"]) {
+      const existing = await readJsonOrNull(keyFor(state, marker.jobId));
+      if (existing) return { ...existing, duplicate: true };
+    }
   }
+
   const id = newId();
   const record = { id, ...clean, state: "pending", queuedAt: new Date().toISOString() };
   await putObject(keyFor("pending", id), JSON.stringify(record, null, 2), { contentType: "application/json" });
+  // after the job, so the marker can never point at something that is not there
+  await putObject(dedupeKey(want), JSON.stringify({ identity: want, jobId: id }), { contentType: "application/json" });
   return record;
+}
+
+/** GET by key, absent-tolerant — strongly consistent, unlike list(). */
+async function readJsonOrNull(key) {
+  try {
+    return await readJson(key);
+  } catch {
+    return null;
+  }
 }
 
 async function readJson(key) {
@@ -171,10 +191,25 @@ async function move(job, from, to, extra = {}) {
 }
 
 export const claim = (job) => move(job, "pending", "running", { startedAt: new Date().toISOString() });
-export const complete = (job, result) =>
-  move(job, "running", "done", { finishedAt: new Date().toISOString(), result: String(result || "").slice(0, 500) });
-export const fail = (job, error) =>
-  move(job, "running", "failed", { finishedAt: new Date().toISOString(), error: String(error || "").slice(0, 500) });
+/** Finishing frees the identity, so the same thing can be asked for again. */
+async function clearMarker(job) {
+  try {
+    await deleteObject(dedupeKey(jobIdentity(job)));
+  } catch {
+    /* findDuplicate re-checks the job is live, so a leftover marker is inert */
+  }
+}
+
+export const complete = async (job, result) => {
+  const moved = await move(job, "running", "done", { finishedAt: new Date().toISOString(), result: String(result || "").slice(0, 500) });
+  await clearMarker(job);
+  return moved;
+};
+export const fail = async (job, error) => {
+  const moved = await move(job, "running", "failed", { finishedAt: new Date().toISOString(), error: String(error || "").slice(0, 500) });
+  await clearMarker(job);
+  return moved;
+};
 
 /**
  * Return jobs stuck in `running` for too long back to pending.
