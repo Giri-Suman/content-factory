@@ -9,7 +9,11 @@ node_modules/
 !.env.example
 
 # generated output
-renders/
+# Repo-root render output only. This MUST stay anchored with a leading
+# slash: a bare "renders/" also matches app/renders/ and app/api/renders/,
+# which silently kept the Renders page out of every CI build while it kept
+# working locally.
+/renders/
 data/*
 !data/dictionary.example.json
 dist/
