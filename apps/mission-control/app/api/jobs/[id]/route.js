@@ -19,7 +19,7 @@
  */
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { readCommands, readJob, whenWillItRun } from "../../../../lib/cloud.js";
+import { istTime, readCommands, readJob, whenWillItRun } from "../../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -28,13 +28,8 @@ const json = (o, status = 200) =>
 
 const STATUS = { pending: "queued", running: "running", done: "done", failed: "failed" };
 
-const hhmm = (iso) => {
-  try {
-    return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
-};
+/** Workers run in UTC; every time a person reads here is IST. */
+const hhmm = (iso) => istTime(iso);
 
 /** How many pending jobs were queued before this one. */
 async function aheadOf(env, job) {
@@ -58,7 +53,7 @@ export async function GET(_req, { params }) {
     const row = man?.commands?.find((c) => c.key === job.cmd);
     const label = row?.label || job.cmd;
     log = [
-      `${label} — queued at ${hhmm(job.queuedAt)}`,
+      `${label} — queued at ${hhmm(job.queuedAt)} IST`,
       row?.laptop
         ? `Needs the laptop (ffmpeg / Chrome / Manim). Runs ${when.text}.`
         : `Runs ${when.text}.`,
@@ -67,7 +62,7 @@ export async function GET(_req, { params }) {
       "You can close this page — it runs whether or not the tab is open.",
     ].join("\n");
   } else if (status === "running") {
-    log = `Running on the laptop since ${hhmm(job.startedAt)}.`;
+    log = `Running on the laptop since ${hhmm(job.startedAt)} IST.`;
   } else if (status === "done") {
     log = job.result || "Finished.";
   } else if (status === "failed") {

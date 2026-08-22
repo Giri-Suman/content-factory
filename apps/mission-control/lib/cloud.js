@@ -172,39 +172,79 @@ export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
 /* -------------------------------------------------------------- status --- */
 
 /**
+ * EVERY TIME SHOWN TO A PERSON IS IST, and that is a correctness rule, not a
+ * formatting preference.
+ *
+ * Workers run in UTC. `wakeTimes` are wall-clock times set on a laptop in
+ * India ("14:00" means 14:00 IST), so building them with the Worker's local
+ * clock read them as 14:00 UTC and every estimate was 5h30m out - a job queued
+ * at 14:33 IST was quoted "runs at about 14:00, in 4h 57m", a time that had
+ * already passed.
+ *
+ * A fixed offset is correct here rather than lazy: India has no daylight
+ * saving, so IST is UTC+05:30 all year. Doing the arithmetic explicitly also
+ * avoids depending on the Workers runtime carrying a full timezone database.
+ */
+const IST_OFFSET_MIN = 330;
+
+/** Wall-clock HH:MM in IST for any instant. */
+export function istTime(input) {
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return "";
+  const shifted = new Date(d.getTime() + IST_OFFSET_MIN * 60000);
+  return `${String(shifted.getUTCHours()).padStart(2, "0")}:${String(shifted.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+/** The soonest future instant matching one of the IST wall-clock `times`. */
+function nextWakeInstant(times, now) {
+  const ist = new Date(now.getTime() + IST_OFFSET_MIN * 60000);
+  let soonest = null;
+  for (const t of times) {
+    const [h, m] = String(t).split(":").map(Number);
+    // today and tomorrow in IST, converted back to real instants
+    for (const dayOffset of [0, 1]) {
+      const wall = Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + dayOffset, h || 0, m || 0, 0, 0);
+      const instant = new Date(wall - IST_OFFSET_MIN * 60000);
+      if (instant > now && (!soonest || instant < soonest)) soonest = instant;
+    }
+  }
+  return soonest;
+}
+
+const humanWait = (min) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${min % 60}m`);
+
+/**
  * When will queued work actually run?
  *
  * `wakeTimes` is the durable fact; the stored `nextWake` is derived and goes
- * stale — a heartbeat written 26 hours ago produced "at about 03:30 (in 0 min)".
+ * stale - a heartbeat written 26 hours ago produced "at about 03:30 (in 0 min)".
  * Recompute from the times every read.
  */
 export async function whenWillItRun(env) {
   const hb = await readJson(env, "status/heartbeat.json", null);
   if (!hb) return { awake: false, text: "when the laptop is next on" };
 
-  const mins = hb.at ? Math.round((Date.now() - Date.parse(hb.at)) / 60000) : null;
+  const now = new Date();
+  const mins = hb.at ? Math.round((now - Date.parse(hb.at)) / 60000) : null;
   const awake = mins != null && mins < 20 && mins > -10;
-  if (awake) return { awake: true, text: "the laptop is awake - it runs next", state: hb.state, current: hb.current || null };
+  if (awake) {
+    return {
+      awake: true,
+      text: "now - the laptop is awake and picks up work as it arrives",
+      state: hb.state,
+      current: hb.current || null,
+    };
+  }
 
   const times = Array.isArray(hb.wakeTimes) && hb.wakeTimes.length ? hb.wakeTimes : null;
-  if (times) {
-    const now = new Date();
-    let soonest = null;
-    for (const t of times) {
-      const [h, m] = String(t).split(":").map(Number);
-      for (const off of [0, 1]) {
-        const d = new Date(now);
-        d.setDate(d.getDate() + off);
-        d.setHours(h || 0, m || 0, 0, 0);
-        if (d > now && (!soonest || d < soonest)) soonest = d;
-      }
-    }
-    if (soonest) {
-      const inMin = Math.round((soonest - now) / 60000);
-      const hhmm = soonest.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-      const wait = inMin < 60 ? `${inMin} min` : `${Math.floor(inMin / 60)}h ${inMin % 60}m`;
-      return { awake: false, text: `at about ${hhmm} (in ${wait})`, nextWake: soonest.toISOString() };
-    }
+  const soonest = times ? nextWakeInstant(times, now) : null;
+  if (soonest) {
+    const inMin = Math.round((soonest - now) / 60000);
+    return {
+      awake: false,
+      text: `at about ${istTime(soonest)} IST (in ${humanWait(inMin)})`,
+      nextWake: soonest.toISOString(),
+    };
   }
   return { awake: false, text: "when the laptop is next on" };
 }
@@ -212,6 +252,8 @@ export async function whenWillItRun(env) {
 /** The sentence a person reads after pressing a button. */
 export function queuedMessage({ row, ahead, when }) {
   const tail = ahead ? ` ${ahead} job(s) ahead of it.` : "";
+  // An awake laptop runs it immediately, so do not dress that up as a schedule.
+  if (when.awake) return `"${row.label}" is running now - the laptop is awake.${tail}`;
   return row.laptop
     ? `"${row.label}" is queued. It needs the laptop (ffmpeg/Chrome/Manim), so it runs ${when.text}.${tail}`
     : `"${row.label}" is queued and runs ${when.text}.${tail}`;

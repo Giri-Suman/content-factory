@@ -68,6 +68,76 @@ function runJob(job) {
   return `ok in ${mins} min`;
 }
 
+/**
+ * Run everything pending, once. Shared by `drain` and `watch`.
+ *
+ * Returns {ok, bad, ran} so a caller can decide whether anything happened -
+ * `watch` uses that to stay quiet on an empty poll instead of printing a line
+ * every few seconds.
+ */
+async function runPending({ limit = 0, quiet = false } = {}) {
+  const say = (m) => { if (!quiet) console.log(m); };
+
+  // A crashed run leaves a job claimed forever, which looks identical to an
+  // empty queue. Recover those before deciding there is nothing to do.
+  const stuck = await requeueStuck({ olderThanMin: 45 });
+  if (stuck.length) console.log(`
+  requeued ${stuck.length} job(s) stuck in running`);
+
+  const pending = await list("pending");
+  if (!pending.length) {
+    say(`
+  queue is empty - nothing to do
+`);
+    await beat("idle", { pending: 0 });
+    return { ok: 0, bad: 0, ran: 0 };
+  }
+
+  const todo = limit ? pending.slice(0, limit) : pending;
+  console.log(`
+  ${todo.length} job(s) to run
+`);
+
+  let ok = 0;
+  let bad = 0;
+  for (const job of todo) {
+    console.log(`
+  ---- ${job.kind}: ${job.input.slice(0, 60)}  (asked by ${job.requestedBy}) ----`);
+    let claimed;
+    try {
+      claimed = await claim(job);
+    } catch (e) {
+      console.log(`  could not claim: ${e.message}`);
+      continue;
+    }
+    // Publish WHICH job is running, so the page can name it rather than saying
+    // a vague "working". This is the message someone waiting wants.
+    await beat("working", {
+      current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
+      pending: todo.length - ok - bad - 1,
+    });
+    try {
+      const result = runJob(claimed);
+      await complete(claimed, result);
+      console.log(`  DONE - ${result}`);
+      ok++;
+    } catch (e) {
+      await fail(claimed, e.message);
+      console.log(`  FAILED - ${String(e.message).slice(0, 160)}`);
+      bad++;
+      // Keep going: one bad job must not strand everything behind it.
+    }
+  }
+  await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad });
+  console.log(`
+  ${ok} done, ${bad} failed`);
+  // Renders push themselves to R2, so finished work is already shareable - but
+  // the viewer's file list is a static page and has to be regenerated.
+  if (ok) console.log(`  refresh the public page:  factory viewer build  &&  wrangler pages deploy
+`);
+  return { ok, bad, ran: todo.length };
+}
+
 export async function queue(argv) {
   const [action = "status", ...rest] = argv;
   const targs = rest.filter((a) => !a.startsWith("--"));
@@ -124,57 +194,67 @@ export async function queue(argv) {
       // Announce we are up before doing anything, so someone refreshing the
       // page during a long job sees "awake" rather than a stale "asleep".
       await beat("awake");
-
-      // A crashed run leaves a job claimed forever, which looks identical to an
-      // empty queue. Recover those before deciding there is nothing to do.
-      const stuck = await requeueStuck({ olderThanMin: 45 });
-      if (stuck.length) console.log(`\n  requeued ${stuck.length} job(s) stuck in running`);
-
-      const pending = await list("pending");
-      if (!pending.length) {
-        console.log(`\n  queue is empty — nothing to do\n`);
-        await beat("idle", { pending: 0 });
-        return true;
-      }
-      const limit = Number((rest.find((a) => a.startsWith("--max=")) || "").split("=")[1]) || pending.length;
-      const todo = pending.slice(0, limit);
-      console.log(`\n  ${todo.length} job(s) to run\n`);
-
-      let ok = 0;
-      let bad = 0;
-      for (const job of todo) {
-        console.log(`\n  ---- ${job.kind}: ${job.input.slice(0, 60)}  (asked by ${job.requestedBy}) ----`);
-        let claimed;
-        try {
-          claimed = await claim(job);
-        } catch (e) {
-          console.log(`  could not claim: ${e.message}`);
-          continue;
-        }
-        // Publish WHICH job is running, so the page can name it rather than
-        // saying a vague "working". This is the message someone waiting wants.
-        await beat("working", {
-          current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
-          pending: todo.length - ok - bad - 1,
-        });
-        try {
-          const result = runJob(claimed);
-          await complete(claimed, result);
-          console.log(`  DONE — ${result}`);
-          ok++;
-        } catch (e) {
-          await fail(claimed, e.message);
-          console.log(`  FAILED — ${String(e.message).slice(0, 160)}`);
-          bad++;
-          // Keep going: one bad job must not strand everything behind it.
-        }
-      }
-      await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad });
-      console.log(`\n  ${ok} done, ${bad} failed`);
-      // Renders push themselves to R2, so finished work is already shareable —
-      // but the viewer's file list is a static page and has to be regenerated.
-      if (ok) console.log(`  refresh the public page:  factory viewer build  &&  wrangler pages deploy\n`);
+      const limit = Number((rest.find((a) => a.startsWith("--max=")) || "").split("=")[1]) || 0;
+      const { bad } = await runPending({ limit });
       return bad === 0;
+    }
+
+    /* ----------------------------------------------------- watch --- */
+    /**
+     * Stay up and run work the moment it is asked for.
+     *
+     * `drain` is a scheduled visit: it runs at 09:00 and again at 14:00, so
+     * something queued at 09:05 waits five hours even though the machine is
+     * sitting there switched on. That is the gap this closes - while this runs,
+     * queued work starts within one poll.
+     *
+     * It also keeps the heartbeat FRESH, which is what lets the portal say "the
+     * laptop is awake, it runs now" at all. The heartbeat was only ever written
+     * during a drain, so between scheduled runs an awake machine was
+     * indistinguishable from a sleeping one, and every queued job was quoted a
+     * time hours away.
+     *
+     * Ctrl-C to stop. Safe to run alongside the scheduled task: claiming a job
+     * is atomic, so whichever gets there first runs it and the other skips it.
+     */
+    case "watch": {
+      const every = Math.max(5, Number((rest.find((a) => a.startsWith("--every=")) || "").split("=")[1]) || 15);
+      // The portal treats a heartbeat older than 20 minutes as asleep, so beat
+      // well inside that even when there is nothing to do.
+      const BEAT_EVERY_MS = 5 * 60 * 1000;
+
+      console.log(`
+  watching the queue every ${every}s - Ctrl-C to stop
+`);
+      await beat("awake");
+      let lastBeat = Date.now();
+      let idle = false;
+
+      for (;;) {
+        let pending = [];
+        try {
+          pending = await list("pending");
+        } catch (e) {
+          // A network blip must not kill an all-day watcher.
+          console.log(`  (could not reach R2: ${String(e.message).slice(0, 80)})`);
+        }
+
+        if (pending.length) {
+          idle = false;
+          await runPending({});
+          lastBeat = Date.now();
+        } else {
+          if (!idle) {
+            idle = true;
+            console.log(`  idle - waiting for work (${new Date().toLocaleTimeString()})`);
+          }
+          if (Date.now() - lastBeat > BEAT_EVERY_MS) {
+            await beat("idle", { pending: 0 });
+            lastBeat = Date.now();
+          }
+        }
+        await new Promise((r) => setTimeout(r, every * 1000));
+      }
     }
 
     /* ----------------------------------------------------- retry --- */
@@ -191,7 +271,7 @@ export async function queue(argv) {
     }
 
     default:
-      console.log(`unknown: queue ${action}\n  status · add · drain · retry`);
+      console.log(`unknown: queue ${action}\n  status · add · drain · watch · retry`);
       return false;
   }
 }
