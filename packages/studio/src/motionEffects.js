@@ -9,8 +9,6 @@
  * motionLab.js re-exports everything here, so existing importers are unchanged.
  */
 
-import { loadEnv, repoRoot } from "../../shared/src/config.js";
-import { collection, newId } from "../../shared/src/store.js";
 
 /**
  * MOTION LAB — the visual-effect catalog.
