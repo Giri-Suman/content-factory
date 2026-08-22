@@ -28,6 +28,7 @@
  */
 
 import { deleteObject, isConfigured, listObjects, putObject } from "./r2.js";
+import { jobIdentity } from "./commands.js";
 
 /**
  * What may be queued, and the shape of its input.
@@ -104,8 +105,23 @@ export function validate({ kind, input, requestedBy, cmd, vertical = "all" }) {
   return { kind, input: text, requestedBy: who, vertical: v };
 }
 
+/**
+ * Add a job, unless the identical job is already waiting or running.
+ *
+ * Returns the EXISTING record with `duplicate: true` rather than throwing: the
+ * caller asked for a thing to happen, and it is going to happen - there is just
+ * no second copy. Callers that report an id keep working unchanged.
+ *
+ * Only pending and running block. A finished job must be re-runnable, or you
+ * could never render the same short twice.
+ */
 export async function enqueue(job) {
   const clean = validate(job);
+  const want = jobIdentity(clean);
+  for (const state of ["pending", "running"]) {
+    const existing = (await list(state)).find((j) => jobIdentity(j) === want);
+    if (existing) return { ...existing, duplicate: true };
+  }
   const id = newId();
   const record = { id, ...clean, state: "pending", queuedAt: new Date().toISOString() };
   await putObject(keyFor("pending", id), JSON.stringify(record, null, 2), { contentType: "application/json" });

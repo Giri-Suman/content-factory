@@ -23,6 +23,8 @@
  * followed, and it matters more here because the endpoint is public.
  */
 
+import { jobIdentity } from "../../../packages/shared/src/commands.js";
+
 const STATE = "state";
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
@@ -137,6 +139,26 @@ export const readCommands = (env) => readJson(env, `${STATE}/_commands.json`, nu
  * Queue a command. Returns the record plus a sentence saying when it will run.
  * Throws on anything the registry does not recognise.
  */
+/**
+ * The identical request, if it is already waiting or running.
+ *
+ * Reads bodies rather than relying on the object key, because the key is just
+ * an id - the queue's own format, which claim/complete depend on, so encoding a
+ * dedupe hash into it would break moving jobs between states. Pending is capped
+ * at 50 and running is normally 0 or 1, and the reads run in parallel, so this
+ * is one round trip on a button click.
+ */
+async function findDuplicate(env, cmd, input) {
+  const want = jobIdentity({ cmd, input });
+  for (const state of ["pending", "running"]) {
+    const listed = await env.QUEUE.list({ prefix: `queue/${state}/`, limit: 100 });
+    const rows = await Promise.all(listed.objects.map((o) => readJson(env, o.key, null)));
+    const hit = rows.find((r) => r && jobIdentity(r) === want);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
   if (!env?.QUEUE) throw new Error("queue storage is not bound");
   const man = await readCommands(env);
@@ -149,6 +171,17 @@ export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
   if (row.argKind && !text) throw new Error(`${row.label} needs ${row.argLabel || row.argKind}`);
   if (text.length > 300) throw new Error("input too long (max 300)");
   if (CONTROL.test(text)) throw new Error("input contains control characters");
+
+  // Asking twice for the same thing is one request, not two. The button is
+  // clickable again the moment the page renders, and a page that says "queued"
+  // invites a second click from anyone who is not sure the first one landed.
+  const already = await findDuplicate(env, cmd, text);
+  if (already) {
+    const aheadOfIt = (await env.QUEUE.list({ prefix: "queue/pending/", limit: 100 })).objects.filter(
+      (o) => o.key < `queue/pending/${already.id}.json`
+    ).length;
+    return { record: already, row, ahead: aheadOfIt, when: await whenWillItRun(env), duplicate: true };
+  }
 
   const pending = await env.QUEUE.list({ prefix: "queue/pending/", limit: 60 });
   if (pending.objects.length >= 50) throw new Error("queue is full - wait for it to drain");
@@ -250,8 +283,15 @@ export async function whenWillItRun(env) {
 }
 
 /** The sentence a person reads after pressing a button. */
-export function queuedMessage({ row, ahead, when }) {
+export function queuedMessage({ row, ahead, when, duplicate }) {
   const tail = ahead ? ` ${ahead} job(s) ahead of it.` : "";
+  // Silently reusing the existing job would look like the click did nothing -
+  // the very thing that caused the double-click in the first place.
+  if (duplicate) {
+    return when.awake
+      ? `"${row.label}" is already in the queue with the same input, so this did not add a second copy. The laptop is awake and working through it.${tail}`
+      : `"${row.label}" is already queued with the same input, so this did not add a second copy. It runs ${when.text}.${tail}`;
+  }
   // An awake laptop runs it immediately, so do not dress that up as a schedule.
   if (when.awake) {
     return ahead

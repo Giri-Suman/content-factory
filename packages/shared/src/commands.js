@@ -188,3 +188,24 @@ export function verifyRegistry(cliCommandIds) {
   }
   return { ok: !missing.length && !dupes.length, missing, dupes, total: COMMANDS.length };
 }
+
+/**
+ * When are two queue entries the SAME request?
+ *
+ * Clicking a button twice because the page gave no feedback queued the job
+ * twice, and the queue happily ran both - three identical Manim demos in a row,
+ * about eleven minutes each, producing byte-identical output. Nobody wants a
+ * second copy of the thing they are already waiting for.
+ *
+ * Identity is what the job ASKS FOR, not who asked or when: the command, its
+ * input, and the vertical (a beauty edit and a coding edit of the same file are
+ * genuinely different jobs). Input is trimmed and lowercased so "Gauss Sum" and
+ * "gauss sum " do not both get rendered.
+ *
+ * This lives in the registry module because it is needed on both sides of a
+ * runtime boundary - the laptop CLI and the Cloudflare Worker - and this is the
+ * only shared module the Worker can import (no node: builtins). One definition
+ * means the two halves cannot disagree about what a duplicate is.
+ */
+export const jobIdentity = (job) =>
+  [job.cmd || job.kind || "", String(job.input ?? "").trim().toLowerCase(), job.vertical || ""].join("|");
