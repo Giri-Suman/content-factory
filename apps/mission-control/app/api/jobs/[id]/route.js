@@ -45,11 +45,25 @@ export async function GET(_req, { params }) {
   const job = await readJob(env, id);
   if (!job) return json({ error: "not found" }, 404);
 
-  const status = STATUS[job.state] || job.state || "queued";
+  let status = STATUS[job.state] || job.state || "queued";
   let log = "";
 
   if (status === "queued") {
     const [when, man, ahead] = await Promise.all([whenWillItRun(env), readCommands(env), aheadOf(env, job)]);
+
+    /* A live watcher claims work within a couple of seconds, so calling this
+       "queued" and handing back a queue position is the wrong story - there is
+       nothing to wait for. Report it as running so the page shows a spinner and
+       keeps polling, exactly as it would on the laptop.
+
+       This is gated on `watching`, NOT merely on the laptop being awake: a
+       spinner over work that has not started and will not start for hours is
+       the dishonest-progress bug this whole design avoids. */
+    if (when.watching && !ahead) {
+      return json({
+        job: { ...job, status: "running", log: "Starting on the laptop now…" },
+      });
+    }
     const row = man?.commands?.find((c) => c.key === job.cmd);
     const label = row?.label || job.cmd;
     /* "Runs now" printed above "13 jobs ahead of it" is self-contradictory, so

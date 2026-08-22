@@ -16,5 +16,5 @@ REM
 REM  Ctrl-C to stop.
 REM ===========================================================================
 cd /d "D:\youtube\automated website\content-factory"
-node packages\cli\bin\factory.js queue watch --every=15
+node packages\cli\bin\factory.js queue watch --every=3
 pause

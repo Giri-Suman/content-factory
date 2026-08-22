@@ -75,7 +75,7 @@ function runJob(job) {
  * `watch` uses that to stay quiet on an empty poll instead of printing a line
  * every few seconds.
  */
-async function runPending({ limit = 0, quiet = false } = {}) {
+async function runPending({ limit = 0, quiet = false, watching = false } = {}) {
   const say = (m) => { if (!quiet) console.log(m); };
 
   // A crashed run leaves a job claimed forever, which looks identical to an
@@ -89,7 +89,7 @@ async function runPending({ limit = 0, quiet = false } = {}) {
     say(`
   queue is empty - nothing to do
 `);
-    await beat("idle", { pending: 0 });
+    await beat("idle", { pending: 0, watching });
     return { ok: 0, bad: 0, ran: 0 };
   }
 
@@ -115,6 +115,7 @@ async function runPending({ limit = 0, quiet = false } = {}) {
     await beat("working", {
       current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
       pending: todo.length - ok - bad - 1,
+      watching,
     });
     try {
       const result = runJob(claimed);
@@ -128,7 +129,7 @@ async function runPending({ limit = 0, quiet = false } = {}) {
       // Keep going: one bad job must not strand everything behind it.
     }
   }
-  await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad });
+  await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad, watching });
   console.log(`
   ${ok} done, ${bad} failed`);
   // Renders push themselves to R2, so finished work is already shareable - but
@@ -218,7 +219,7 @@ export async function queue(argv) {
      * is atomic, so whichever gets there first runs it and the other skips it.
      */
     case "watch": {
-      const every = Math.max(5, Number((rest.find((a) => a.startsWith("--every=")) || "").split("=")[1]) || 15);
+      const every = Math.max(2, Number((rest.find((a) => a.startsWith("--every=")) || "").split("=")[1]) || 3);
       // The portal treats a heartbeat older than 20 minutes as asleep, so beat
       // well inside that even when there is nothing to do.
       const BEAT_EVERY_MS = 5 * 60 * 1000;
@@ -226,7 +227,11 @@ export async function queue(argv) {
       console.log(`
   watching the queue every ${every}s - Ctrl-C to stop
 `);
-      await beat("awake");
+      /* `watching` is what lets the portal promise immediacy honestly. A fresh
+         heartbeat alone only means someone touched R2 recently - it could be a
+         scheduled drain that is about to finish and go back to sleep. Only a
+         live watcher guarantees the next job starts in seconds. */
+      await beat("awake", { watching: true });
       let lastBeat = Date.now();
       let idle = false;
 
@@ -241,7 +246,7 @@ export async function queue(argv) {
 
         if (pending.length) {
           idle = false;
-          await runPending({});
+          await runPending({ watching: true });
           lastBeat = Date.now();
         } else {
           if (!idle) {
@@ -249,7 +254,7 @@ export async function queue(argv) {
             console.log(`  idle - waiting for work (${new Date().toLocaleTimeString()})`);
           }
           if (Date.now() - lastBeat > BEAT_EVERY_MS) {
-            await beat("idle", { pending: 0 });
+            await beat("idle", { pending: 0, watching: true });
             lastBeat = Date.now();
           }
         }

@@ -64,6 +64,16 @@ export const readPerf = (env) => readJson(env, `${STATE}/perf.json`, {});
  * rather than null. `unknown` says the flags have not been pushed yet, so the
  * page can avoid claiming a configured key is missing.
  */
+/**
+ * Tier tables, edit options and languages, published by `factory sync push`.
+ *
+ * These live in packages/llm, which imports node:fs through shared/config.js
+ * and therefore cannot run at the edge. Returning {} rather than null keeps the
+ * Settings page rendering with empty tier lists instead of blanking on a
+ * missing field.
+ */
+export const readUiMeta = (env) => readJson(env, `${STATE}/ui.json`, {});
+
 export async function readEnvFlags(env) {
   const f = await readJson(env, `${STATE}/envkeys.json`, null);
   if (f) return f;
@@ -302,9 +312,15 @@ export async function whenWillItRun(env) {
   const mins = hb.at ? Math.round((now - Date.parse(hb.at)) / 60000) : null;
   const awake = mins != null && mins < 20 && mins > -10;
   if (awake) {
+    /* `watching` is the difference between "someone touched R2 recently" and
+       "a process is polling right now and will start this in seconds". Only the
+       second one justifies showing a spinner instead of a queue position. */
     return {
       awake: true,
-      text: "now - the laptop is awake and picks up work as it arrives",
+      watching: Boolean(hb.watching),
+      text: hb.watching
+        ? "now - the laptop is watching the queue and starts it within seconds"
+        : "now - the laptop is awake and picks up work as it arrives",
       state: hb.state,
       current: hb.current || null,
     };
@@ -335,9 +351,8 @@ export function queuedMessage({ row, ahead, when, duplicate }) {
   }
   // An awake laptop runs it immediately, so do not dress that up as a schedule.
   if (when.awake) {
-    return ahead
-      ? `"${row.label}" is queued. The laptop is awake and working through the queue -${tail.replace(" job(s) ahead of it.", " job(s) ahead of this one.")}`
-      : `"${row.label}" is starting now - the laptop is awake.`;
+    if (!ahead) return `"${row.label}" is starting now - the laptop is ${when.watching ? "watching" : "awake"}.`;
+    return `"${row.label}" is queued. The laptop is awake and working through the queue -${tail.replace(" job(s) ahead of it.", " job(s) ahead of this one.")}`;
   }
   return row.laptop
     ? `"${row.label}" is queued. It needs the laptop (ffmpeg/Chrome/Manim), so it runs ${when.text}.${tail}`

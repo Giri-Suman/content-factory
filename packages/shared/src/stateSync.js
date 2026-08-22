@@ -157,6 +157,43 @@ export function envFlags() {
   };
 }
 
+/**
+ * Everything the cloud Settings page needs that the Worker cannot compute.
+ *
+ * Tier metadata and availability live in packages/llm, which imports
+ * shared/config.js, which imports node:fs - so it can never run at the edge.
+ * Rather than duplicate the tables into the Worker (where they would drift, the
+ * exact failure that once had Settings advertising two dead model ids), the
+ * laptop publishes them the same way it publishes the command manifest.
+ *
+ * Values only, never secrets: `flags` and availability are booleans derived from
+ * whether a key is present, not the keys themselves.
+ */
+export async function pushUiMeta() {
+  const [{ EDIT_DEFAULTS, EDIT_OPTIONS, LANGUAGES }, tiers] = await Promise.all([
+    import("./config.js"),
+    import("../../llm/src/tiers.js"),
+  ]);
+  const env = (n) => Boolean(process.env[n] && String(process.env[n]).trim());
+  const payload = {
+    at: new Date().toISOString(),
+    aiTiers: { tierMeta: tiers.TIER_META, availability: tiers.tierAvailability(), defaults: tiers.DEFAULT_TIERS },
+    serviceTiers: { tierNames: tiers.TIER_NAMES, services: tiers.serviceAvailability(), defaults: tiers.DEFAULT_SERVICE_TIERS },
+    editOptions: EDIT_OPTIONS,
+    editDefaults: EDIT_DEFAULTS,
+    languages: LANGUAGES,
+    // mirrors DEFAULT_WEIGHTS in the settings route
+    weights: { velocity: 1, crossSource: 1, nicheFit: 1, saturationGap: 1 },
+    flags: {
+      publishMode: env("PUBLISH_MODE") ? "auto" : "staged",
+      youtubeVerified: env("YOUTUBE_APP_VERIFIED"),
+      metaReviewed: env("META_APP_REVIEWED"),
+    },
+  };
+  await putObject(`${PREFIX}/ui.json`, JSON.stringify(payload, null, 2), { contentType: "application/json" });
+  return payload;
+}
+
 export async function pushState({ force = false } = {}) {
   if (!isConfigured()) throw new Error("R2 is not configured");
   const remote = new Map((await listObjects(`${PREFIX}/`)).map((o) => [o.key, o]));
@@ -197,6 +234,7 @@ export async function pushState({ force = false } = {}) {
 
   // presence flags only, so the cloud Settings page can render at all
   await putObject(`${PREFIX}/envkeys.json`, JSON.stringify(envFlags(), null, 2), { contentType: "application/json" });
+  await pushUiMeta();
 
   const commands = await pushCommandManifest();
   return { pushed, skipped, conflicts, total: files.length, commands };
