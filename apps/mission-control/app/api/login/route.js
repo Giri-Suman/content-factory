@@ -44,23 +44,27 @@ export async function POST(request) {
   if (!safeEqual(await tokenFor(given), expected)) {
     return json({ ok: false, error: "wrong password" }, 401);
   }
-  // Pages is always HTTPS, so Secure is unconditional here — unlike the local
-  // portal, which runs on http://localhost and would have the cookie dropped.
+  /* Secure ONLY over https. Browsers silently discard a Secure cookie sent over
+     plain http, so hardcoding it logs you in on Pages and locks you out of
+     http://localhost - the login returns ok and the next request bounces
+     straight back to /login, with nothing in any log to explain it. */
+  const secure = new URL(request.url).protocol === "https:" ? " Secure;" : "";
   return new Response(JSON.stringify({ ok: true }), {
     headers: {
       "content-type": "application/json",
       "cache-control": "no-store",
-      "set-cookie": `${COOKIE}=${expected}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`,
+      "set-cookie": `${COOKIE}=${expected}; Path=/; Max-Age=2592000; HttpOnly;${secure} SameSite=Lax`,
     },
   });
 }
 
 /** Sign out. */
-export async function DELETE() {
+export async function DELETE(request) {
+  const secure = new URL(request.url).protocol === "https:" ? " Secure;" : "";
   return new Response(JSON.stringify({ ok: true }), {
     headers: {
       "content-type": "application/json",
-      "set-cookie": `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+      "set-cookie": `${COOKIE}=; Path=/; Max-Age=0; HttpOnly;${secure} SameSite=Lax`,
     },
   });
 }
