@@ -1497,3 +1497,41 @@ carrying one that quietly does nothing.
 Last thing: a marker scheme only protects rows that HAVE a marker. Jobs queued
 before the feature existed had none and slipped straight past the check, which
 needed a one-time backfill. Any dedupe keyed on a side-table has this migration.
+
+## Deciding a verdict and recording it must not share a try block
+
+*Tried* — running a queued job and writing its outcome to R2 inside one
+try/catch, with the catch calling `fail()`.
+
+*Broke* — a math demo rendered correctly, `renders/math-gauss-sum/short.mp4`
+was on disk, and the portal said `failed - fetch failed`. The job never failed.
+`complete()` hit a transient network error, landed in the same catch as a
+crashed render, and inverted a success into a failure. Nothing in the record
+distinguished the two, so the only way to find out was to look for the file.
+
+*Rule* — **the verdict comes from the work; the write is separate and retried.**
+A storage error may delay the record or repeat the work; it must never change
+what the record says. Anything that reports an outcome over a network needs this
+split, and if the write ultimately fails, leaving the job visibly stuck is
+better than confidently recording the opposite of what happened.
+
+## A fallback that does not fall back
+
+*Tried* — `chat()` logging `all AI options failed — using the built-in fallback`
+and returning null.
+
+*Broke* — there was no fallback. 28 of its 30 callers dereference the result on
+the very next line, so an OpenRouter `free-models-per-day` rate limit surfaced
+as `TypeError: Cannot read properties of null (reading 'text')` with a stack
+trace into llm internals. The actual cause — a daily quota — appeared nowhere.
+
+*Rule* — a message describing a recovery that does not exist is worse than no
+message, because it sends the next person looking for a bug in the fallback.
+Either implement the degradation or throw with the real reason. When a helper
+returns null on failure, check what its callers actually do: if nearly all of
+them deref it, the null contract is wrong, not the callers.
+
+Same shape one layer up: `runJob` used `stdio:"inherit"`, showing everything
+live and keeping none of it, so a cloud failure reported `exited 1 after 0.4 min`
+and nothing else. Live output and a captured tail are not alternatives — the
+console reader and the portal reader are different people.
