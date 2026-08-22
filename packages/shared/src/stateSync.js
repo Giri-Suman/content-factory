@@ -113,6 +113,50 @@ async function pushCommandManifest() {
   return manifest.commands.length;
 }
 
+
+/**
+ * Which credentials this machine has — as BOOLEANS ONLY, never values.
+ *
+ * The cloud portal cannot see the laptop's .env, so its Settings page had
+ * nothing to render and sat on "loading..." forever, and Math Studio could not
+ * tell you a topic needs an LLM key. Publishing the presence flags fixes both
+ * without putting a secret in R2: this returns true/false and a provider name,
+ * exactly what the UI shows.
+ *
+ * Mirrors readEnvKeys() in the portal's lib/factory.js - if you add a key
+ * there, add it here or the cloud page will disagree with the local one.
+ */
+export function envFlags() {
+  const envPath = path.join(repoRoot, ".env");
+  const vals = {};
+  if (existsSync(envPath)) {
+    for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (m && !line.trim().startsWith("#") && m[2]) vals[m[1]] = m[2];
+    }
+  }
+  const forced = (vals.LLM_PROVIDER || "").toLowerCase();
+  const provider = ["anthropic", "openrouter", "ollama"].includes(forced)
+    ? forced
+    : vals.ANTHROPIC_API_KEY
+      ? "anthropic"
+      : vals.OPENROUTER_API_KEY
+        ? "openrouter"
+        : vals.OLLAMA_MODEL
+          ? "ollama"
+          : null;
+  return {
+    provider,
+    anthropic: Boolean(vals.ANTHROPIC_API_KEY),
+    openrouter: Boolean(vals.OPENROUTER_API_KEY),
+    ollama: Boolean(vals.OLLAMA_MODEL),
+    elevenlabs: Boolean(vals.ELEVENLABS_API_KEY && vals.ELEVENLABS_VOICE_ID),
+    telegram: Boolean(vals.TELEGRAM_BOT_TOKEN && vals.TELEGRAM_CHAT_ID),
+    youtube: Boolean(vals.YT_CLIENT_ID && vals.YT_CLIENT_SECRET && vals.YT_REFRESH_TOKEN),
+    at: new Date().toISOString(),
+  };
+}
+
 export async function pushState({ force = false } = {}) {
   if (!isConfigured()) throw new Error("R2 is not configured");
   const remote = new Map((await listObjects(`${PREFIX}/`)).map((o) => [o.key, o]));
@@ -150,6 +194,9 @@ export async function pushState({ force = false } = {}) {
     files: files.map((f) => ({ rel: f.rel, bytes: statSync(f.abs).size, hash: sha(readFileSync(f.abs)) })),
   };
   await putObject(`${PREFIX}/_manifest.json`, JSON.stringify(manifest, null, 2), { contentType: "application/json" });
+
+  // presence flags only, so the cloud Settings page can render at all
+  await putObject(`${PREFIX}/envkeys.json`, JSON.stringify(envFlags(), null, 2), { contentType: "application/json" });
 
   const commands = await pushCommandManifest();
   return { pushed, skipped, conflicts, total: files.length, commands };

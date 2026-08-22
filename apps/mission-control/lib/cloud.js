@@ -55,6 +55,28 @@ export async function readCollection(env, name) {
 export const readConfig = (env) => readJson(env, `${STATE}/config.json`, {});
 export const readPerf = (env) => readJson(env, `${STATE}/perf.json`, {});
 
+/**
+ * Which credentials the laptop has, as booleans - published by `factory sync
+ * push`, never containing a value. Without it the Settings page has nothing to
+ * render and sits on "loading..." forever, so the fallback is a real object
+ * rather than null. `unknown` says the flags have not been pushed yet, so the
+ * page can avoid claiming a configured key is missing.
+ */
+export async function readEnvFlags(env) {
+  const f = await readJson(env, `${STATE}/envkeys.json`, null);
+  if (f) return f;
+  return {
+    provider: null,
+    anthropic: false,
+    openrouter: false,
+    ollama: false,
+    elevenlabs: false,
+    telegram: false,
+    youtube: false,
+    unknown: true,
+  };
+}
+
 /** Trends live outside the collection store and have their own shape. */
 export async function readTrends(env) {
   const t = await readJson(env, `${STATE}/trends.json`, null);
