@@ -143,16 +143,41 @@ async function runPending({ limit = 0, quiet = false, watching = false } = {}) {
       pending: todo.length - ok - bad - 1,
       watching,
     });
+    /* RUNNING THE JOB AND RECORDING THE OUTCOME ARE SEPARATE FAILURES.
+       They used to share one try, so an R2 blip on the completion write landed
+       in the same catch as a crashed render and called fail(). A demo short
+       that rendered fine was reported to the portal as
+       `failed - fetch failed`, with the finished mp4 sitting on disk. Whether
+       the work succeeded is decided here, and only here. */
+    let result = null;
+    let jobError = null;
     try {
-      const result = runJob(claimed);
-      await complete(claimed, result);
+      result = runJob(claimed);
+    } catch (e) {
+      jobError = e;
+    }
+
+    if (jobError) {
+      console.log(`  FAILED - ${String(jobError.message).slice(0, 160)}`);
+      bad++;
+    } else {
       console.log(`  DONE - ${result}`);
       ok++;
-    } catch (e) {
-      await fail(claimed, e.message);
-      console.log(`  FAILED - ${String(e.message).slice(0, 160)}`);
-      bad++;
-      // Keep going: one bad job must not strand everything behind it.
+    }
+
+    // Bookkeeping, retried - a network error here must never change the verdict.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (jobError) await fail(claimed, jobError.message);
+        else await complete(claimed, result);
+        break;
+      } catch (writeErr) {
+        if (attempt === 3) {
+          console.log(`  (could not record the outcome: ${writeErr.message} - requeueStuck will recover it)`);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
     }
   }
   await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad, watching });
