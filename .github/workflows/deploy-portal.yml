@@ -25,7 +25,10 @@ on:
     branches: [master, portal-on-pages]
     paths:
       - "apps/mission-control/**"
-      - "packages/shared/**"
+      # every package, not just shared: the portal imports the command registry
+      # from packages/shared AND the effect catalog from packages/studio, and a
+      # too-narrow filter meant a fix to the latter never triggered a build.
+      - "packages/**"
       - ".github/workflows/deploy-portal.yml"
   workflow_dispatch:
 
