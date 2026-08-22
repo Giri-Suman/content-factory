@@ -1,0 +1,21 @@
+# Cloudflare Pages configuration for Mission Control.
+#
+# nodejs_compat is REQUIRED, not optional: next-on-pages bundles Next's own
+# server runtime, which reaches for node builtins even though none of our routes
+# do. Without the flag the Worker throws on the first request and every page is a
+# 500 — a failure that looks like broken code rather than a missing setting.
+#
+# The R2 binding is declared here rather than left to the dashboard so a fresh
+# deploy from CI configures itself. `QUEUE` is the name lib/cloud.js reads.
+#
+# SAFETY: `name` is content-factory-viewer, never "coderfact". Deploying this
+# cannot touch the portfolio site.
+
+name = "content-factory-viewer"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+[[r2_buckets]]
+binding = "QUEUE"
+bucket_name = "content-factory"

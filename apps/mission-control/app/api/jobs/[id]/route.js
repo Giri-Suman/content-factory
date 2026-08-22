@@ -18,7 +18,8 @@ const json = (o, status = 200) =>
 
 export async function GET(_req, { params }) {
   const { env } = getRequestContext();
-  const job = await readJob(env, params.id);
+  const { id } = await params; // Next 15: params is a Promise
+  const job = await readJob(env, id);
   if (!job) return json({ error: "not found" }, 404);
   const when = job.state === "pending" ? await whenWillItRun(env) : null;
   return json({ job: when ? { ...job, when: when.text } : job });

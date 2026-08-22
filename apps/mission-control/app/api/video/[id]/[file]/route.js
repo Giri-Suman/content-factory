@@ -20,8 +20,9 @@ export async function GET(request, { params }) {
   if (!env?.QUEUE) return new Response("storage not bound", { status: 500 });
 
   // basename only — a crafted id must not walk out of the renders/ prefix
-  const id = String(params.id).split("/").pop();
-  const file = String(params.file).split("/").pop();
+  const p = await params; // Next 15: params is a Promise
+  const id = String(p.id).split("/").pop();
+  const file = String(p.file).split("/").pop();
   if (!/\.(mp4|png|jpg|webp)$/i.test(file)) return new Response("not found", { status: 404 });
 
   const range = request.headers.get("range");

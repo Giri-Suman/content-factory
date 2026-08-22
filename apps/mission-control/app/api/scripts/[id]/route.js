@@ -16,7 +16,8 @@ import { readScript } from "../../../../lib/cloud.js";
 
 export async function GET(request, { params }) {
   const { env } = getRequestContext();
-  const script = await readScript(env, params.id);
+  const { id } = await params; // Next 15: params is a Promise
+  const script = await readScript(env, id);
   if (!script) return json({ error: "not found" }, 404);
   return json({ script });
 }

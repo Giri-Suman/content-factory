@@ -64,7 +64,6 @@ jobs:
           include-hidden-files: true
 
       - name: Deploy
-        id: deploy
         if: ${{ github.ref_name == 'master' }}
         working-directory: apps/mission-control
         env:
@@ -72,12 +71,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "No CLOUDFLARE_API_TOKEN secret — skipping deploy."
-            echo "Download the 'portal-build' artifact and run, from an authenticated machine:"
-            echo "  npx wrangler pages deploy <dir> --project-name=content-factory-viewer --branch=main"
+            echo "No CLOUDFLARE_API_TOKEN secret set - skipping deploy."
+            echo "Add it under Settings > Secrets and variables > Actions, then re-run."
             exit 0
           fi
-          npx wrangler pages deploy .vercel/output/static \
-            --project-name=content-factory-viewer \
-            --branch=main \
-            --commit-dirty=true
+          # No directory and no --project-name: wrangler.toml supplies both, plus
+          # the nodejs_compat flag and the R2 binding. Passing a directory here
+          # conflicts with pages_build_output_dir.
+          npx wrangler pages deploy --branch=main --commit-dirty=true

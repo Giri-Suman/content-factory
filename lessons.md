@@ -1334,3 +1334,54 @@ that value had been computed 26 hours earlier and was long past. `wakeTimes` is
 the durable fact; the next occurrence has to be recomputed at read time. Same
 class of bug as clamping a negative age to zero: a stale derived value looks like
 a fresh one unless something checks.
+
+## `node --check` is not a syntax gate for App Router routes
+
+*Tried* — after porting 30 route files, ran `node --check` over every one, got
+"all 37 routes ok", and treated that as proof the code parsed.
+
+*Broke* — the first real build failed on
+`String(body.briefId || body.id ?? "")`. Mixing `||` with `??` without
+parentheses is a SyntaxError, and swc rejects it. `node --check` returns exit 0
+on the same file. Nine routes had shipped that pattern past a green check,
+because the port template that generated them contained it.
+
+*Rule* — **the build is the only syntax gate.** `node --check` disagrees with the
+bundler's parser, so a green check means nothing about whether Next will compile
+it. A second-order lesson from the same session: the first check loop piped node
+into `head`, so `$?` was head's exit code and every file "passed". If a check
+loop reports zero failures across dozens of files on the first attempt, verify
+the loop can actually fail before believing it.
+
+## Audit by capability, not by import string
+
+*Tried* — found every route that needed porting to Workers with
+`grep -rl '^import.*node:' app`, drove it to zero, and called the port complete.
+
+*Broke* — `vercel build` failed with "Unable to find lambda for route:
+/api/renders". Seven routes imported `lib/factory.js`, which imports `node:fs`
+itself. They had no `node:` string of their own, so the grep never saw them.
+
+*Rule* — grep finds direct imports, not transitive ones. The honest audit
+question was never "which files say `node:`" but **"which files still reach the
+disk"** — answered by grepping for the *module* that does it. Same shape as the
+`runtime = "edge"` audit: the property that matters is what a route can do, and
+the import line is only one symptom of it.
+
+## Windows cannot finish a Vercel build, and that is fine
+
+*Tried* — building the Pages bundle locally, repeatedly.
+
+*Broke* — `vercel build` deduplicates identical functions with symlinks, and
+Windows refuses `fs.symlink` without Developer Mode. The Next build compiles
+100% clean and then dies with `EPERM: symlink`. Worse, each aborted run leaves a
+partial `.vercel/output`, so `next-on-pages` then reports whichever routes had
+not been emitted yet as "not configured to run with the Edge Runtime" — false
+positives that change every run and look exactly like real errors.
+
+*Rule* — on Windows, trust the **compile** result locally and get the edge-runtime
+verdict from CI. When reading a next-on-pages runtime complaint, first check
+whether the build that produced the output actually finished; only a complaint
+from a completed build is real. `/_not-found` was the one true finding, and it
+needs `app/not-found.js` to exist, because Next's generated version does not
+inherit `runtime` from the root layout.
