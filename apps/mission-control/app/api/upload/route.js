@@ -24,14 +24,14 @@ export async function GET() {
   const { env } = getRequestContext();
   if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
   const listed = await env.QUEUE.list({ prefix: "footage/", limit: 200 });
-  return json({
-    ok: true,
-    footage: listed.objects.map((o) => ({
-      name: o.key.slice("footage/".length),
-      size: o.size,
-      uploaded: o.uploaded,
-    })),
-  });
+  const items = listed.objects.map((o) => ({
+    name: o.key.slice("footage/".length),
+    size: o.size,
+    uploaded: o.uploaded,
+  }));
+  // Studio reads `files`; the first port named it `footage`, so the uploads list
+  // was always empty. Both are returned so neither name is a trap.
+  return json({ ok: true, files: items, footage: items });
 }
 
 export async function POST(request) {
