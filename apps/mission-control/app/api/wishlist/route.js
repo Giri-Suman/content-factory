@@ -7,7 +7,7 @@
  */
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
+import { enqueue, queuedMessage, readCollection, writeCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -29,4 +29,14 @@ export async function POST(request) {
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }
+}
+
+/** Remove one row. A direct edit, not a job - see writeCollection's note. */
+export async function DELETE(request) {
+  const { env } = getRequestContext();
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) return json({ ok: false, error: "id required" }, 400);
+  const rows = await readCollection(env, "wishlist");
+  await writeCollection(env, "wishlist", rows.filter((r) => r.id !== id));
+  return json({ ok: true });
 }

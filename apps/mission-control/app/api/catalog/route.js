@@ -8,12 +8,30 @@
  */
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+export async function GET() {
+  const { env } = getRequestContext();
+  const [formats, bank, leads] = await Promise.all([
+    readCollection(env, "formatregistry"),
+    readCollection(env, "ideabank"),
+    readCollection(env, "commentleads"),
+  ]);
+  const laneCounts = { synthetic: 0, capture: 0, hybrid: 0 };
+  for (const f of formats) if (f.active) laneCounts[f.lane] = (laneCounts[f.lane] || 0) + 1;
+  return json({
+    formats: [...formats].sort((a, b) => a.num - b.num),
+    laneCounts,
+    ideaCount: bank.length,
+    backlog: bank.filter((i) => i.status === "backlog").length,
+    commentLeads: leads.filter((l) => !l.used).slice(0, 10),
+  });
+}
 
 export async function POST(request) {
   const { env } = getRequestContext();

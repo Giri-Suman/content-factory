@@ -8,12 +8,28 @@
  */
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+export async function GET() {
+  const { env } = getRequestContext();
+  const rows = await readCollection(env, "thumbnails");
+  const thumbnails = rows
+    .map((t) => ({
+      briefId: t.briefId,
+      renderId: `brief-${String(t.briefId).slice(0, 10)}`,
+      variants: (t.variants || []).map((v) => v.layout),
+      judged: t.judged || [],
+      copy: t.copy,
+      at: t.at,
+    }))
+    .sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+  return json({ thumbnails });
+}
 
 export async function POST(request) {
   const { env } = getRequestContext();

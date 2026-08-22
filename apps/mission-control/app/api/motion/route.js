@@ -9,11 +9,34 @@
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { EFFECTS, suggestEffects } from "../../../../../packages/studio/src/motionEffects.js";
 
 export const runtime = "edge";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+/**
+ * The effect catalog.
+ *
+ * The disk version also reported each effect's MEASURED attention score and
+ * whether a preview mp4 existed - both produced by running ffmpeg here. Neither
+ * can exist in a Worker, so they come back null and the UI shows the catalog
+ * without them rather than inventing numbers. Run `motion bench` on the laptop
+ * to fill them in.
+ */
+export async function GET(request) {
+  const u = new URL(request.url);
+  const scene = u.searchParams.get("scene");
+  const niche = u.searchParams.get("niche");
+  return json({
+    ok: true,
+    effects: EFFECTS.map((e) => ({ ...e, measured: null, yours: null, hasPreview: false })),
+    suggested: scene ? suggestEffects({ sceneType: scene, niche: niche || "coding", limit: 6 }) : [],
+    hasResults: false,
+    measuredOnLaptop: true, // tells the UI why the measurement columns are empty
+  });
+}
 
 export async function POST(request) {
   const { env } = getRequestContext();

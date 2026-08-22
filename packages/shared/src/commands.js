@@ -91,6 +91,15 @@ export const COMMANDS = [
   { id: "tools", args: ["chapters"], argKind: "renderId", stage: "package", cat: "all", label: "Chapters", desc: "markers for the description", key: "tools-chapters" },
   { id: "tools", args: ["silent"], argKind: "renderId", stage: "package", cat: "all", label: "Silent copy", desc: "for muted autoplay feeds", key: "tools-silent", slow: true },
   { id: "tools", args: ["teleprompter"], argKind: "briefId", stage: "package", cat: "beauty", label: "Teleprompter", desc: "speed-matched script for the shoot", key: "tools-prompter" },
+  // The Tools page read-only views. They were reachable only through
+  // /api/tools?view=..., which ran the CLI inline - impossible from the cloud
+  // portal. As registry rows they queue like everything else, and they show up
+  // in Studio for free.
+  { id: "tools", args: ["gaps"], stage: "plan", cat: "all", label: "Content gaps", desc: "topics your niche covers and you have not", key: "tools-gaps" },
+  { id: "tools", args: ["repurpose"], stage: "package", cat: "all", label: "Repurpose", desc: "what to cut down or re-angle from existing posts", key: "tools-repurpose" },
+  { id: "tools", args: ["competitors"], stage: "find", cat: "all", label: "Competitors", desc: "who is shipping in this niche right now", key: "tools-competitors" },
+  { id: "tools", args: ["calendar", "14"], stage: "plan", cat: "all", label: "Two-week calendar", desc: "a publishing schedule from the current backlog", key: "tools-calendar" },
+  { id: "tools", args: ["niche"], stage: "find", cat: "all", label: "Niche check", desc: "how well the current mix matches the niches you picked", key: "tools-niche" },
   { id: "humanize", args: ["script"], argKind: "briefId", stage: "package", cat: "all", label: "Check for AI tells", desc: "per-scene score with the specific tells named", key: "humanize-script" },
   { id: "humanize", args: ["audit"], stage: "package", cat: "all", label: "Audit all copy", desc: "how machine-written everything reads", key: "humanize-audit" },
   { id: "qc", args: [], argKind: "briefId", stage: "package", cat: "all", label: "Run the judges", desc: "all five quality gates" },

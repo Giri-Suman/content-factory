@@ -248,3 +248,29 @@ export async function readJob(env, id) {
   }
   return null;
 }
+
+/* --------------------------------------------------------------- writes --- */
+
+/**
+ * Write a collection back to R2.
+ *
+ * The portal is mostly a reader, but a few things are edits rather than jobs:
+ * approving a brief, ticking a checklist item, removing a wishlist row. Queuing
+ * those would mean clicking "approve" and seeing nothing change until the laptop
+ * next wakes, which is not a reasonable way to run a pipeline.
+ *
+ * THE HAZARD, STATED PLAINLY: the laptop has its own copy in data/os/, and
+ * `factory sync push` used to overwrite the cloud copy whenever the byte length
+ * differed. An edit made here would have vanished the next time the laptop
+ * pushed. pushState() now refuses to overwrite an object that is newer than its
+ * local file and tells you to pull first, so the loss cannot happen silently -
+ * but the ordering still matters: pull before you work on the laptop.
+ */
+export async function writeCollection(env, name, rows) {
+  if (!env?.QUEUE) throw new Error("storage is not bound");
+  const body = JSON.stringify({ updatedAt: new Date().toISOString(), rows }, null, 2);
+  await env.QUEUE.put(`${STATE}/os/${name}.json`, body, {
+    httpMetadata: { contentType: "application/json" },
+  });
+  return rows;
+}

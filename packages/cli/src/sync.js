@@ -41,6 +41,16 @@ export async function sync(argv) {
       console.log(`\n  pushed ${r.pushed.length} of ${r.total} state file(s)${r.skipped.length ? `, ${r.skipped.length} unchanged` : ""}`);
       for (const p of r.pushed.slice(0, 10)) console.log(`    ${pad(kb(p.bytes), 8)} ${p.rel}`);
       if (r.pushed.length > 10) console.log(`    ...and ${r.pushed.length - 10} more`);
+      // A conflict means the cloud portal edited that collection after this
+      // machine last touched it - approving a brief from a phone, say. Pushing
+      // over it would delete the edit, so it was skipped instead.
+      if (r.conflicts?.length) {
+        console.log(`
+  NOT pushed - the cloud copy is newer (edited from the portal):`);
+        for (const c of r.conflicts) console.log(`    ${c}`);
+        console.log(`  run "factory sync pull" to take those edits, then push again,`);
+        console.log(`  or "factory sync push --force" to overwrite them.`);
+      }
       console.log("");
       return true;
     }

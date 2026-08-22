@@ -119,6 +119,7 @@ export async function pushState({ force = false } = {}) {
   const files = stateFiles();
   const pushed = [];
   const skipped = [];
+  const conflicts = [];
 
   for (const f of files) {
     const buf = readFileSync(f.abs);
@@ -128,6 +129,14 @@ export async function pushState({ force = false } = {}) {
     // strong enough signal to skip without downloading to compare.
     if (!force && r && r.size === buf.length) {
       skipped.push(f.rel);
+      continue;
+    }
+    // The cloud portal can now edit collections directly (approving a brief,
+    // ticking a checklist item). If the remote copy is NEWER than this machine's
+    // file, pushing would delete an edit made from the phone. Refuse and say so
+    // - run `factory sync pull` first, then push.
+    if (!force && r && r.uploaded && statSync(f.abs).mtimeMs < new Date(r.uploaded).getTime()) {
+      conflicts.push(f.rel);
       continue;
     }
     await putObject(key, buf, { contentType: "application/json" });
@@ -143,7 +152,7 @@ export async function pushState({ force = false } = {}) {
   await putObject(`${PREFIX}/_manifest.json`, JSON.stringify(manifest, null, 2), { contentType: "application/json" });
 
   const commands = await pushCommandManifest();
-  return { pushed, skipped, total: files.length, commands };
+  return { pushed, skipped, conflicts, total: files.length, commands };
 }
 
 /**

@@ -8,12 +8,26 @@
  */
 
 import { getRequestContext } from "@cloudflare/next-on-pages";
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+export async function GET() {
+  const { env } = getRequestContext();
+  const [playbooks, proposals, signals] = await Promise.all([
+    readCollection(env, "playbooks"),
+    readCollection(env, "playbookproposals"),
+    readCollection(env, "playbooksignals"),
+  ]);
+  return json({
+    playbooks,
+    proposals: proposals.filter((p) => p.status === "pending"),
+    signals: signals.filter((s) => !s.reviewed),
+  });
+}
 
 export async function POST(request) {
   const { env } = getRequestContext();
