@@ -1437,3 +1437,29 @@ route-by-route review misses. Also check for a second handler further down the
 file: two `export async function GET` in one module is a duplicate-export
 SyntaxError that `node --check` does not report — the same blind spot as the
 `||`/`??` case above.
+
+## A page that returns 200 can still be a blank page
+
+*Tried* — verifying the ported portal by sweeping every route's status code.
+26/26 pages returned 200, so the port was called done.
+
+*Broke* — two pages were dead anyway. Math Studio queued jobs correctly but
+showed a badge reading "undefined" over an empty log, because `useJob`/`JobLog`
+read `job.status` and `job.log` while a queue record carries `state` and
+`result`/`error`. Settings never rendered at all: it starts with
+`if (!config || !env) return "loading…"`, and the ported endpoint had stopped
+returning `env`. Both pages are client shells - the HTML renders, returns 200,
+and then the fetch underneath disagrees with what the component expects.
+
+*Rule* — **a status-code sweep proves routing, not function.** For a
+"use client" app, check the SHAPE the component reads, not just that a response
+arrived. Two cheap checks catch this whole class: grep the page for the fields
+it destructures off a fetch and confirm the endpoint returns those keys, and
+grep for early `if (!x) return "loading"` guards, which turn a missing field
+into a permanently blank page rather than an error.
+
+A second-order lesson: when a port changes an operation from synchronous to
+queued, it introduces a state the old UI has no word for. "queued" needed
+adding to the status vocabulary rather than being folded into "running" - a
+spinner for work that starts in five hours is a lie, and mapping it to "done"
+would have been worse.
