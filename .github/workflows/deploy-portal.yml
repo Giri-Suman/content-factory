@@ -63,6 +63,18 @@ jobs:
           retention-days: 7
           include-hidden-files: true
 
+      - name: Hand the build back to the laptop via R2
+        working-directory: apps/mission-control
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          tar czf /tmp/portal.tgz -C .vercel/output/static .
+          ls -lh /tmp/portal.tgz
+          node ../../scripts/r2-put.mjs /tmp/portal.tgz builds/portal-latest.tgz
+
       - name: Deploy
         if: ${{ github.ref_name == 'master' }}
         working-directory: apps/mission-control
