@@ -1385,3 +1385,55 @@ whether the build that produced the output actually finished; only a complaint
 from a completed build is real. `/_not-found` was the one true finding, and it
 needs `app/not-found.js` to exist, because Next's generated version does not
 inherit `runtime` from the root layout.
+
+## A Windows-built Cloudflare bundle deploys and then 500s
+
+*Tried* — building the Pages bundle on Windows once the symlink problem was
+worked around, deploying it, and treating a green build as a working portal.
+
+*Broke* — every page answered 500 with "Could not find the module <id> in the
+React Server Consumer Manifest", while the API routes worked perfectly. The
+build printed no warning; the failure only exists at runtime. The same commit
+built in Linux CI works completely.
+
+*Rule* — **the adapter's "not reliable on Windows" warning means the artifact,
+not the build.** Never judge a Cloudflare bundle by whether it built. Build in
+CI and deploy that exact tarball (`node scripts/deploy-portal.mjs`). The tell
+that something is path-related: the build log printed
+`_worker.js\nop-build-log.json`, where a Windows separator had been read as an
+escape.
+
+## An unanchored .gitignore rule hid two source files for months
+
+*Tried* — trusting that a page working locally meant it was in the repository.
+
+*Broke* — the first deploy from a clean CI checkout answered 404 on `/renders`
+and `/api/renders` while the other 24 pages worked. `.gitignore` line 12 was
+`renders/` — no leading slash — so besides the repo-root output directory it
+also matched `app/renders/` and `app/api/renders/`. Those two files had never
+been committed. Nothing noticed because the local portal reads the working tree.
+
+*Rule* — **anchor ignore rules for build output: `/renders/`, not `renders/`.**
+And when a deploy is missing exactly one feature, check `git ls-files` before
+debugging the bundler. `git ls-files --others --ignored --exclude-standard` over
+the source directories lists everything being hidden this way.
+
+## Porting route-by-route silently deletes the readers
+
+*Tried* — porting ~40 API routes one at a time, classifying each by what it
+mainly did ("this one runs a command"), and verifying with a page-level sweep
+that returned 200.
+
+*Broke* — nine routes lost a handler. Three had their GET deleted, three had it
+replaced with a `{note: "POST to run"}` stub, and three writes were dropped
+entirely. Every affected PAGE still returned 200 — the shell renders, then its
+`useEffect` fetch 405s and the page sits empty. A sweep of page status codes
+cannot see this.
+
+*Rule* — when porting a set of endpoints, diff the **exported method sets**
+against the pre-port commit, per file. `grep -oE 'export (async )?function
+(GET|POST|PUT|DELETE|PATCH)'` on both sides catches in one pass what
+route-by-route review misses. Also check for a second handler further down the
+file: two `export async function GET` in one module is a duplicate-export
+SyntaxError that `node --check` does not report — the same blind spot as the
+`||`/`??` case above.
