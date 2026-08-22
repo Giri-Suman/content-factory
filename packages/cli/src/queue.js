@@ -41,6 +41,15 @@ const ARGV = {
   edit: (job) => ["edit", ...(job.vertical === "beauty" ? ["--beauty"] : []), resolveInInbox(job.input)],
 };
 
+/**
+ * Run one queued job, capturing enough of its output to explain a failure.
+ *
+ * This used to be spawnSync with stdio:"inherit", which showed everything live
+ * and kept none of it - so a job that died reported `exited 1 after 0.4 min` and
+ * that string was the entire diagnosis available from the cloud portal, where
+ * nobody can see the console. Piping and echoing keeps the live view AND the
+ * last lines, which is what actually gets read on the Jobs page.
+ */
 function runJob(job) {
   let argv;
   if (job.kind === "command") {
@@ -55,16 +64,33 @@ function runJob(job) {
     if (!build) throw new Error(`no runner for kind "${job.kind}"`);
     argv = build(job);
   }
+
   const started = Date.now();
   const res = spawnSync(process.execPath, [CLI, ...argv], {
     cwd: repoRoot,
     encoding: "utf8",
-    stdio: "inherit",
+    // piped rather than inherited so the tail survives for the error message
+    stdio: ["ignore", "pipe", "pipe"],
     timeout: 1000 * 60 * 180,
+    maxBuffer: 32 * 1024 * 1024,
   });
+
+  const out = `${res.stdout || ""}${res.stderr || ""}`;
+  if (out) process.stdout.write(out);
+
   const mins = ((Date.now() - started) / 60000).toFixed(1);
-  if (res.error) throw new Error(`${res.error.message} (after ${mins} min)`);
-  if (res.status !== 0) throw new Error(`exited ${res.status} after ${mins} min`);
+  /* The last non-empty lines are where a stack trace or "missing key" lands.
+     Trimmed to 400 chars because complete() stores 500 and the rest is noise. */
+  const tail = out
+    .split(String.fromCharCode(10))
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(-6)
+    .join(" | ")
+    .slice(0, 400);
+
+  if (res.error) throw new Error(`${res.error.message} (after ${mins} min)${tail ? " - " + tail : ""}`);
+  if (res.status !== 0) throw new Error(`exited ${res.status} after ${mins} min${tail ? " - " + tail : ""}`);
   return `ok in ${mins} min`;
 }
 

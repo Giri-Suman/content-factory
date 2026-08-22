@@ -233,9 +233,20 @@ export async function chat({ system, user, task = "score", maxTokens = 4000, tie
       errors.push(`${opt.label}: ${String(err.message).slice(0, 80)}`);
     }
   }
-  // every option in and below the chosen tier failed — degrade like keyless
-  console.error(`  all AI options failed (${errors.join(" | ")}) — using the built-in fallback`);
-  return null;
+    /* Every option in and below the chosen tier failed. This used to log
+       "using the built-in fallback" and return null - but there is no fallback,
+       and 28 of the 30 callers dereference the result immediately. A daily rate
+       limit therefore surfaced as `TypeError: Cannot read properties of null
+       (reading 'text')` with a stack trace into llm internals, which tells the
+       person waiting nothing at all.
+
+       Throwing hands every one of those callers the real reason instead, and the
+       two that deliberately degrade (radar/score, pipeline/clips) already wrap
+       this in try/catch, so their behaviour is unchanged.
+
+       NOTE the keyless path above still returns null: running with no keys at
+       all is a supported $0 mode, not a failure. */
+    throw new Error(`no AI option succeeded - ${errors.join(" | ")}`);
 }
 
 /**
