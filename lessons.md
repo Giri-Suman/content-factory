@@ -1463,3 +1463,37 @@ queued, it introduces a state the old UI has no word for. "queued" needed
 adding to the status vocabulary rather than being folded into "running" - a
 spinner for work that starts in five hours is a lie, and mapping it to "done"
 would have been worse.
+
+## R2 LIST is eventually consistent; GET by key is not
+
+*Tried* — deduplicating the queue by listing the pending prefix and comparing
+each job's command and input against the new one.
+
+*Broke* — clicking Render three times still produced two jobs. Click 1 created
+one, click 2 (about a second later) listed the prefix, could not see it, and
+created a second; click 3 finally saw it and deduped. The logic was right and
+the read was stale.
+
+*Rule* — **in R2, LIST is eventually consistent and GET by key is strongly
+consistent.** Anything that must observe a write that just happened has to be a
+keyed read, which means the key must be derivable from the request itself — so
+dedupe needs a marker object at a deterministic key, not a scan. Store the full
+identity inside the marker and compare it on read, so a hash collision cannot
+silently merge two different jobs.
+
+A keyed read still is not enough for simultaneous writers: five requests fired
+together all read "absent" before any of them wrote. That needs an atomic
+create, `put(..., { onlyIf: { etagDoesNotMatch: "*" } })` on the Workers
+binding, which returns null to the loser. The loser then re-reads with a short
+grace window, because the winner may have claimed the key but not yet written
+the job — during that gap the job is genuinely unreadable and still a duplicate.
+
+**The same guarantee is NOT available over R2's S3 API.** `If-None-Match: *` on
+a signed PUT was accepted and the object was overwritten anyway — measured, the
+second create returned success. So the conditional path exists only on the
+binding, and the S3 side was left without a conditional-write option rather than
+carrying one that quietly does nothing.
+
+Last thing: a marker scheme only protects rows that HAVE a marker. Jobs queued
+before the feature existed had none and slipped straight past the check, which
+needed a one-time backfill. Any dedupe keyed on a side-table has this migration.
