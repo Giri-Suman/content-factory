@@ -52,12 +52,21 @@ export async function GET(_req, { params }) {
     const [when, man, ahead] = await Promise.all([whenWillItRun(env), readCommands(env), aheadOf(env, job)]);
     const row = man?.commands?.find((c) => c.key === job.cmd);
     const label = row?.label || job.cmd;
+    /* "Runs now" printed above "13 jobs ahead of it" is self-contradictory, so
+       the awake case has to account for the queue rather than promise speed. */
+    let line;
+    if (when.awake) {
+      line = ahead
+        ? `The laptop is awake and working through the queue — ${ahead} job(s) ahead of this one.`
+        : "The laptop is awake — this starts now.";
+    } else {
+      const needs = row?.laptop ? "Needs the laptop (ffmpeg / Chrome / Manim). " : "";
+      const queue = ahead ? ` ${ahead} job(s) ahead of it.` : "";
+      line = `${needs}Runs ${when.text}.${queue}`;
+    }
     log = [
       `${label} — queued at ${hhmm(job.queuedAt)} IST`,
-      row?.laptop
-        ? `Needs the laptop (ffmpeg / Chrome / Manim). Runs ${when.text}.`
-        : `Runs ${when.text}.`,
-      ahead ? `${ahead} job(s) ahead of it.` : "Next in line.",
+      line,
       "",
       "You can close this page — it runs whether or not the tab is open.",
     ].join("\n");

@@ -253,7 +253,11 @@ export async function whenWillItRun(env) {
 export function queuedMessage({ row, ahead, when }) {
   const tail = ahead ? ` ${ahead} job(s) ahead of it.` : "";
   // An awake laptop runs it immediately, so do not dress that up as a schedule.
-  if (when.awake) return `"${row.label}" is running now - the laptop is awake.${tail}`;
+  if (when.awake) {
+    return ahead
+      ? `"${row.label}" is queued. The laptop is awake and working through the queue -${tail.replace(" job(s) ahead of it.", " job(s) ahead of this one.")}`
+      : `"${row.label}" is starting now - the laptop is awake.`;
+  }
   return row.laptop
     ? `"${row.label}" is queued. It needs the laptop (ffmpeg/Chrome/Manim), so it runs ${when.text}.${tail}`
     : `"${row.label}" is queued and runs ${when.text}.${tail}`;
