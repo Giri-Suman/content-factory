@@ -170,10 +170,13 @@ export function envFlags() {
  * whether a key is present, not the keys themselves.
  */
 export async function pushUiMeta() {
-  const [{ EDIT_DEFAULTS, EDIT_OPTIONS, LANGUAGES }, tiers] = await Promise.all([
-    import("./config.js"),
-    import("../../llm/src/tiers.js"),
-  ]);
+  const [cfg, tiers] = await Promise.all([import("./config.js"), import("../../llm/src/tiers.js")]);
+  const { EDIT_DEFAULTS, EDIT_OPTIONS, LANGUAGES } = cfg;
+  /* tierAvailability() decides "configured" by reading process.env, and nothing
+     has loaded the factory .env when this runs from a script or the portal. Without
+     this the published tables say every provider is unset - Settings then shows
+     "not set up" beside a key that is sitting right there in .env. */
+  cfg.loadEnv();
   const env = (n) => Boolean(process.env[n] && String(process.env[n]).trim());
   const payload = {
     at: new Date().toISOString(),
@@ -192,6 +195,25 @@ export async function pushUiMeta() {
   };
   await putObject(`${PREFIX}/ui.json`, JSON.stringify(payload, null, 2), { contentType: "application/json" });
   return payload;
+}
+
+/**
+ * A read-only copy of trends.json for the portal to read.
+ *
+ * trends.json is in EXCLUDE because it has its own merge and a blind pull would
+ * clobber it - correct, but it left the cloud Trend Radar permanently empty,
+ * since `readTrends` reads exactly this key and nothing ever wrote it.
+ *
+ * Pushing it OUTSIDE the manifest is what keeps both true: `pullState` only
+ * walks manifest.files, so this copy can never overwrite the local file, while
+ * the portal still has something to read. One direction only, by construction.
+ */
+async function pushTrends() {
+  const abs = path.join(DATA, "trends.json");
+  if (!existsSync(abs)) return 0;
+  const buf = readFileSync(abs);
+  await putObject(`${PREFIX}/trends.json`, buf, { contentType: "application/json" });
+  return buf.length;
 }
 
 export async function pushState({ force = false } = {}) {
@@ -235,6 +257,7 @@ export async function pushState({ force = false } = {}) {
   // presence flags only, so the cloud Settings page can render at all
   await putObject(`${PREFIX}/envkeys.json`, JSON.stringify(envFlags(), null, 2), { contentType: "application/json" });
   await pushUiMeta();
+  await pushTrends();
 
   const commands = await pushCommandManifest();
   return { pushed, skipped, conflicts, total: files.length, commands };

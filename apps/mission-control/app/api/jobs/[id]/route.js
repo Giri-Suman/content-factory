@@ -31,12 +31,22 @@ const STATUS = { pending: "queued", running: "running", done: "done", failed: "f
 /** Workers run in UTC; every time a person reads here is IST. */
 const hhmm = (iso) => istTime(iso);
 
-/** How many pending jobs were queued before this one. */
+/**
+ * How much work has to finish before this job starts.
+ *
+ * Counts the job already RUNNING as well as the pending ones queued earlier.
+ * Pending-only gave zero while an 11-minute radar scan had the laptop, and the
+ * page cheerfully said "starting now" on top of it.
+ */
 async function aheadOf(env, job) {
   if (!env?.QUEUE) return 0;
-  const listed = await env.QUEUE.list({ prefix: "queue/pending/", limit: 100 });
+  const [pending, running] = await Promise.all([
+    env.QUEUE.list({ prefix: "queue/pending/", limit: 100 }),
+    env.QUEUE.list({ prefix: "queue/running/", limit: 10 }),
+  ]);
   // ids are time-ordered (base36 Date.now prefix), so key order is queue order
-  return listed.objects.filter((o) => o.key < `queue/pending/${job.id}.json`).length;
+  const earlier = pending.objects.filter((o) => o.key < `queue/pending/${job.id}.json`).length;
+  return earlier + running.objects.length;
 }
 
 export async function GET(_req, { params }) {

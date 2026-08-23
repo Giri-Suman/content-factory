@@ -194,7 +194,7 @@ export default function SettingsPage() {
                       put({ serviceTiers: next });
                     }}
                   >
-                    {tier}{s.ready[tier] ? "" : " ○"}
+                    {tier}{(s.tiers || []).find((t) => t.tier === tier)?.available ? "" : " ○"}
                   </button>
                 ))}
                 <span className="muted" style={{ fontSize: 11, flex: 1 }}>{s.note}</span>
