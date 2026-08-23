@@ -6,7 +6,8 @@
     "dev": "next dev -p 4600",
     "build": "next build",
     "start": "next start -p 4600",
-    "dev:open": "node scripts/dev-open.mjs"
+    "dev:open": "node scripts/dev-open.mjs",
+    "dev:cloud": "wrangler pages dev --port 4700"
   },
   "dependencies": {
     "framer-motion": "^11.11.0",

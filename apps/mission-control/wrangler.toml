@@ -19,3 +19,5 @@ pages_build_output_dir = ".vercel/output/static"
 [[r2_buckets]]
 binding = "QUEUE"
 bucket_name = "content-factory"
+# `wrangler pages dev` otherwise simulates an EMPTY local bucket
+remote = true
