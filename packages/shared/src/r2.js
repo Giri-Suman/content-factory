@@ -249,7 +249,15 @@ export async function pushFile(id, filePath) {
     throw new Error(`${path.basename(filePath)} is ${Math.round(size / 1048576)}MB — over the ${MAX_BYTES / 1048576}MB single-PUT cap (multipart not implemented)`);
   }
   const ext = path.extname(filePath).toLowerCase();
-  const key = `renders/${id}/${path.basename(filePath)}`;
+  /* Keep the subdirectory. The comment above always claimed the key mirrors the
+     local layout, but basename() flattened it - so renders/<id>/thumbs/X.png
+     uploaded as renders/<id>/X.png, and the portal, which looks under thumbs/,
+     404'd on every thumbnail. Flattening also collides: thumbs/cover.png and
+     cover.png become the same object. */
+  const marker = `${path.sep}renders${path.sep}${id}${path.sep}`;
+  const at = filePath.lastIndexOf(marker);
+  const rel = at >= 0 ? filePath.slice(at + marker.length).split(path.sep).join("/") : path.basename(filePath);
+  const key = `renders/${id}/${rel}`;
   const r = await putObject(key, readFileSync(filePath), { contentType: CONTENT_TYPES[ext] || "application/octet-stream" });
   return { ...r, url: presignGet(key) };
 }
