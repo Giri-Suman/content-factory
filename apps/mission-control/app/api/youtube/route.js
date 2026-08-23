@@ -20,12 +20,14 @@ const json = (o, status = 200) =>
 
 export async function GET() {
   const env = getEnv();
-  const [trends, channels, videos, flags, quota] = await Promise.all([
+  const [trends, channels, videos, flags, quota, discoveries, nichemap] = await Promise.all([
     readTrends(env),
     readCollection(env, "watchchannels"),
     readCollection(env, "watchvideos"),
     readEnvFlags(env),
     readCollection(env, "quota"),
+    readCollection(env, "discoveries"),
+    readCollection(env, "nichemap"),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -53,6 +55,14 @@ export async function GET() {
         .slice(0, 8),
     })),
     outliers: outliers.slice(0, 20),
+    // a Short beating its channel's baseline by 3x is the signal worth copying
+    shortsOutliers: videos
+      .filter((v) => v.isShort && v.outlierRatio >= 3 && v.publishedAt && new Date(v.publishedAt).getTime() >= cutoff)
+      .map((v) => ({ ...v, channelTitle: chTitle.get(v.channelId) || v.channelId }))
+      .sort((a, b) => b.outlierRatio - a.outlierRatio)
+      .slice(0, 25),
+    discovery: [...discoveries].sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")))[0] || null,
+    nichemap: nichemap[0] || null,
   });
 }
 
