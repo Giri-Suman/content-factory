@@ -34,3 +34,6 @@ Thumbs.db
 # Next/Vercel build output for the Pages build (generated, never committed)
 .vercel/
 .next/
+
+# wrangler local dev scratch (bundles, miniflare state)
+.wrangler/
