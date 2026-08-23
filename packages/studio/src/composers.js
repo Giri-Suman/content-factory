@@ -77,7 +77,7 @@ export async function composeBlog(briefId) {
 export function composeNewsletter() {
   loadEnv();
   const digests = collection("digests").all().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
-  const posts = collection("myposts").find((m) => Date.now() - new Date(m.postedAt).getTime() < 8 * 864e5);
+  const posts = collection("myposts").find((m) => !m.seed && Date.now() - new Date(m.postedAt).getTime() < 8 * 864e5);
   const week = new Date().toISOString().slice(0, 10);
   const md = [
     `# Builder's Brief — week of ${week}`,
@@ -103,7 +103,7 @@ export async function mineComments() {
   loadEnv();
   const { hasKey, yt } = await import("../../radar/src/youtube.js");
   if (!hasKey()) return { mined: 0, note: "no YOUTUBE_API_KEY" };
-  const myPosts = collection("myposts").find((m) => m.platform === "youtube" && m.externalId).slice(-10);
+  const myPosts = collection("myposts").find((m) => !m.seed && m.platform === "youtube" && m.externalId).slice(-10);
   const flagged = [];
   for (const post of myPosts) {
     try {

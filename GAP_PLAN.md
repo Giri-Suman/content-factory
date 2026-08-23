@@ -1,3 +1,11 @@
+> **HISTORICAL — do not read this as a to-do list.**
+>
+> This was the gap analysis written before P2–P20 were built. Its 18 **MISSING**
+> markers are stale: `packages/radar/src/youtube.js`, `packages/studio/src/wishlist.js`
+> and `packages/studio/src/briefs.js` are all present and working, among others.
+> Kept because the reasoning behind the plan is still worth reading; trust the
+> code, not this table, for what exists.
+
 # GAP_PLAN — Content OS blueprint vs. this repo
 
 Audit date: 2026-07-13 (post P0–P6 + AI Cut, commit 82bebda).

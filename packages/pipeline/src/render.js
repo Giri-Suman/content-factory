@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, renameSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../../shared/src/config.js";
 import { prepare } from "./prepare.js";
+import { noteDegradation } from "../../shared/src/degradations.js";
 
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
 
@@ -15,7 +16,14 @@ export const PROFILES = {
   wide: { comp: "CodeReport", file: "wide.mp4", w: 1920, h: 1080 },
 };
 
-/** Broadcast loudness on the finished file (audio-only re-encode). */
+/**
+ * Broadcast loudness on the finished file (audio-only re-encode).
+ *
+ * Returns null on success or a reason string on failure. It used to return
+ * nothing and simply skip the rename when ffmpeg failed, so a video shipped at
+ * whatever loudness it happened to have and no log line existed to explain why
+ * it was quiet on someone's phone.
+ */
 function loudnorm(file) {
   const tmp = file.replace(/\.mp4$/, ".ln.mp4");
   const res = spawnSync(
@@ -23,7 +31,14 @@ function loudnorm(file) {
     ["-y", "-v", "error", "-i", file, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "copy", "-movflags", "+faststart", "-c:a", "aac", "-b:a", "192k", tmp],
     { encoding: "utf8", windowsHide: true, timeout: 300000 }
   );
-  if (res.status === 0 && existsSync(tmp)) renameSync(tmp, file);
+  if (res.status === 0 && existsSync(tmp)) {
+    renameSync(tmp, file);
+    return null;
+  }
+  const raw = res.stderr || res.error?.message || `ffmpeg exited ${res.status}`;
+  const why = raw.trim().split(String.fromCharCode(10)).pop().trim();
+  console.error(`  loudnorm FAILED on ${path.basename(file)} - shipping un-normalised audio (${String(why).slice(0, 120)})`);
+  return String(why).slice(0, 200);
 }
 
 /**
@@ -171,7 +186,9 @@ export async function renderBrief(argv) {
       console.error(`render FAILED for ${prof.comp}`);
       return false;
     }
-    loudnorm(out);
+    // an unnormalised ship is a quality drop the judges must be able to see
+    const lnFailed = loudnorm(out);
+    if (lnFailed) noteDegradation(props.id, `loudnorm-${prof.comp}`, lnFailed);
     made[prof.comp] = out;
   }
 

@@ -136,16 +136,29 @@ export async function synthesize(text, outBase) {
   }
 
   let meta;
+  let degraded = null;
   if (opt.id === "sapi") meta = sapi(text, outBase);
   else {
     try {
       meta = await elevenLabs(text, outBase, opt.model);
     } catch (e) {
-      console.error(`  voice: ${opt.label} failed (${String(e.message).slice(0, 60)}) — falling back to Windows TTS`);
+      degraded = `${opt.label} failed (${String(e.message).slice(0, 80)}) - used Windows TTS instead`;
+      console.error(`  voice: ${degraded}`);
       meta = sapi(text, outBase);
     }
   }
-  meta.tier = opt.tier;
+  /**
+   * The tier recorded is the one DELIVERED, not the one asked for.
+   *
+   * This used to assign the requested tier unconditionally, so a paid voice
+   * that failed produced a robotic Windows TTS track labelled tier "best". The
+   * only trace was one console line in a log nobody reads after the fact, and
+   * every downstream check - including the AudioJudge - was told it got what it
+   * ordered. A silent quality drop that reports success is worse than a failure.
+   */
+  meta.tier = degraded ? "free" : opt.tier;
+  meta.requestedTier = opt.tier;
+  if (degraded) meta.degraded = degraded;
   meta.hash = hash;
   writeFileSync(metaPath, JSON.stringify(meta));
   return meta;

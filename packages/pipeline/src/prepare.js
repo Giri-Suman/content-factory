@@ -5,6 +5,7 @@ import { createHighlighter } from "shiki";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { synthesize } from "./voice.js";
 import { findChrome } from "../../shared/src/chrome.js";
+import { noteDegradation } from "../../shared/src/degradations.js";
 
 const FPS = 30;
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
@@ -76,6 +77,7 @@ export async function prepare(scriptPath) {
     process.stdout.write(`  scene ${i + 1}/${script.scenes.length} [${scene.type}] `);
 
     const meta = await synthesize(scene.voiceover, path.join(audioDir, `scene-${i}`));
+    if (meta.degraded) noteDegradation(id, `voice-scene-${i}`, meta.degraded);
     scene.audio = `audio/${id}/${path.basename(meta.file)}`;
     scene.words = meta.words;
     scene.durationSec = meta.durationSec;

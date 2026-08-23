@@ -21,9 +21,25 @@ const AGE_MARKS = [1, 6, 24, 48, 168]; // hours: 1h/6h/24h/48h/7d
 /* ---------------- ingestion ---------------- */
 
 /** Nightly: pull current stats for each MyPost (1 unit each) -> snapshots. */
+/**
+ * EVERY READ OF `myposts` HERE MUST EXCLUDE `seed: true`.
+ *
+ * `factory seed myposts` writes 25 synthetic rows carrying fabricated
+ * statsSnapshots and a predictedTier constructed to correlate with them. They
+ * exist to exercise the acceptance path. Left unfiltered, this module measures
+ * its own fixtures: it re-ranks posting slots, nudges scoring weights and feeds
+ * "winners" to the Title Lab from posts that were never published. The loop
+ * then reports that its predictions are accurate, which is true and meaningless
+ * - the correlation was baked in by the generator.
+ *
+ * The poller was worse than useless on them: seeded rows carry
+ * externalId "seed0".."seed24", so it spent real YouTube quota asking for video
+ * ids that do not exist.
+ */
+
 export async function ingestMyChannel() {
   loadEnv();
-  const posts = collection("myposts").find((m) => m.platform === "youtube" && m.externalId);
+  const posts = collection("myposts").find((m) => !m.seed && m.platform === "youtube" && m.externalId);
   const { hasKey, videoStats } = await import("../../radar/src/youtube.js");
   if (!hasKey()) return { polled: 0, note: "no YOUTUBE_API_KEY — my-channel ingestion idle" };
 
@@ -75,7 +91,7 @@ const slotOf = (iso) => {
 };
 
 export function performanceJoins() {
-  const posts = collection("myposts").find((m) => (m.statsSnapshots || []).length > 0);
+  const posts = collection("myposts").find((m) => !m.seed && (m.statsSnapshots || []).length > 0);
   const overall = median(posts.map(outcomeViews));
 
   const groupBy = (keyFn) => {
@@ -210,7 +226,7 @@ export async function autoTune() {
 
   // (c) feed my winners to the Title Lab as patterns
   const winners = collection("myposts")
-    .find((m) => (m.statsSnapshots || []).length > 0)
+    .find((m) => !m.seed && (m.statsSnapshots || []).length > 0)
     .sort((a, b) => outcomeViews(b) - outcomeViews(a))
     .slice(0, 5)
     .filter((m) => m.title);
@@ -250,7 +266,7 @@ export function revertTuning(tuningId) {
 /* ---------------- prediction scorecard ---------------- */
 
 export function predictionScorecard() {
-  const posts = collection("myposts").find((m) => (m.statsSnapshots || []).length > 0);
+  const posts = collection("myposts").find((m) => !m.seed && (m.statsSnapshots || []).length > 0);
   const overall = median(posts.map(outcomeViews));
 
   // wishlist predictedTier: did S/A actually beat B/C? (only where I made the content)

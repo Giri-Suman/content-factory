@@ -141,7 +141,7 @@ export function tagPostEffects(myPostId, effectIds) {
  * it never invents a ranking.
  */
 export function effectPerformance() {
-  const posts = collection("myposts").find((m) => (m.statsSnapshots || []).length && (m.effects || []).length);
+  const posts = collection("myposts").find((m) => !m.seed && (m.statsSnapshots || []).length && (m.effects || []).length);
   if (posts.length < 3) return {};
   const views = (m) => m.statsSnapshots.slice(-1)[0].views;
   const all = posts.map(views).sort((a, b) => a - b);

@@ -145,7 +145,10 @@ flowchart TB
 
 - **Keep it fresh:** run `factory worker` in a terminal you leave open
   (collect 30m, YouTube+tracking 60m, deep refresh 6h, digest + memo +
-  auto-tune Mon 08:00 IST). Do NOT run two workers — no singleton lock yet.
+  auto-tune Mon 08:00 IST). Do NOT run two workers — there is no singleton
+  process lock. Concurrent writes to `data/os/` ARE safe (every collection
+  mutation takes a cross-process file lock), but two workers still duplicate
+  the scheduled work itself.
 - **Backup:** Settings → Export backup (one JSON of all `data/os/` +
   config). `data/` is gitignored; back it up before big changes.
 - **Failure states:** missing keys → clear "add key" notices, heuristics

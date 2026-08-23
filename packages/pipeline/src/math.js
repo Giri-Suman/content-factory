@@ -5,6 +5,7 @@ import { loadEnv, ensureDirs, repoRoot } from "../../shared/src/config.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
 import { MATH_GUIDE, buildMathPrompt, lintLayout, lintManim } from "../../studio/src/mathStyle.js";
 import { synthesize, ffprobeDuration } from "./voice.js";
+import { noteDegradation } from "../../shared/src/degradations.js";
 
 const FPS = 30;
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
@@ -162,6 +163,8 @@ export async function mathShort(argv) {
   process.stdout.write("voice... ");
   const vo = await synthesize(spec.voiceover, path.join(buildDir, "vo"));
   console.log(`${vo.durationSec.toFixed(1)}s (${vo.provider})`);
+  // a substituted voice is a quality drop the judges must be able to see
+  if (vo.degraded) noteDegradation(id, "voice", vo.degraded);
 
   /* 4 — overlay: manim video + voice + captions via Remotion */
   const pubDir = path.join(RENDERER, "public", "gen", id);

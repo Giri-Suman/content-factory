@@ -55,7 +55,7 @@ const bandLabel = ([lo, hi]) => (hi >= 999 ? `${lo}+s` : `${lo}-${hi}s`);
 /** (a) My own results: which length band actually wins? */
 function lengthProposalFromMyPosts(platform) {
   const plat = platform === "yt_short" ? "youtube" : platform === "ig_reel" ? "instagram" : platform;
-  const posts = collection("myposts").find((m) => m.platform === plat && (m.statsSnapshots || []).length && m.lengthSec);
+  const posts = collection("myposts").find((m) => !m.seed && m.platform === plat && (m.statsSnapshots || []).length && m.lengthSec);
   if (posts.length < 5) return null;
   const views = (m) => m.statsSnapshots.slice(-1)[0].views;
   const overall = median(posts.map(views));
