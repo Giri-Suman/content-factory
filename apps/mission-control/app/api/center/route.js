@@ -7,7 +7,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
+import { enqueue, queuedMessage, readCollection, readUiMeta } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -16,8 +16,16 @@ const json = (o, status = 200) =>
 
 export async function GET() {
   const env = getEnv();
-  const rows = await readCollection(env, "publishitems");
-  return json({ items: rows });
+  const [rows, ui] = await Promise.all([readCollection(env, "publishitems"), readUiMeta(env)]);
+  /* The Publish page shows an OAuth banner from `ytOauth` and hides the
+     one-click publish button unless `autoMode`. Both were missing from the port,
+     so the page claimed YouTube was not connected regardless of the truth.
+     They are env-derived on the laptop and arrive in state/ui.json. */
+  return json({
+    items: rows.sort((a, b) => String(a.scheduledFor || "z").localeCompare(String(b.scheduledFor || "z"))),
+    ytOauth: Boolean(ui.flags?.youtubeOauth ?? ui.flags?.youtubeVerified),
+    autoMode: ui.flags?.publishMode === "auto" && Boolean(ui.flags?.youtubeVerified),
+  });
 }
 
 export async function POST(request) {

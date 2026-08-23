@@ -1,9 +1,12 @@
 /**
- * Ranked idea backlog.
+ * Idea bank and series planner.
  *
- * Ported for Workers: reads come from R2 (the same JSON the laptop writes,
- * pushed by `factory sync push`); anything that used to spawn the CLI now
- * queues and reports when the laptop will run it.
+ * The disk route shelled out to `ideabank rank --json` so the ranking math lived
+ * in one place. A Worker cannot, so it reads the stored ranking instead - the
+ * same rows the CLI wrote on its last run. Re-rank from the button; it queues.
+ *
+ * `series` and `recentPillars` were missing entirely from the port, which is why
+ * the series planner showed nothing.
  */
 
 import { getEnv } from "@factory-env";
@@ -16,8 +19,18 @@ const json = (o, status = 200) =>
 
 export async function GET() {
   const env = getEnv();
-  const rows = await readCollection(env, "ideabank");
-  return json({ ideas: rows });
+  const [ideas, series, myposts] = await Promise.all([
+    readCollection(env, "ideabank"),
+    readCollection(env, "series"),
+    readCollection(env, "myposts"),
+  ]);
+  return json({
+    ideas,
+    series,
+    recentPillars: myposts
+      .filter((m) => m.pillar && m.postedAt && Date.now() - new Date(m.postedAt).getTime() < 14 * 864e5)
+      .map((m) => m.pillar),
+  });
 }
 
 export async function POST(request) {
@@ -25,7 +38,7 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" });
-    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+    return json({ ok: true, queued: true, jobId: r.record.id, message: queuedMessage(r) });
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

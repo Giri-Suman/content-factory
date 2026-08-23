@@ -190,6 +190,8 @@ export async function pushUiMeta() {
     flags: {
       publishMode: env("PUBLISH_MODE") ? "auto" : "staged",
       youtubeVerified: env("YOUTUBE_APP_VERIFIED"),
+      // distinct from the app review flag: this is whether OAuth is actually wired
+      youtubeOauth: env("YT_REFRESH_TOKEN"),
       metaReviewed: env("META_APP_REVIEWED"),
     },
   };
