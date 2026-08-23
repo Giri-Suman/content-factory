@@ -1535,3 +1535,34 @@ Same shape one layer up: `runJob` used `stdio:"inherit"`, showing everything
 live and keeping none of it, so a cloud failure reported `exited 1 after 0.4 min`
 and nothing else. Live output and a captured tail are not alternatives — the
 console reader and the portal reader are different people.
+
+## Test the pages, not the endpoints — and diff the shape, not the status
+
+*Tried* — declaring the cloud portal working because all 26 routes returned 200
+and every endpoint returned JSON.
+
+*Broke* — nine pages were unusable. Settings threw on hydration (`s.ready[tier]`
+where the data carries `tiers[].available`). Production threw
+`Cannot read properties of undefined (reading 'map')` because the route returned
+`{briefs}` and the page renders a kanban from `columns`/`states`/`alerts`.
+Trend Radar had been empty since the port: `readTrends` reads state/trends.json
+and nothing ever wrote it, because trends.json is in the sync EXCLUDE list.
+YouTube, QC, Wishlist, Ideas, Analytics and Publish each returned a payload
+whose keys the page never reads. Every one served a clean 200.
+
+*Rule* — for a client-shell app, the useful check is **"does the payload have the
+keys this page destructures?"**, run against the deployed URL. Two things make
+it work in practice:
+
+- Extract the field names from the page source rather than guessing. My first
+  version only matched `d.<field>`; Production aliases its payload `data`, so
+  the worst break in the set was invisible until the regex covered every alias.
+- **Cache-bust the probe.** Cloudflare served stale bodies and a fixed route
+  looked broken for two more deploys, which nearly sent me rewriting code that
+  was already correct.
+
+And the fastest way to drive a gated portal honestly is a PREVIEW deployment:
+same Workers runtime, same bindings, and Pages keeps preview environment
+secrets separate, so it comes up ungated without touching production or handling
+a password. Delete it afterwards - `wrangler pages deployment delete <id>
+--force`, since the branch alias counts as active.
