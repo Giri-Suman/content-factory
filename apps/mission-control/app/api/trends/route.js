@@ -6,10 +6,10 @@
  * and is now fully cloud-side; POST queues `radar-collect` and says when it runs.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage, readConfig, readTrends } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -21,13 +21,13 @@ const top = (trends) =>
     .slice(0, 120);
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const [trends, config] = await Promise.all([readTrends(env), readConfig(env)]);
   return json({ trends: top(trends), config });
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   const [trends, config] = await Promise.all([readTrends(env), readConfig(env)]);
   try {

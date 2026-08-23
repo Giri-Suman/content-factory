@@ -7,10 +7,10 @@
  * machine that has ffmpeg rather than inside this request.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -29,7 +29,7 @@ const weight = (l) =>
   Math.round(l.evidenceCount * recency(l.lastEvidenceAt || l.createdAt) * (l.pinned ? 3 : 1) * 10) / 10;
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const [all, crits, versions] = await Promise.all([
     readCollection(env, "lessons"),
     readCollection(env, "critiques"),
@@ -72,7 +72,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   const arg = "";
   try {

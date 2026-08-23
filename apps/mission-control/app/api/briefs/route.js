@@ -7,22 +7,22 @@
  * the laptop will run it.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage, readCollection, writeCollection } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const rows = await readCollection(env, "briefs");
   return json({ briefs: rows.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   // The old route spawned `factory brief ...`. Same intent, queued instead.
   const cmd = body.topic ? "brief-topic" : "brief";
@@ -47,7 +47,7 @@ export async function POST(request) {
  * visible here instantly while its downstream work is still pending.
  */
 export async function PATCH(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const { id, status, payload, checklistState, lane } = await request.json().catch(() => ({}));
 
   const rows = await readCollection(env, "briefs");

@@ -2,12 +2,12 @@
  * Serve a generated thumbnail from R2.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 export async function GET(request, { params }) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   if (!env?.QUEUE) return new Response("storage not bound", { status: 500 });
   const p = await params; // Next 15: params is a Promise
   const id = String(p.id).split("/").pop();

@@ -11,12 +11,12 @@
  * confusing otherwise.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 export async function GET(request, { params }) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   if (!env?.QUEUE) return new Response("storage not bound", { status: 500 });
 
   // basename only — a crafted id must not walk out of the renders/ prefix

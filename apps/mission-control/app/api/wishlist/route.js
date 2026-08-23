@@ -6,22 +6,22 @@
  * queues and reports when the laptop will run it.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage, readCollection, writeCollection } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const rows = await readCollection(env, "wishlist");
   return json({ wishlist: rows });
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" });
@@ -33,7 +33,7 @@ export async function POST(request) {
 
 /** Remove one row. A direct edit, not a job - see writeCollection's note. */
 export async function DELETE(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return json({ ok: false, error: "id required" }, 400);
   const rows = await readCollection(env, "wishlist");

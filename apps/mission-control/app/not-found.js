@@ -8,7 +8,7 @@
  * ourselves is what makes the segment config apply to it.
  */
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 export default function NotFound() {
   return (

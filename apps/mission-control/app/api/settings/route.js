@@ -17,10 +17,10 @@
  * would be silently overwritten by the next `sync push`.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { readCollection, readConfig, readEnvFlags, readUiMeta } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -50,7 +50,7 @@ function budgetDashboard(quotaRows) {
 }
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const [config, envKeys, ui, quota, jobruns, watchchannels] = await Promise.all([
     readConfig(env),
     readEnvFlags(env),

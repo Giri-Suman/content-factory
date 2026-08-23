@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 4600",
     "build": "next build",
-    "start": "next start -p 4600"
+    "start": "next start -p 4600",
+    "dev:open": "node scripts/dev-open.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.11.0",

@@ -2,8 +2,8 @@
  * Publish dry run. The real upload (--go) is deliberately absent from the registry and stays a terminal action.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
-export const runtime = "edge";
+import { getEnv } from "@factory-env";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -19,7 +19,7 @@ import { enqueue, queuedMessage } from "../../../lib/cloud.js";
  * handed a made-up verdict on whether something is safe to publish.
  */
 export async function GET(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const id = String(new URL(request.url).searchParams.get("id") || "").replace(/[^a-z0-9-]/gi, "");
   if (!id) return json({ error: "missing id" }, 400);
   try {
@@ -31,7 +31,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: "publish", arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" });

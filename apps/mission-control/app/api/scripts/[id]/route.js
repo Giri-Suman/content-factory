@@ -6,8 +6,8 @@
  * Saying so is better than accepting an edit that quietly disappears.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
-export const runtime = "edge";
+import { getEnv } from "@factory-env";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -15,7 +15,7 @@ const json = (o, status = 200) =>
 import { readScript } from "../../../../lib/cloud.js";
 
 export async function GET(request, { params }) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const { id } = await params; // Next 15: params is a Promise
   const script = await readScript(env, id);
   if (!script) return json({ error: "not found" }, 404);

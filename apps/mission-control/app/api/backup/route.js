@@ -7,15 +7,15 @@
  * artifacts.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { readCollection, readConfig } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const COLLECTIONS = ["briefs", "clusters", "publishitems", "wishlist", "ideabank", "escalations", "costledger", "lessons"];
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const out = { exportedAt: new Date().toISOString(), config: await readConfig(env), collections: {} };
   for (const c of COLLECTIONS) out.collections[c] = await readCollection(env, c);
   return new Response(JSON.stringify(out, null, 2), {

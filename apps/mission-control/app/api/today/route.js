@@ -2,8 +2,8 @@
  * Today's shortlist.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
-export const runtime = "edge";
+import { getEnv } from "@factory-env";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -19,7 +19,7 @@ import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
  * the card hides itself - the same thing it already did when ranking failed.
  */
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const [clusters, briefs, jobruns, watchchannels, watchvideos, digests, memos, critiques, lessons, escalations] =
     await Promise.all(
       ["clusters", "briefs", "jobruns", "watchchannels", "watchvideos", "digests", "memos", "critiques", "lessons", "escalations"].map(
@@ -77,7 +77,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" });

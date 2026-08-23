@@ -12,7 +12,7 @@
  * is a login that "succeeds" and then bounces you straight back to /login.
  */
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const COOKIE = "factory_session";
 

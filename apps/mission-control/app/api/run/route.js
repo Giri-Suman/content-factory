@@ -17,11 +17,11 @@
  * localhost, because this endpoint faces the internet.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage, readCommands } from "../../../lib/cloud.js";
 import { COMMANDS, keyOf } from "../../../../../packages/shared/src/commands.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -42,7 +42,7 @@ const fromRegistry = () =>
   }));
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   // Prefer the manifest: it carries the `laptop` flag and is exactly what
   // enqueue() validates against, so the catalog cannot drift from what will run.
   const man = await readCommands(env);
@@ -50,7 +50,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const { key, input = "", requestedBy = "portal" } = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: key, arg: input, requestedBy });

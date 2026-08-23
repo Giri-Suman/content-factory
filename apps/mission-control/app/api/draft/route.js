@@ -11,16 +11,16 @@
  * to a page that is not there.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const { input } = await request.json().catch(() => ({}));
   if (!input || typeof input !== "string") return json({ ok: false, error: "missing input" }, 400);
   try {

@@ -2,8 +2,8 @@
  * Packaging helpers - captions, chapters, silent cut.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
-export const runtime = "edge";
+import { getEnv } from "@factory-env";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -30,7 +30,7 @@ const VIEWS = {
 };
 
 export async function GET(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const view = new URL(request.url).searchParams.get("view");
 
   if (view) {
@@ -61,7 +61,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: "tools-captions", arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" });

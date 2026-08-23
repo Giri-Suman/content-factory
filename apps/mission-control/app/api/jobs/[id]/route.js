@@ -18,10 +18,10 @@
  * "running", because a spinner for work that starts in six hours is a lie.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { istTime, readCommands, readJob, whenWillItRun } from "../../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -40,7 +40,7 @@ async function aheadOf(env, job) {
 }
 
 export async function GET(_req, { params }) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const { id } = await params; // Next 15: params is a Promise
   const job = await readJob(env, id);
   if (!job) return json({ error: "not found" }, 404);

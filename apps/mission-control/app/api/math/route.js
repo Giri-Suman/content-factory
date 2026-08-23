@@ -6,16 +6,16 @@
  * the UI already polls.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const { topic, demo } = await request.json().catch(() => ({}));
   // the demo row is a fixed scene that needs no AI key; the topic row needs one,
   // and the laptop checks that when it runs rather than guessing from here

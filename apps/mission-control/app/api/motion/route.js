@@ -7,11 +7,11 @@
  * machine that has ffmpeg rather than inside this request.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 import { EFFECTS, suggestEffects } from "../../../../../packages/studio/src/motionEffects.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -39,7 +39,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const body = await request.json().catch(() => ({}));
   const arg = "";
   try {

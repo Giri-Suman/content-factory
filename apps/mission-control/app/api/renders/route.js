@@ -5,13 +5,13 @@
  * one machine's disk, it describes the bucket both machines push to.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { listRenders } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   return new Response(JSON.stringify({ renders: await listRenders(env) }), {
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });

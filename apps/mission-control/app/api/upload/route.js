@@ -11,9 +11,9 @@
  * prefix, and "clip.mp4.exe" would sit in storage as an executable.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const ALLOWED = new Set(["mp4", "mov", "mkv", "avi", "m4v", "webm"]);
 
@@ -21,7 +21,7 @@ const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
   const listed = await env.QUEUE.list({ prefix: "footage/", limit: 200 });
   const items = listed.objects.map((o) => ({
@@ -35,7 +35,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
 
   const form = await request.formData().catch(() => null);
@@ -59,7 +59,7 @@ export async function POST(request) {
 }
 
 export async function DELETE(request) {
-  const { env } = getRequestContext();
+  const env = getEnv();
   if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
   const name = new URL(request.url).searchParams.get("name");
   if (!name) return json({ ok: false, error: "name required" }, 400);

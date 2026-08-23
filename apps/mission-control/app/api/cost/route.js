@@ -9,10 +9,10 @@
  * moved from data/os/costledger.json to the same file in R2.
  */
 
-import { getRequestContext } from "@cloudflare/next-on-pages";
+import { getEnv } from "@factory-env";
 import { readCollection, readConfig } from "../../../lib/cloud.js";
 
-export const runtime = "edge";
+export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -20,7 +20,7 @@ const json = (o, status = 200) =>
 const round = (n) => Math.round(n * 100) / 100;
 
 export async function GET() {
-  const { env } = getRequestContext();
+  const env = getEnv();
   const [rows, config] = await Promise.all([readCollection(env, "costledger"), readConfig(env)]);
   const cadence = config.dailyCadence ?? 1;
   const today = new Date().toISOString().slice(0, 10);
