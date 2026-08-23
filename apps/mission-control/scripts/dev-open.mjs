@@ -17,7 +17,7 @@
  */
 import { spawn } from "node:child_process";
 
-const child = spawn("npx", ["next", "dev", "-p", process.env.PORT || "4600", "-H", "127.0.0.1"], {
+const child = spawn("npx", ["next", "dev", "--turbopack", "-p", process.env.PORT || "4600", "-H", "127.0.0.1"], {
   stdio: "inherit",
   shell: true,
   env: { ...process.env, FACTORY_PASSWORD: "" },

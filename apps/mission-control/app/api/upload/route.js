@@ -13,7 +13,7 @@
 
 import { getEnv } from "@factory-env";
 
-export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 const ALLOWED = new Set(["mp4", "mov", "mkv", "avi", "m4v", "webm"]);
 

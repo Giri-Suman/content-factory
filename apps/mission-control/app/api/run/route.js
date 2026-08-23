@@ -21,7 +21,7 @@ import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage, readCommands } from "../../../lib/cloud.js";
 import { COMMANDS, keyOf } from "../../../../../packages/shared/src/commands.js";
 
-export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });

@@ -5,7 +5,7 @@
 import { getEnv } from "@factory-env";
 import { listScripts } from "../../../lib/cloud.js";
 
-export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 export async function GET() {
   const env = getEnv();

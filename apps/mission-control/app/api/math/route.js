@@ -9,7 +9,7 @@
 import { getEnv } from "@factory-env";
 import { enqueue, queuedMessage } from "../../../lib/cloud.js";
 
-export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });

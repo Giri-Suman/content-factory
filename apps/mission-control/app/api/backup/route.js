@@ -10,7 +10,7 @@
 import { getEnv } from "@factory-env";
 import { readCollection, readConfig } from "../../../lib/cloud.js";
 
-export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 const COLLECTIONS = ["briefs", "clusters", "publishitems", "wishlist", "ideabank", "escalations", "costledger", "lessons"];
 

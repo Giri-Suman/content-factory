@@ -38,9 +38,15 @@ export default {
    * runtime means packages/shared/src/r2.js - node:crypto, Buffer - can never
    * be pulled into the edge bundle, which would fail the next-on-pages build.
    */
+  /* Turbopack does not run the webpack() hook, so the same alias has to be
+     declared for it too or `@factory-env` simply fails to resolve in dev. */
+  turbopack: {
+    resolveAlias: {
+      "@factory-env": "./lib/env.workers.js",
+    },
+  },
   webpack(config) {
-    const target = process.env.FACTORY_TARGET === "pages" ? "workers" : "node";
-    config.resolve.alias["@factory-env"] = path.resolve(process.cwd(), `lib/env.${target}.js`);
+    config.resolve.alias["@factory-env"] = path.resolve(process.cwd(), "lib/env.workers.js");
     return config;
   },
   env: {

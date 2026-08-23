@@ -14,7 +14,7 @@ import { Nav } from "../components/Nav.js";
  * every page in this portal is a "use client" shell that fetches its data after
  * mount, so the prerendered HTML was an empty frame anyway.
  */
-export const runtime = process.env.FACTORY_TARGET === "pages" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 export const metadata = {
   title: "Mission Control — Content Factory",
