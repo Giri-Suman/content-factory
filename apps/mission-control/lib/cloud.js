@@ -72,6 +72,9 @@ export const readPerf = (env) => readJson(env, `${STATE}/perf.json`, {});
  * Settings page rendering with empty tier lists instead of blanking on a
  * missing field.
  */
+/** Motion bench numbers, measured on the laptop and pushed by `sync push`. */
+export const readMotionMeta = (env) => readJson(env, `${STATE}/motion.json`, {});
+
 export const readUiMeta = (env) => readJson(env, `${STATE}/ui.json`, {});
 
 export async function readEnvFlags(env) {

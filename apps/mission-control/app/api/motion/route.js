@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { enqueue, queuedMessage, readMotionMeta } from "../../../lib/cloud.js";
 import { EFFECTS, suggestEffects } from "../../../../../packages/studio/src/motionEffects.js";
 
 export const runtime = "edge";
@@ -17,24 +17,40 @@ const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 /**
- * The effect catalog.
+ * The effect catalog, with the measurements the laptop published.
  *
- * The disk version also reported each effect's MEASURED attention score and
- * whether a preview mp4 existed - both produced by running ffmpeg here. Neither
- * can exist in a Worker, so they come back null and the UI shows the catalog
- * without them rather than inventing numbers. Run `motion bench` on the laptop
- * to fill them in.
+ * The first port hardcoded `measured: null` and `hasPreview: false` on the
+ * grounds that neither can be produced inside a Worker. True, but they do not
+ * have to be produced here - the preview mp4s are in R2 under renders/_motion/,
+ * and the bench numbers are pushed to state/motion.json by `sync push`. Left as
+ * they were, the page showed 22 effects with every column blank and no preview,
+ * which reads as "never measured" rather than "measured elsewhere".
  */
 export async function GET(request) {
+  const env = getEnv();
   const u = new URL(request.url);
   const scene = u.searchParams.get("scene");
   const niche = u.searchParams.get("niche");
+
+  const [meta, listed] = await Promise.all([
+    readMotionMeta(env),
+    env?.QUEUE ? env.QUEUE.list({ prefix: "renders/_motion/", limit: 100 }) : Promise.resolve({ objects: [] }),
+  ]);
+  const previews = new Set(listed.objects.map((o) => o.key.slice("renders/_motion/".length).replace(/\.mp4$/i, "")));
+  const bench = Object.fromEntries((meta.bench || []).map((b) => [b.effectId || b.id, b]));
+  const perf = meta.performance || {};
+
   return json({
     ok: true,
-    effects: EFFECTS.map((e) => ({ ...e, measured: null, yours: null, hasPreview: false })),
+    effects: EFFECTS.map((e) => ({
+      ...e,
+      measured: bench[e.id] || null,
+      yours: perf[e.id] || null,
+      hasPreview: previews.has(e.id),
+    })),
     suggested: scene ? suggestEffects({ sceneType: scene, niche: niche || "coding", limit: 6 }) : [],
-    hasResults: false,
-    measuredOnLaptop: true, // tells the UI why the measurement columns are empty
+    hasResults: Object.keys(perf).length > 0,
+    benchedAt: meta.at || null,
   });
 }
 

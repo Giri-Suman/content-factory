@@ -216,6 +216,31 @@ async function pushTrends() {
   return buf.length;
 }
 
+/**
+ * Motion bench numbers, for the cloud Motion Lab.
+ *
+ * These come from actually rendering each effect and measuring pixels, which
+ * only the laptop can do - packages/studio/src/motionLab.js reads the results
+ * off disk. Without publishing them the cloud page shows 22 effects with every
+ * measurement column blank, which reads as "we never measured" rather than
+ * "the numbers are on the other machine".
+ */
+async function pushMotion() {
+  try {
+    const lab = await import("../../studio/src/motionLab.js");
+    const payload = {
+      at: new Date().toISOString(),
+      bench: lab.benchResults ? lab.benchResults() : [],
+      performance: lab.effectPerformance ? lab.effectPerformance() : {},
+    };
+    await putObject(`${PREFIX}/motion.json`, JSON.stringify(payload, null, 2), { contentType: "application/json" });
+    return payload.bench.length;
+  } catch {
+    /* motion bench is optional - never fail a state push over it */
+    return 0;
+  }
+}
+
 export async function pushState({ force = false } = {}) {
   if (!isConfigured()) throw new Error("R2 is not configured");
   const remote = new Map((await listObjects(`${PREFIX}/`)).map((o) => [o.key, o]));
@@ -258,6 +283,7 @@ export async function pushState({ force = false } = {}) {
   await putObject(`${PREFIX}/envkeys.json`, JSON.stringify(envFlags(), null, 2), { contentType: "application/json" });
   await pushUiMeta();
   await pushTrends();
+  await pushMotion();
 
   const commands = await pushCommandManifest();
   return { pushed, skipped, conflicts, total: files.length, commands };
