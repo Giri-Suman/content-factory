@@ -79,6 +79,7 @@ export function readEnvKeys() {
     provider,
     anthropic: Boolean(vals.ANTHROPIC_API_KEY),
     openrouter: Boolean(vals.OPENROUTER_API_KEY),
+    google: Boolean(vals.GEMINI_API_KEY),
     ollama: Boolean(vals.OLLAMA_MODEL),
     elevenlabs: Boolean(vals.ELEVENLABS_API_KEY && vals.ELEVENLABS_VOICE_ID),
     telegram: Boolean(vals.TELEGRAM_BOT_TOKEN && vals.TELEGRAM_CHAT_ID),

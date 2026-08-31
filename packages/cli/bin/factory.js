@@ -460,6 +460,36 @@ switch (cmd) {
         else cfg.serviceTiers = { ...svcTiers, [aargs[0]]: tier };
         saveUserConfig(cfg);
         console.log(`${aargs[0]} -> ${tier} tier${tier !== aargs[1] ? `  (“${aargs[1]}” is the old name for “${tier}”)` : ""}`);
+      } else if (action === "gemini") {
+        /* Same job `ai models` does for OpenRouter: ids retire, and a stale one
+           404s in a way that reads like a broken key. Ask the API which ids THIS
+           key can use rather than trusting a hardcoded default. */
+        if (!process.env.GEMINI_API_KEY) {
+          throw new Error("needs GEMINI_API_KEY in .env - get one free at https://aistudio.google.com/apikey");
+        }
+        const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+          headers: { "x-goog-api-key": process.env.GEMINI_API_KEY },
+        });
+        if (!res.ok) throw new Error(`gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        const all = (await res.json()).models || [];
+        // only models that can answer a chat call
+        const usable = all.filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"));
+        const strip = (n) => String(n || "").split("/").pop();
+        const current = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+        console.log(`
+${usable.length} Gemini models this key can call:
+`);
+        for (const m of usable) {
+          const id = strip(m.name);
+          console.log(`  ${id === current ? "->" : "  "} ${id.padEnd(42)} ${String(m.description || "").slice(0, 58)}`);
+        }
+        const ids = usable.map((m) => strip(m.name));
+        console.log(`
+  in use: ${current}${ids.includes(current) ? "" : "   ** NOT in the list - this will 404 **"}`);
+        console.log(`  change it with GEMINI_MODEL=<id> in .env`);
+        console.log(`  AI Studio's quota is separate from OpenRouter's, so this keeps working`);
+        console.log(`  on days the OpenRouter free pool is exhausted.
+`);
       } else if (action === "models") {
         // OpenRouter's free roster rotates; a stale default 404s with
         // "unavailable for free", which reads like a broken key. Check it here.

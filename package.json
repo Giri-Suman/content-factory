@@ -15,7 +15,7 @@
     "sync:trends": "node scripts/sync-trends.mjs",
     "sync:trends:check": "node scripts/sync-trends.mjs --check",
     "test:r2": "node test/r2-sigv4.mjs",
-    "test": "node test/store.mjs && node test/guards.mjs && node test/r2-sigv4.mjs"
+    "test": "node test/store.mjs && node test/guards.mjs && node test/gemini.mjs && node test/r2-sigv4.mjs"
   },
   "engines": {
     "node": ">=20"

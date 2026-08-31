@@ -11,6 +11,7 @@ const CATEGORIES = [
 const PROVIDERS = [
   ["anthropic", "Anthropic", "best writing quality — ANTHROPIC_API_KEY"],
   ["openrouter", "OpenRouter", "hundreds of models, cheap + free (:free) — OPENROUTER_API_KEY"],
+  ["google", "Gemini (AI Studio)", "free tier with its OWN daily quota — GEMINI_API_KEY"],
   ["ollama", "Ollama", "100% free, runs locally — OLLAMA_MODEL"],
 ];
 

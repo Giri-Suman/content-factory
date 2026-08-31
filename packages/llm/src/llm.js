@@ -4,6 +4,8 @@
  *  anthropic   best quality (Claude). Scoring: haiku. Scripts: opus, adaptive thinking.
  *  openrouter  hundreds of models, one key (openrouter.ai). Cheap paid models and
  *              genuinely free ones (model ids ending in ":free").
+ *  google      Gemini via AI Studio. Free tier with its OWN daily quota, separate
+ *              from OpenRouter's shared free-models-per-day cap.
  *  ollama      100% free, fully local (ollama.com). Zero API cost, needs a pulled model.
  *
  * Selection: LLM_PROVIDER in .env forces one; otherwise the first configured
@@ -13,9 +15,10 @@
 
 export function resolveProvider() {
   const forced = (process.env.LLM_PROVIDER || "").toLowerCase();
-  if (["anthropic", "openrouter", "ollama"].includes(forced)) return forced;
+  if (["anthropic", "openrouter", "ollama", "google"].includes(forced)) return forced;
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
   if (process.env.OPENROUTER_API_KEY) return "openrouter";
+  if (process.env.GEMINI_API_KEY) return "google";
   if (process.env.OLLAMA_MODEL) return "ollama";
   return null;
 }
@@ -35,6 +38,10 @@ export function modelFor(task, provider = resolveProvider()) {
         process.env.OPENROUTER_MODEL ||
         "openrouter/auto"
       );
+    case "google":
+      // AI Studio ids differ from OpenRouter's ("gemini-3.6-flash", not
+      // "google/gemini-3.6-flash"). `factory ai gemini` lists what a key can use.
+      return process.env.GEMINI_MODEL || "gemini-3.6-flash";
     case "ollama":
       return process.env.OLLAMA_MODEL || "llama3.2";
     default:
@@ -52,13 +59,16 @@ export function providerStatus() {
   const openrouter = Boolean(process.env.OPENROUTER_API_KEY);
   const ollama = Boolean(process.env.OLLAMA_MODEL);
   const xai = Boolean(process.env.XAI_API_KEY);
+  const google = Boolean(process.env.GEMINI_API_KEY);
   return {
     active: resolveProvider(),
     anthropic,
     openrouter,
     ollama,
     xai,
-    freeTierReady: ollama || openrouter,
+    google,
+    // Gemini's free tier has its own quota, so it counts as a free path
+    freeTierReady: ollama || openrouter || google,
     scoringModel: modelFor("score"),
     scriptModel: modelFor("script"),
   };
@@ -154,6 +164,52 @@ async function xaiChat({ system, user, maxTokens, model }) {
   return text;
 }
 
+/**
+ * Google AI Studio (Gemini), called directly rather than through OpenRouter.
+ *
+ * WHY DIRECT: OpenRouter's `:free` models share ONE account-wide
+ * free-models-per-day budget. Once it trips every free option fails at once -
+ * which is exactly what took the factory down - and swapping which `:free`
+ * model is configured changes nothing, because the cap is on the account, not
+ * the model. AI Studio has its own separate free quota, so this is a second
+ * independent pool rather than another straw in the same glass.
+ *
+ * The wire format is not OpenAI-shaped: the system prompt is `systemInstruction`
+ * rather than a message, and the reply is nested under candidates/content/parts.
+ */
+async function googleChat({ system, user, maxTokens, model }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+    signal: AbortSignal.timeout(300000),
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: user }] }],
+      generationConfig: { maxOutputTokens: maxTokens },
+    }),
+  });
+
+  if (!res.ok) {
+    const body = (await res.text()).slice(0, 200);
+    /* A retired model id is the failure this provider is most likely to hit,
+       and "404" alone sends you hunting for a broken key. Name the fix. */
+    const hint = res.status === 404 ? ' - run `factory ai gemini` to list ids this key can actually use' : "";
+    throw new Error(`gemini ${res.status}: ${body}${hint}`);
+  }
+
+  const data = await res.json();
+  const cand = data.candidates?.[0];
+  const text = cand?.content?.parts?.map((p) => p.text).filter(Boolean).join("");
+  if (!text) {
+    /* An empty answer with finishReason SAFETY is a refusal, not an outage;
+       saying so stops it being retried as a transient error. */
+    const why = cand?.finishReason ? ` (finishReason ${cand.finishReason})` : "";
+    throw new Error(`gemini: empty response${why} ${JSON.stringify(data).slice(0, 160)}`);
+  }
+  return text;
+}
+
 async function ollamaChat({ system, user, model }) {
   const base = process.env.OLLAMA_URL || "http://localhost:11434";
   const res = await fetch(`${base}/api/chat`, {
@@ -175,7 +231,7 @@ async function ollamaChat({ system, user, model }) {
   return data.message.content;
 }
 
-const CALLERS = { anthropic: anthropicChat, openrouter: openrouterChat, ollama: ollamaChat, xai: xaiChat };
+const CALLERS = { anthropic: anthropicChat, openrouter: openrouterChat, ollama: ollamaChat, xai: xaiChat, google: googleChat };
 
 /** Per-task tier assignment from data/config.json (Settings UI writes it). */
 function configuredTiers() {

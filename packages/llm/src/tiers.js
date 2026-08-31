@@ -66,6 +66,27 @@ export function tierChain(tier) {
     free: [
       { provider: "ollama", model: env.OLLAMA_MODEL || "llama3.2", needs: () => Boolean(env.OLLAMA_MODEL), costPerCall: 0, label: "Ollama (local)" },
       {
+        provider: "google",
+        /**
+         * FIRST in the free chain on purpose.
+         *
+         * OpenRouter meters every `:free` model against ONE account-wide
+         * free-models-per-day budget, so when it trips both OpenRouter options
+         * below fail together and the entire free tier is gone for the day -
+         * which is exactly what happened here. AI Studio counts against its own
+         * separate quota, so trying it first means that outage stops being a
+         * full stop.
+         *
+         * The id is an AI Studio id, so no vendor prefix: "gemini-3.6-flash",
+         * not "google/gemini-3.6-flash". Ids retire - `factory ai gemini` lists
+         * what this key can actually use.
+         */
+        model: env.GEMINI_MODEL || "gemini-3.6-flash",
+        needs: () => Boolean(env.GEMINI_API_KEY),
+        costPerCall: 0,
+        label: "Gemini (AI Studio)",
+      },
+      {
         provider: "openrouter",
         // OpenRouter's free roster ROTATES — llama-3.3-70b:free was the default
         // here and now 404s "unavailable for free". Any hardcoded value goes

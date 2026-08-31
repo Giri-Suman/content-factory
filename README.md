@@ -143,6 +143,11 @@ flowchart TB
 
 ### Ops runbook
 
+- **Free AI, two independent pools:** OpenRouter meters every `:free` model
+  against ONE account-wide daily budget, so when it trips the whole free tier
+  stops. Add `GEMINI_API_KEY` (free from https://aistudio.google.com/apikey) and
+  the free tier tries Gemini first, on its own separate quota. List the ids your
+  key can call with `factory ai gemini`.
 - **Keep it fresh:** run `factory worker` in a terminal you leave open
   (collect 30m, YouTube+tracking 60m, deep refresh 6h, digest + memo +
   auto-tune Mon 08:00 IST). Do NOT run two workers — there is no singleton
