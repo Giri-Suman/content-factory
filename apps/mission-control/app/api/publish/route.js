@@ -8,7 +8,7 @@ export const runtime = "edge";
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { enqueue, queuedResponse } from "../../../lib/cloud.js";
 
 /**
  * Compliance report for one render.
@@ -24,7 +24,7 @@ export async function GET(request) {
   if (!id) return json({ error: "missing id" }, 400);
   try {
     const r = await enqueue(env, { cmd: "compliance", arg: id, requestedBy: "portal" });
-    return json({ report: null, queued: true, message: queuedMessage(r), canRealUpload: false });
+    return json({ report: null, canRealUpload: false, ...queuedResponse(r) });
   } catch (e) {
     return json({ report: null, error: e.message }, 400);
   }
@@ -35,7 +35,7 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   try {
     const r = await enqueue(env, { cmd: "publish", arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" });
-    return json({ ok: true, queued: true, id: r.record.id, message: queuedMessage(r) });
+    return json(queuedResponse(r));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

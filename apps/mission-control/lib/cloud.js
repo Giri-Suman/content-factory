@@ -342,6 +342,33 @@ export async function whenWillItRun(env) {
   return { awake: false, text: "when the laptop is next on" };
 }
 
+/**
+ * The response every action button expects.
+ *
+ * Pages were written against the disk portal, which ran the CLI inline and
+ * answered `{ ok, out }` - `out` being the text shown under the button. The
+ * ported routes answered `{ message }`, a key nothing reads, so a click that
+ * queued perfectly well produced no visible result and read as a dead button.
+ * Both keys are sent: `out` for the existing UI, `message` for anything newer.
+ */
+export function queuedResponse(r) {
+  const text = queuedMessage(r);
+  return { ok: true, queued: true, jobId: r.record.id, id: r.record.id, message: text, out: text };
+}
+
+/**
+ * An action this portal genuinely cannot perform.
+ *
+ * Said plainly, with the command that does work, because the alternative -
+ * silently running whatever the route's single hardcoded command happened to be
+ * - meant pressing "Seed 25 (demo)" ran the analytics job instead. A button that
+ * does the wrong thing is worse than one that explains itself.
+ */
+export function notAvailable(action, hint) {
+  const text = `"${action}" is not available from the portal yet${hint ? ` - run \`${hint}\` on the laptop` : ""}.`;
+  return { ok: false, out: text, message: text, unsupported: true };
+}
+
 /** The sentence a person reads after pressing a button. */
 export function queuedMessage({ row, ahead, when, duplicate }) {
   const tail = ahead ? ` ${ahead} job(s) ahead of it.` : "";

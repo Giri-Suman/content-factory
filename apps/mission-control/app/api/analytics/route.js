@@ -6,7 +6,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage, readEnvFlags, readPerf } from "../../../lib/cloud.js";
+import { enqueue, readEnvFlags, readPerf, queuedResponse, notAvailable } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -24,12 +24,33 @@ export async function GET() {
   });
 }
 
+/**
+ * Which registry command each button means.
+ *
+ * The port dropped `action` entirely and enqueued one command whatever was
+ * pressed, so every button on this page did the same thing. `null` marks an
+ * action the registry has no row for - those are refused by name rather than
+ * quietly running something else.
+ */
+const ACTIONS = {
+  ingest: "analytics",
+  tune: "analytics",
+  memo: "cal-memo",
+  seed: null,
+  revert: null,
+};
+const HINTS = { seed: "factory seed myposts", revert: "factory analytics" };
+
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
+  const action = String(body.action || "").trim();
+  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
+  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   try {
-    const r = await enqueue(env, { cmd: "analytics", arg: "", requestedBy: body.requestedBy || "portal" });
-    return json({ ok: true, queued: true, jobId: r.record.id, message: queuedMessage(r) });
+    const r = await enqueue(env, { cmd, arg: "", requestedBy: body.requestedBy || "portal" });
+    return json(queuedResponse(r));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

@@ -12,7 +12,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage, readCollection } from "../../../lib/cloud.js";
+import { enqueue, readCollection, queuedResponse } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -64,7 +64,7 @@ export async function POST(request) {
   if (!briefId) return json({ ok: false, error: "missing briefId" }, 400);
   try {
     const r = await enqueue(env, { cmd: "produce", arg: briefId, requestedBy: body.requestedBy || "portal" });
-    return json({ ok: true, queued: true, jobId: r.record.id, message: queuedMessage(r) });
+    return json(queuedResponse(r));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

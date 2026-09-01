@@ -8,6 +8,10 @@ REM  same edge runtime, same R2 binding, same routing. `remote = true` on the
 REM  binding in wrangler.toml is what makes it read the live bucket instead of
 REM  an empty simulated one.
 REM
+REM  Starts the queue watcher alongside it, so action buttons actually RUN here
+REM  instead of queueing for later - a Worker cannot spawn ffmpeg, so the queue
+REM  is how a click reaches a process that can.
+REM
 REM  No password: Pages secrets are not present locally, so the gate is off.
 REM  It listens on 127.0.0.1 only.
 REM

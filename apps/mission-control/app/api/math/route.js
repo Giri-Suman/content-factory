@@ -7,7 +7,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { enqueue, queuedResponse } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -25,7 +25,7 @@ export async function POST(request) {
   }
   try {
     const r = await enqueue(env, { cmd, arg: demo ? "" : topic, requestedBy: "portal" });
-    return json({ ok: true, queued: true, jobId: r.record.id, message: queuedMessage(r) });
+    return json(queuedResponse(r));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }
