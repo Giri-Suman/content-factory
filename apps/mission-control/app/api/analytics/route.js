@@ -6,7 +6,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, readEnvFlags, readPerf, queuedResponse, notAvailable } from "../../../lib/cloud.js";
+import { actOn, notAvailable, readEnvFlags, readPerf } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -49,8 +49,7 @@ export async function POST(request) {
   const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
   if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   try {
-    const r = await enqueue(env, { cmd, arg: "", requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd, arg: "", requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

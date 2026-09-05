@@ -343,6 +343,65 @@ export async function whenWillItRun(env) {
 }
 
 /**
+ * Run it HERE if "here" is this laptop; queue it if the request came from afar.
+ *
+ * The portal is a Worker either way, so it can never spawn a process itself.
+ * But a Worker can fetch 127.0.0.1, and when you are using the portal from the
+ * machine that owns the pipeline there is a runner listening on it. Forwarding
+ * to that runner turns a click into a completed command with real output, so
+ * the page's reload shows new data - instead of queueing, reloading instantly,
+ * and redrawing exactly what was already on screen. That was the whole reason
+ * "Refresh now" looked broken.
+ *
+ * ONLY for loopback requests. A browser somewhere else has no runner to reach,
+ * and trying would add a doomed connection attempt to every remote click, so
+ * the host is checked first and remote goes straight to the queue.
+ *
+ * Long jobs are not run this way even locally: the runner refuses them with
+ * `slow`, and they fall through to the queue where the watcher starts them in
+ * seconds and the page polls the job. Nobody waits on an 11-minute HTTP
+ * request.
+ */
+const RUNNER = `http://127.0.0.1:${(typeof process !== "undefined" && process.env?.FACTORY_RUNNER_PORT) || 4699}/run`;
+
+const isLoopback = (request) => {
+  try {
+    const h = new URL(request.url).hostname;
+    return h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1";
+  } catch {
+    return false;
+  }
+};
+
+async function runLocally(request, cmd, arg) {
+  if (!request || !isLoopback(request)) return null;
+  try {
+    const res = await fetch(RUNNER, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: cmd, input: arg || "" }),
+      // a missing runner must fail fast and fall through to the queue
+      signal: AbortSignal.timeout(1000 * 60 * 4),
+    });
+    const data = await res.json();
+    if (data.slow) return null; // long job - let it queue
+    return { ok: Boolean(data.ok), out: data.out, message: data.out, ranLocally: true, ms: data.ms };
+  } catch {
+    return null; // no runner listening, or it died - queue instead
+  }
+}
+
+/**
+ * The one call every action route makes: do it now if we can, queue it if not.
+ */
+export async function actOn(env, request, { cmd, arg = "", requestedBy = "portal" }) {
+  const direct = await runLocally(request, cmd, arg);
+  if (direct) return direct;
+  const r = await enqueue(env, { cmd, arg, requestedBy });
+  return queuedResponse(r);
+}
+
+/**
  * The response every action button expects.
  *
  * Pages were written against the disk portal, which ran the CLI inline and

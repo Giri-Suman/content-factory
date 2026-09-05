@@ -7,7 +7,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, readCollection, queuedResponse } from "../../../lib/cloud.js";
+import { actOn, readCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -43,12 +43,8 @@ export async function POST(request) {
   // Resolving an escalation is a WRITE to a collection the laptop owns; the next
   // `sync push` would overwrite it, so it queues like everything else.
   try {
-    const r = await enqueue(env, {
-      cmd: "qc",
-      arg: String(body.briefId || body.id || "").trim(),
-      requestedBy: body.requestedBy || "portal",
-    });
-    return json(queuedResponse(r));
+    const r = await actOn(env, request, { cmd: "qc", arg: String(body.briefId || body.id || "").trim(), requestedBy: body.requestedBy || "portal", });
+    return json(r);
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, readCollection, queuedResponse } from "../../../lib/cloud.js";
+import { actOn, readCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -36,8 +36,7 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const arg = String(body.renderId || body.id || "").trim();
   try {
-    const r = await enqueue(env, { cmd: "thumbnails", arg, requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd: "thumbnails", arg, requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

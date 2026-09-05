@@ -8,7 +8,7 @@ export const runtime = "edge";
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
-import { enqueue, queuedMessage, listRenders, readCollection, queuedResponse, notAvailable } from "../../../lib/cloud.js";
+import { actOn, listRenders, notAvailable, queuedMessage, readCollection } from "../../../lib/cloud.js";
 
 /**
  * The Tools page.
@@ -37,8 +37,8 @@ export async function GET(request) {
     const cmd = VIEWS[view];
     if (!cmd) return json({ ok: false, error: `unknown view "${view}"` }, 400);
     try {
-      const r = await enqueue(env, { cmd, arg: "", requestedBy: "portal" });
-      return json({ ok: true, queued: true, text: queuedMessage(r) });
+      const r = await actOn(env, request, { cmd, arg: "", requestedBy: "portal" });
+      return json({ ok: r.ok !== false, queued: !r.ranLocally, text: r.out, out: r.out });
     } catch (e) {
       return json({ ok: false, error: e.message }, 400);
     }
@@ -91,8 +91,7 @@ export async function POST(request) {
   const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
   if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   try {
-    const r = await enqueue(env, { cmd, arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd, arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

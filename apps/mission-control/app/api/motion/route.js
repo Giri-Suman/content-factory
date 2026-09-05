@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, readMotionMeta, queuedResponse, notAvailable } from "../../../lib/cloud.js";
+import { actOn, notAvailable, readMotionMeta } from "../../../lib/cloud.js";
 import { EFFECTS, suggestEffects } from "../../../../../packages/studio/src/motionEffects.js";
 
 export const runtime = "edge";
@@ -77,8 +77,7 @@ export async function POST(request) {
   if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   const arg = "";
   try {
-    const r = await enqueue(env, { cmd, arg, requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd, arg, requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

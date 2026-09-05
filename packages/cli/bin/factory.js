@@ -1004,6 +1004,11 @@ ${usable.length} Gemini models this key can call:
     }
     break;
   }
+  case "runner": {
+    const { runner } = await import("../src/runner.js");
+    await runner(rest); // never resolves - the server owns the process
+    break;
+  }
   case "worker": {
     const { runWorker } = await import("../src/worker.js");
     // returns false when the singleton lock is held — exit non-zero so a

@@ -8,7 +8,7 @@ export const runtime = "edge";
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
-import { enqueue, queuedResponse } from "../../../lib/cloud.js";
+import { actOn } from "../../../lib/cloud.js";
 
 /**
  * Compliance report for one render.
@@ -23,8 +23,8 @@ export async function GET(request) {
   const id = String(new URL(request.url).searchParams.get("id") || "").replace(/[^a-z0-9-]/gi, "");
   if (!id) return json({ error: "missing id" }, 400);
   try {
-    const r = await enqueue(env, { cmd: "compliance", arg: id, requestedBy: "portal" });
-    return json({ report: null, canRealUpload: false, ...queuedResponse(r) });
+    const r = await actOn(env, request, { cmd: "compliance", arg: id, requestedBy: "portal" });
+    return json({ report: null, canRealUpload: false, ...r });
   } catch (e) {
     return json({ report: null, error: e.message }, 400);
   }
@@ -34,8 +34,7 @@ export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
-    const r = await enqueue(env, { cmd: "publish", arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd: "publish", arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

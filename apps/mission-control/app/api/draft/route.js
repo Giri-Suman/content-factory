@@ -12,7 +12,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage } from "../../../lib/cloud.js";
+import { actOn } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -24,8 +24,8 @@ export async function POST(request) {
   const { input } = await request.json().catch(() => ({}));
   if (!input || typeof input !== "string") return json({ ok: false, error: "missing input" }, 400);
   try {
-    const r = await enqueue(env, { cmd: "brief-topic", arg: input, requestedBy: "portal" });
-    return json({ ok: false, queued: true, id: r.record.id, error: queuedMessage(r) });
+    const r = await actOn(env, request, { cmd: "brief-topic", arg: input, requestedBy: "portal" });
+    return json({ ...r, ok: false, error: r.out });
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

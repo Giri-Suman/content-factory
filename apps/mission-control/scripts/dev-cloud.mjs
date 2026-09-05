@@ -81,8 +81,15 @@ for (const sig of ["SIGINT", "SIGTERM"]) {
 console.log(`
   Mission Control (local)   http://127.0.0.1:${PORT}
   No password here - Pages secrets do not exist locally, so the gate is off.
-  Actions run on THIS machine within a few seconds. Ctrl-C stops everything.
+  Fast actions run here and return their output immediately.
+  Long jobs (renders) queue and start within ~3s. Ctrl-C stops everything.
 `);
 
 start("portal", "npx", ["wrangler", "pages", "dev", "--port", PORT, "--ip", "127.0.0.1"], app, true);
-start("watch", process.execPath, [path.join(root, "packages", "cli", "bin", "factory.js"), "queue", "watch", "--every=3"], root);
+const cli = path.join(root, "packages", "cli", "bin", "factory.js");
+/* The runner is what makes a click feel instant: the portal forwards fast
+   commands to it over loopback and answers with the real output, so the page's
+   reload shows new data. The watcher stays for the long jobs it refuses, and
+   for anything queued from a browser somewhere else. */
+start("runner", process.execPath, [cli, "runner"], root);
+start("watch", process.execPath, [cli, "queue", "watch", "--every=3"], root);

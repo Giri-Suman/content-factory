@@ -8,7 +8,7 @@ export const runtime = "edge";
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
-import { enqueue, readCollection, queuedResponse } from "../../../lib/cloud.js";
+import { actOn, readCollection } from "../../../lib/cloud.js";
 
 /**
  * The Today dashboard.
@@ -80,8 +80,7 @@ export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
-    const r = await enqueue(env, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd: "ideabank-rank", arg: "", requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

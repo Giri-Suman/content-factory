@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedResponse } from "../../../lib/cloud.js";
+import { actOn } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -20,8 +20,7 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const arg = String(body.file || body.path || body.input || "").trim();
   try {
-    const r = await enqueue(env, { cmd: "edit-beauty", arg, requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd: "edit-beauty", arg, requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

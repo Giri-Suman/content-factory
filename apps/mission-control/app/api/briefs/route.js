@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage, readCollection, writeCollection, queuedResponse } from "../../../lib/cloud.js";
+import { actOn, readCollection, writeCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -27,8 +27,7 @@ export async function POST(request) {
   // The old route spawned `factory brief ...`. Same intent, queued instead.
   const cmd = body.topic ? "brief-topic" : "brief";
   try {
-    const r = await enqueue(env, { cmd, arg: body.topic || "", requestedBy: body.requestedBy || "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd, arg: body.topic || "", requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }
@@ -72,9 +71,10 @@ export async function PATCH(request) {
   if (becameApproved) {
     // Best effort: the edit itself already succeeded, and failing the whole
     // request because the queue was full would be a lie about what happened.
-    queued = await enqueue(env, { cmd: "catalog-fanout", arg: id, requestedBy: "portal" })
-      .then((r) => queuedMessage(r))
-      .catch((e) => `approved, but the follow-up did not queue: ${e.message}`);
+    // runs here when approving from this laptop, queues when approving remotely
+    queued = await actOn(env, request, { cmd: "catalog-fanout", arg: id, requestedBy: "portal" })
+      .then((r) => r.out)
+      .catch((e) => `approved, but the follow-up did not run: ${e.message}`);
   }
   return json({ ok: true, brief: rows[i], queued });
 }

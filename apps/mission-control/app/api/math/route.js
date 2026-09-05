@@ -7,7 +7,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedResponse } from "../../../lib/cloud.js";
+import { actOn } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -24,8 +24,7 @@ export async function POST(request) {
     return json({ ok: false, error: "missing topic" }, 400);
   }
   try {
-    const r = await enqueue(env, { cmd, arg: demo ? "" : topic, requestedBy: "portal" });
-    return json(queuedResponse(r));
+    return json(await actOn(env, request, { cmd, arg: demo ? "" : topic, requestedBy: "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

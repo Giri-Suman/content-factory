@@ -18,7 +18,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, readCommands, queuedResponse } from "../../../lib/cloud.js";
+import { actOn, enqueue, readCommands } from "../../../lib/cloud.js";
 import { COMMANDS, keyOf } from "../../../../../packages/shared/src/commands.js";
 
 export const runtime = "edge";
@@ -53,8 +53,7 @@ export async function POST(request) {
   const env = getEnv();
   const { key, input = "", requestedBy = "portal" } = await request.json().catch(() => ({}));
   try {
-    const r = await enqueue(env, { cmd: key, arg: input, requestedBy });
-    return json({ ...queuedResponse(r), mode: "job" });
+    return json({ ...(await actOn(env, request, { cmd: key, arg: input, requestedBy })), mode: "job" });
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

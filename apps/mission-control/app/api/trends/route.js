@@ -7,7 +7,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { enqueue, queuedMessage, readConfig, readTrends } from "../../../lib/cloud.js";
+import { actOn, readConfig, readTrends } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -31,9 +31,11 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const [trends, config] = await Promise.all([readTrends(env), readConfig(env)]);
   try {
-    const r = await enqueue(env, { cmd: "radar-collect", arg: "", requestedBy: body.requestedBy || "portal" });
+    const r = await actOn(env, request, { cmd: "radar-collect", arg: "", requestedBy: body.requestedBy || "portal" });
     // trends/config still returned so the page can render while it waits
-    return json({ ok: true, queued: true, id: r.record.id, log: queuedMessage(r), trends: top(trends), config });
+    /* `log` is what the page prints; actOn already worded it for whichever
+       path ran, so do not re-derive it from a queue record that may not exist. */
+    return json({ ok: r.ok !== false, queued: !r.ranLocally, id: r.jobId || null, log: r.out, trends: top(trends), config });
   } catch (e) {
     return json({ ok: false, error: e.message, trends: top(trends), config }, 400);
   }
