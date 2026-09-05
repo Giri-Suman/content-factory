@@ -38,13 +38,48 @@ export default function TodayPage() {
     return () => clearInterval(t);
   }, []);
 
+  /**
+   * A collect sweeps 17 sources and takes minutes, so it cannot be a request
+   * anyone waits on - it runs on the laptop and this follows it.
+   *
+   * The old version fired the POST, cleared the note and reloaded immediately.
+   * The job had not started yet, so the reload redrew the same numbers and the
+   * button looked broken. Now the queue message stays on screen, the job is
+   * polled, and the page reloads when there is actually something new.
+   */
   const refresh = async () => {
     setRefreshing(true);
-    setNote("collecting all sources + rescoring — ~30-60s…");
+    setNote("collecting all sources + rescoring…");
     try {
-      await fetch("/api/trends", { method: "POST" });
-      setNote(null);
-      await load();
+      const res = await fetch("/api/trends", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }).then((r) => r.json());
+
+      if (res.log) setNote(res.log);
+
+      // ran here and already finished - the data is new, just show it
+      if (!res.queued || !res.id) {
+        await load();
+        setNote(null);
+        setRefreshing(false);
+        return;
+      }
+
+      for (let i = 0; i < 240; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const j = await fetch(`/api/jobs/${res.id}`)
+          .then((r) => r.json())
+          .catch(() => null);
+        const st = j?.job?.status;
+        if (st === "running") setNote("collecting all sources + rescoring — running on the laptop…");
+        if (st === "done" || st === "failed") {
+          await load();
+          setNote(st === "failed" ? `refresh failed: ${j.job.log || "see the laptop"}` : null);
+          break;
+        }
+      }
     } catch (e) {
       setNote(`refresh failed: ${e}`);
     }
