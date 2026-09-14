@@ -359,6 +359,10 @@ export async function queue(argv) {
       // The portal treats a heartbeat older than 20 minutes as asleep, so beat
       // well inside that even when there is nothing to do.
       const BEAT_EVERY_MS = 5 * 60 * 1000;
+      // Recovery is separate from finding pending work. If a process dies after
+      // claiming the only job, there is no pending object to wake the old loop.
+      // Check running work once a minute and return stale laptop jobs to pending.
+      const RECOVER_EVERY_MS = 60 * 1000;
 
       console.log(`
   watching the queue every ${every}s - Ctrl-C to stop
@@ -369,11 +373,20 @@ export async function queue(argv) {
          live watcher guarantees the next job starts in seconds. */
       await beat("awake", { watching: true });
       let lastBeat = Date.now();
+      let lastRecovery = 0;
       let idle = false;
 
       for (;;) {
         let pending = [];
         try {
+          if (Date.now() - lastRecovery >= RECOVER_EVERY_MS) {
+            lastRecovery = Date.now();
+            const stuck = await requeueStuck({ olderThanMin: 45, excludeExecutor: "github-actions" });
+            if (stuck.length) {
+              idle = false;
+              console.log(`  requeued ${stuck.length} stale laptop job(s)`);
+            }
+          }
           pending = await list("pending");
         } catch (e) {
           // A network blip must not kill an all-day watcher.
