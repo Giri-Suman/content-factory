@@ -18,5 +18,5 @@ REM
 REM  It does NOT hot-reload. To pick up code changes: push, let CI build, then
 REM  run `node scripts/deploy-portal.mjs` to pull the new bundle down.
 REM ===========================================================================
-cd /d "D:\youtube\automated website\content-factory\apps\mission-control"
+cd /d "%~dp0..\apps\mission-control"
 call npm run dev:cloud

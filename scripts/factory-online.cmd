@@ -2,10 +2,11 @@
 REM ============================================================================
 REM  Content Factory - everything up, in one command.
 REM
-REM  Starts three things and leaves them running:
+REM  Starts four things and leaves them running:
 REM    1. the portal        (localhost:4600)
 REM    2. the tunnel        (publishes it over HTTPS)
 REM    3. the worker        (collects trends on a schedule)
+REM    4. the queue watcher (resumes laptop fallback jobs from R2)
 REM
 REM  Registered by go-online.ps1 to run at login, so a reboot brings the whole
 REM  thing back without you doing anything.
@@ -43,9 +44,15 @@ REM collect 30m / youtube 60m / deep 6h / digest 08:00 IST
 echo  worker  : scheduler
 start "factory-worker" /min cmd /c "node packages\cli\bin\factory.js worker"
 
+REM --- the fallback queue --------------------------------------------------
+REM Jobs assigned to github-actions are ignored here. Only jobs explicitly
+REM marked for the laptop are claimed, so cloud and laptop never race.
+echo  queue   : watching laptop fallback jobs
+start "factory-queue" /min cmd /c "scripts\factory-watch.cmd"
+
 echo.
 echo  Local : http://localhost:4600
 echo  Online: https://factory.coderfact.com
 echo.
-echo  Three minimised windows are now running. Closing them stops that piece.
+echo  Four minimised windows are now running. Closing them stops that piece.
 echo.

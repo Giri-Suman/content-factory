@@ -127,6 +127,44 @@ If you already have useful state only on the laptop, run `factory sync push`
 once before switching it off. New edits then live in R2 and the sync conflict
 guard refuses to overwrite a newer cloud copy.
 
+### Test the cloud-backed portal on this laptop
+
+Authorize Wrangler once, then start the portal and its local helpers:
+
+```powershell
+cd "D:\youtube\automated website\content-factory"
+npx wrangler login
+npm run dev:cloud --workspace @factory/mission-control
+```
+
+Open `http://127.0.0.1:4700`. This uses the real private R2 bucket. The same
+command also starts the loopback command runner and a queue watcher, so jobs
+assigned to the laptop begin within about three seconds. Stop all three with
+Ctrl+C. The generated `.vercel/output/static` directory must exist; rebuild the
+Pages output first if it has been removed.
+
+Cloud jobs and laptop fallback jobs are deliberately separate:
+
+| Job executor | Laptop off | Laptop starts later |
+|---|---|---|
+| `github-actions` | Runs immediately on GitHub | Local watcher ignores it |
+| `laptop` | Remains safely queued in R2 | Runs when the queue watcher starts |
+
+To start the fallback watcher automatically after Windows sign-in, run once:
+
+```powershell
+.\scripts\install-queue-startup.ps1
+```
+
+The installer uses a Windows scheduled task when permitted and otherwise adds a
+shortcut to the current user's Startup folder. Neither path requires keeping a
+terminal open manually after the next sign-in.
+
+This startup task is optional for the finished cloud setup. It is useful only
+for commands that remain laptop-only or when GitHub Actions is not configured.
+It does not make a powered-off laptop wake up; `wake-and-drain.ps1` covers timed
+wake from sleep if that behavior is wanted.
+
 ---
 
 ## Legacy laptop-hosted route
