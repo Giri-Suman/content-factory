@@ -73,7 +73,12 @@ export default function TodayPage() {
           .then((r) => r.json())
           .catch(() => null);
         const st = j?.job?.status;
-        if (st === "running") setNote("collecting all sources + rescoring — running on the laptop…");
+        if (st === "running") {
+          const executor = j?.job?.executor;
+          setNote(executor === "github-actions"
+            ? "collecting all sources + rescoring — running in GitHub Actions…"
+            : "collecting all sources + rescoring — running on the laptop…");
+        }
         if (st === "done" || st === "failed") {
           await load();
           setNote(st === "failed" ? `refresh failed: ${j.job.log || "see the laptop"}` : null);
