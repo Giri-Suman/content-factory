@@ -26,6 +26,23 @@ jobs, preview renders, and download finished files. Destructive and spending
 controls marked `danger` are owner-only. Real publishing remains a deliberate
 terminal action.
 
+### Simpler access: one shared password
+
+For a small trusted group, Cloudflare Access is optional. In Cloudflare Pages →
+`content-factory-viewer` → Settings → Variables and Secrets, add this **Production**
+secret, then redeploy:
+
+```text
+FACTORY_PASSWORD=<a long shared password>
+```
+
+The deployed site redirects visitors to `/login`; its session cookie is
+HTTP-only and the password is never stored in the browser. Set
+`FACTORY_OWNER_EMAIL=coderfactofficial@gmail.com` in the same place if owner-only
+controls should be available. Leave all `CF_ACCESS_*` variables unset when using
+this mode. Anyone who knows the shared password has full family-member access,
+so use a unique password and change it if it is shared outside the family.
+
 ### 1. Put the workflow on the default branch
 
 `.github/workflows/factory-job.yml` must exist on GitHub's default branch before
