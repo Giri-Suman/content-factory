@@ -14,10 +14,25 @@
 
 export const runtime = "edge";
 
+import { getEnv } from "@factory-env";
+
 const COOKIE = "factory_session";
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+/**
+ * Pages secrets live on the Worker binding, while local Next uses process.env.
+ * Read both so the shared-password login behaves identically in each runtime.
+ */
+function configuredPassword() {
+  const local = typeof process !== "undefined" ? process.env?.FACTORY_PASSWORD : undefined;
+  try {
+    return getEnv()?.FACTORY_PASSWORD || local;
+  } catch {
+    return local;
+  }
+}
 
 async function tokenFor(pw) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`content-factory::${pw}`));
@@ -33,7 +48,7 @@ function safeEqual(a, b) {
 }
 
 export async function POST(request) {
-  const password = process.env.FACTORY_PASSWORD;
+  const password = configuredPassword();
   if (!password) {
     return json({ ok: false, error: "no FACTORY_PASSWORD is set — the portal is already open" }, 400);
   }

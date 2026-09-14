@@ -26,6 +26,23 @@ jobs, preview renders, and download finished files. Destructive and spending
 controls marked `danger` are owner-only. Real publishing remains a deliberate
 terminal action.
 
+### Simpler access: one shared password
+
+For a small trusted group, Cloudflare Access is optional. In Cloudflare Pages →
+`content-factory-viewer` → Settings → Variables and Secrets, add this **Production**
+secret, then redeploy:
+
+```text
+FACTORY_PASSWORD=<a long shared password>
+```
+
+The deployed site redirects visitors to `/login`; its session cookie is
+HTTP-only and the password is never stored in the browser. Set
+`FACTORY_OWNER_EMAIL=coderfactofficial@gmail.com` in the same place if owner-only
+controls should be available. Leave all `CF_ACCESS_*` variables unset when using
+this mode. Anyone who knows the shared password has full family-member access,
+so use a unique password and change it if it is shared outside the family.
+
 ### 1. Put the workflow on the default branch
 
 `.github/workflows/factory-job.yml` must exist on GitHub's default branch before
@@ -126,6 +143,44 @@ Verify with one small MP4 and the bundled math demo:
 If you already have useful state only on the laptop, run `factory sync push`
 once before switching it off. New edits then live in R2 and the sync conflict
 guard refuses to overwrite a newer cloud copy.
+
+### Test the cloud-backed portal on this laptop
+
+Authorize Wrangler once, then start the portal and its local helpers:
+
+```powershell
+cd "D:\youtube\automated website\content-factory"
+npx wrangler login
+npm run dev:cloud --workspace @factory/mission-control
+```
+
+Open `http://127.0.0.1:4700`. This uses the real private R2 bucket. The same
+command also starts the loopback command runner and a queue watcher, so jobs
+assigned to the laptop begin within about three seconds. Stop all three with
+Ctrl+C. The generated `.vercel/output/static` directory must exist; rebuild the
+Pages output first if it has been removed.
+
+Cloud jobs and laptop fallback jobs are deliberately separate:
+
+| Job executor | Laptop off | Laptop starts later |
+|---|---|---|
+| `github-actions` | Runs immediately on GitHub | Local watcher ignores it |
+| `laptop` | Remains safely queued in R2 | Runs when the queue watcher starts |
+
+To start the fallback watcher automatically after Windows sign-in, run once:
+
+```powershell
+.\scripts\install-queue-startup.ps1
+```
+
+The installer uses a Windows scheduled task when permitted and otherwise adds a
+shortcut to the current user's Startup folder. Neither path requires keeping a
+terminal open manually after the next sign-in.
+
+This startup task is optional for the finished cloud setup. It is useful only
+for commands that remain laptop-only or when GitHub Actions is not configured.
+It does not make a powered-off laptop wake up; `wake-and-drain.ps1` covers timed
+wake from sleep if that behavior is wanted.
 
 ---
 
