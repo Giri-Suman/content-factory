@@ -271,6 +271,37 @@ at a time against that plan — never rebuild something the audit marks EXISTS.
       fan-out (brief approval -> 8 assets), Make-Next format balance,
       /catalog page. Tagged content-os-v3.1. THE ENTIRE BLUEPRINT IS DONE.
 
+## Mission Control on Cloudflare Pages (apps/mission-control)
+
+The portal is deployed to the `content-factory-viewer` Pages project and runs
+entirely on the edge. Reading the pipeline works from anywhere; anything needing
+ffmpeg/Chrome/Manim/Python is queued for the laptop.
+
+- Every route is `runtime = "edge"`. `runtime` is declared ONCE on
+  `app/layout.js`; Next's generated `/_not-found` does not inherit it, which is
+  the only reason `app/not-found.js` exists.
+- `lib/cloud.js` is the Workers-safe data layer (R2). `lib/factory.js` is the
+  disk/CLI version and is for the LOCAL portal only — never import it from
+  `app/`. Grep for the module, not for `node:`: a route can reach the disk
+  through an import two levels down without the string appearing in it.
+- Anything `app/` imports must be free of `node:` imports transitively. That is
+  why `packages/studio/src/motionEffects.js` exists — the catalog split out of
+  `motionLab.js`, which spawns ffmpeg at module scope.
+- **NEVER deploy a bundle built on Windows.** It compiles, uploads and then 500s
+  on every page with "Could not find the module … in the React Server Consumer
+  Manifest". Build in CI (Linux) and ship that artifact:
+  `node scripts/deploy-portal.mjs` pulls what the workflow put in R2 and deploys
+  it. Once `CLOUDFLARE_API_TOKEN` is a repo secret, CI deploys directly.
+- Versions are pinned deliberately: next 15.5.2, vercel 47.0.4,
+  next-on-pages 1.13.16 — the adapter supports `>=14.3.0 && <=15.5.2`, and a
+  caret takes next straight past it. React 19 is pinned at the WORKSPACE ROOT so
+  Next and the app resolve the same copy; the Remotion renderer keeps its own 18.
+- The gate is `FACTORY_PASSWORD`, set as a Pages secret. If it is unset the
+  portal is OPEN — that is intentional for localhost and dangerous in the cloud.
+- Reads come from R2; a few things WRITE there (approving a brief, wishlist
+  deletes). `factory sync push` now refuses to overwrite a cloud object newer
+  than its local file, so pull before working on the laptop.
+
 ## Hard rules
 
 - No native Node modules (better-sqlite3 etc.) — no VS C++ toolchain on

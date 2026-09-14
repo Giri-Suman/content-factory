@@ -1,0 +1,13 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://factory.coderfact.com",
+      "http://localhost:4600",
+      "http://127.0.0.1:4600"
+    ],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]

@@ -1,29 +1,47 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Refresh the lessons digest.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getEnv } from "@factory-env";
+import { actOn, readCollection } from "../../../lib/cloud.js";
 
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+/**
+ * The lessons digest: active lessons ranked by weight, plus the quality trend.
+ *
+ * Same arithmetic as the disk version - only the source moved, from
+ * data/os/*.json to the copies of those files in R2.
+ */
 const recency = (iso) => {
   const d = (Date.now() - new Date(iso).getTime()) / 864e5;
   return d <= 7 ? 1 : d <= 30 ? 0.7 : d <= 60 ? 0.4 : 0.1;
 };
-const weight = (l) => Math.round(l.evidenceCount * recency(l.lastEvidenceAt || l.createdAt) * (l.pinned ? 3 : 1) * 10) / 10;
+const weight = (l) =>
+  Math.round(l.evidenceCount * recency(l.lastEvidenceAt || l.createdAt) * (l.pinned ? 3 : 1) * 10) / 10;
 
-export function GET() {
-  const lessons = os("lessons").filter((l) => l.active).map((l) => ({ ...l, weight: weight(l) })).sort((a, b) => b.weight - a.weight);
-  const crits = os("critiques");
+export async function GET() {
+  const env = getEnv();
+  const [all, crits, versions] = await Promise.all([
+    readCollection(env, "lessons"),
+    readCollection(env, "critiques"),
+    readCollection(env, "promptversions"),
+  ]);
 
-  // weekly pass-rate + regen-rate trend (last 6 weeks)
+  const lessons = all
+    .filter((l) => l.active)
+    .map((l) => ({ ...l, weight: weight(l) }))
+    .sort((a, b) => b.weight - a.weight);
+
+  // weekly pass-rate + regen-rate over the last six weeks
   const weekOf = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / (7 * 864e5));
   const buckets = {};
   for (const c of crits) {
@@ -43,30 +61,23 @@ export function GET() {
   });
 
   const monthAgo = Date.now() - 30 * 864e5;
-  const lessonsThisMonth = os("lessons").filter((l) => new Date(l.createdAt).getTime() >= monthAgo).length;
+  const lessonsThisMonth = all.filter((l) => new Date(l.createdAt).getTime() >= monthAgo).length;
 
-  const tasks = ["script", "metadata", "idea", "brief"];
-  const versions = os("promptversions");
-  const promptVersions = tasks.map((t) => ({
-    task: t,
-    versions: versions.filter((v) => v.task === t).sort((a, b) => b.version - a.version),
+  const promptVersions = ["script", "metadata", "idea", "brief"].map((task) => ({
+    task,
+    versions: versions.filter((v) => v.task === task).sort((a, b) => b.version - a.version),
   }));
 
-  return NextResponse.json({ lessons, trend, lessonsThisMonth, promptVersions });
+  return json({ lessons, trend, lessonsThisMonth, promptVersions });
 }
 
-// POST {action: distill|pin|kill|propose|approve, id?, task?, template?}
 export async function POST(request) {
-  const { action, id, task, template } = await request.json();
-  const map = {
-    distill: ["lessons", "distill"],
-    pin: ["lessons", "pin", id || ""],
-    kill: ["lessons", "kill", id || ""],
-    propose: ["prompts", "propose", task || "", template || "(proposed)"],
-    approve: ["prompts", "approve", id || ""],
-  };
-  const args = map[action];
-  if (!args) return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
-  const { code, out } = await runCli(args, 1000 * 60 * 3);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-300) }, { status: code === 0 ? 200 : 500 });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  const arg = "";
+  try {
+    return json(await actOn(env, request, { cmd: "lessons", arg, requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
+  }
 }

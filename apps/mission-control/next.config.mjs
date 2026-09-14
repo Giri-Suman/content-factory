@@ -26,7 +26,29 @@ export default {
   reactStrictMode: true,
   // the portal executes local binaries and reads the project's own files, so it
   // must run as a Node server — never as a static export
-  output: "standalone",
+  // ...but Pages has no local filesystem and the adapter wants Next default
+  // output, so the Pages build sets FACTORY_TARGET=pages and opts out.
+  ...(process.env.FACTORY_TARGET === "pages" ? {} : { output: "standalone" }),
+  /**
+   * One line of routing that keeps two runtimes honest.
+   *
+   * Routes read their bucket through `lib/env.js`. The Pages build points that
+   * at getRequestContext(); every other build points it at a signed-S3 adapter
+   * that talks to the same real bucket. Aliasing rather than branching at
+   * runtime means packages/shared/src/r2.js - node:crypto, Buffer - can never
+   * be pulled into the edge bundle, which would fail the next-on-pages build.
+   */
+  /* Turbopack does not run the webpack() hook, so the same alias has to be
+     declared for it too or `@factory-env` simply fails to resolve in dev. */
+  turbopack: {
+    resolveAlias: {
+      "@factory-env": "./lib/env.workers.js",
+    },
+  },
+  webpack(config) {
+    config.resolve.alias["@factory-env"] = path.resolve(process.cwd(), "lib/env.workers.js");
+    return config;
+  },
   env: {
     // surfaced read-only to the client so the UI can warn when it is unlocked
     FACTORY_AUTH_ON: process.env.FACTORY_PASSWORD ? "1" : "",

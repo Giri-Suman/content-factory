@@ -7,7 +7,7 @@ import path from "node:path";
  * Voice synthesis with word-level timestamps.
  *  - ElevenLabs (your cloned voice) when ELEVENLABS_API_KEY + VOICE_ID are set:
  *    exact character alignment from the API.
- *  - Windows SAPI fallback otherwise: free placeholder voice, word timings
+ *  - OS speech fallback otherwise: Windows SAPI locally, eSpeak on Linux
  *    estimated from character lengths over the measured duration.
  * Results are cached next to the audio file so unchanged scenes never
  * re-bill ElevenLabs.
@@ -84,8 +84,19 @@ async function elevenLabs(text, outBase, modelId = "eleven_multilingual_v2") {
   return { provider: "elevenlabs", file, durationSec, words };
 }
 
-function sapi(text, outBase) {
+function systemTts(text, outBase) {
   const file = `${outBase}.wav`;
+  if (process.platform !== "win32") {
+    const result = spawnSync("espeak-ng", ["-s", "185", "-w", file, text], {
+      encoding: "utf8",
+      timeout: 120000,
+    });
+    if (result.error || !existsSync(file)) {
+      throw new Error(`eSpeak TTS failed: ${result.error?.message || result.stderr || "espeak-ng is not installed"}`.slice(0, 300));
+    }
+    const durationSec = ffprobeDuration(file);
+    return { provider: "espeak", file, durationSec, words: estimateWords(text, durationSec) };
+  }
   const tmp = path.join(os.tmpdir(), `factory-tts-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
   writeFileSync(tmp, text, "utf8");
   const psFile = tmp.replace(/'/g, "''");
@@ -136,16 +147,29 @@ export async function synthesize(text, outBase) {
   }
 
   let meta;
-  if (opt.id === "sapi") meta = sapi(text, outBase);
+  let degraded = null;
+  if (opt.id === "sapi") meta = systemTts(text, outBase);
   else {
     try {
       meta = await elevenLabs(text, outBase, opt.model);
     } catch (e) {
-      console.error(`  voice: ${opt.label} failed (${String(e.message).slice(0, 60)}) — falling back to Windows TTS`);
-      meta = sapi(text, outBase);
+      degraded = `${opt.label} failed (${String(e.message).slice(0, 80)}) - used system TTS instead`;
+      console.error(`  voice: ${degraded}`);
+      meta = systemTts(text, outBase);
     }
   }
-  meta.tier = opt.tier;
+  /**
+   * The tier recorded is the one DELIVERED, not the one asked for.
+   *
+   * This used to assign the requested tier unconditionally, so a paid voice
+   * that failed produced a robotic Windows TTS track labelled tier "best". The
+   * only trace was one console line in a log nobody reads after the fact, and
+   * every downstream check - including the AudioJudge - was told it got what it
+   * ordered. A silent quality drop that reports success is worse than a failure.
+   */
+  meta.tier = degraded ? "free" : opt.tier;
+  meta.requestedTier = opt.tier;
+  if (degraded) meta.degraded = degraded;
   meta.hash = hash;
   writeFileSync(metaPath, JSON.stringify(meta));
   return meta;

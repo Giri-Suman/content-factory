@@ -1,79 +1,99 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { readdirSync } from "node:fs";
-import { repoRoot, runCli, startJob } from "../../../lib/factory.js";
+/**
+ * Packaging helpers - captions, chapters, silent cut.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
+import { getEnv } from "@factory-env";
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+import { actOn, listRenders, notAvailable, queuedMessage, readCollection } from "../../../lib/cloud.js";
+
+/**
+ * The Tools page.
+ *
+ * Without ?view= this is a plain read. With one, the disk version ran a CLI
+ * command inline and returned its stdout; those are now registry rows, so the
+ * view queues and the page shows when it will run instead of blocking on a
+ * command that cannot execute here.
+ */
+const VIEWS = {
+  gaps: "tools-gaps",
+  repurpose: "tools-repurpose",
+  competitors: "tools-competitors",
+  calendar: "tools-calendar",
+  niche: "tools-niche",
+  health: "health",
+  prune: "prune",
+  humanize: "humanize-audit",
 };
 
-/** Fast, read-only tool output for the page's initial render. */
 export async function GET(request) {
+  const env = getEnv();
   const view = new URL(request.url).searchParams.get("view");
+
   if (view) {
-    const map = {
-      gaps: ["tools", "gaps"], repurpose: ["tools", "repurpose"], competitors: ["tools", "competitors"],
-      calendar: ["tools", "calendar", "14"], health: ["health"], prune: ["prune"], niche: ["tools", "niche"],
-      humanize: ["humanize", "audit"],
-    };
-    const args = map[view];
-    if (!args) return NextResponse.json({ ok: false, error: "unknown view" }, { status: 400 });
-    const { out } = await runCli(args, 120000);
-    return NextResponse.json({ ok: true, text: out });
+    const cmd = VIEWS[view];
+    if (!cmd) return json({ ok: false, error: `unknown view "${view}"` }, 400);
+    try {
+      const r = await actOn(env, request, { cmd, arg: "", requestedBy: "portal" });
+      return json({ ok: r.ok !== false, queued: !r.ranLocally, text: r.out, out: r.out });
+    } catch (e) {
+      return json({ ok: false, error: e.message }, 400);
+    }
   }
-  return NextResponse.json({
-    ctas: os("ctas"),
-    replyDrafts: os("commentleads").filter((l) => l.replyDraft && !l.used),
-    titleTests: os("titletests"),
-    renders: (() => {
-      const dir = path.join(repoRoot, "renders");
-      if (!existsSync(dir)) return [];
-      try {
-        return readdirSync(dir)
-          .filter((d) => existsSync(path.join(dir, d, "short.mp4")))
-          .slice(-12);
-      } catch {
-        return [];
-      }
-    })(),
+
+  const [ctas, leads, titleTests, renders] = await Promise.all([
+    readCollection(env, "ctas"),
+    readCollection(env, "commentleads"),
+    readCollection(env, "titletests"),
+    listRenders(env),
+  ]);
+  return json({
+    ctas,
+    replyDrafts: leads.filter((l) => l.replyDraft && !l.used),
+    titleTests,
+    // the disk version listed directories holding a short.mp4; same test,
+    // against the bucket both machines push to
+    renders: renders.filter((r) => r.files.some((f) => f.name.endsWith("short.mp4"))).slice(0, 12).map((r) => r.id),
   });
 }
 
-// POST {action, arg} — anything that writes or costs time runs as a job/CLI
+/**
+ * Which registry command each button means.
+ *
+ * The port dropped `action` entirely and enqueued one command whatever was
+ * pressed, so every button on this page did the same thing. `null` marks an
+ * action the registry has no row for - those are refused by name rather than
+ * quietly running something else.
+ */
+const ACTIONS = {
+  captions: "tools-captions",
+  chapters: "tools-chapters",
+  reframe: "reframe",
+  longform: "longform",
+  batch: "batch-3",
+  cta: null,
+  link: null,
+  nichepack: null,
+  replies: null,
+  stock: null,
+  translate: null,
+};
+const HINTS = {};
+
 export async function POST(request) {
-  const { action, arg, arg2 } = await request.json();
-  const jobs = {
-    batch: ["batch", String(arg || 3)],
-    longform: ["longform", String(arg || ""), String(arg2 || 3)],
-    reframe: ["reframe", String(arg || ""), `--focus=${arg2 || "auto"}`],
-  };
-  if (jobs[action]) {
-    const job = startJob(action, jobs[action]);
-    return NextResponse.json({ ok: true, jobId: job.id });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  const action = String(body.action || "").trim();
+  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
+  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
+  try {
+    return json(await actOn(env, request, { cmd, arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  const quick = {
-    captions: ["tools", "captions", String(arg || "")],
-    chapters: ["tools", "chapters", String(arg || "")],
-    description: ["tools", "description", String(arg || ""), String(arg2 || "")],
-    teleprompter: ["tools", "teleprompter", String(arg || "")],
-    replies: ["tools", "replies", "10"],
-    cta: ["tools", "cta", "next", String(arg || "yt_short")],
-    prune: ["prune", ...(arg === "apply" ? ["--apply"] : [])],
-    translate: ["tools", "translate", String(arg || ""), ...String(arg2 || "es hi").split(/\s+/)],
-    pacing: ["tools", "pacing", String(arg || "")],
-    link: ["tools", "link", String(arg || "video")],
-    stock: ["tools", "stock", String(arg || ""), ...(arg2 === "music" ? ["--music"] : arg2 === "photo" ? ["--photo"] : [])],
-    nichepack: ["tools", "niche", String(arg || "")],
-  };
-  const args = quick[action];
-  if (!args) return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
-  const { code, out } = await runCli(args, 1000 * 60 * 4);
-  return NextResponse.json({ ok: code === 0, text: out.replace(/RESULT \{.*\}/s, "").trim() }, { status: code === 0 ? 200 : 500 });
 }
+

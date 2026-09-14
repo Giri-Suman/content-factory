@@ -28,6 +28,7 @@
  */
 
 import { deleteObject, isConfigured, listObjects, putObject } from "./r2.js";
+import { dedupeKey, jobIdentity } from "./commands.js";
 
 /**
  * What may be queued, and the shape of its input.
@@ -36,25 +37,29 @@ import { deleteObject, isConfigured, listObjects, putObject } from "./r2.js";
  * anything that spends real money or publishes is NOT here and should not be.
  */
 export const JOB_KINDS = {
-  math: {
-    label: "Math short",
-    input: "topic",
-    describe: (j) => `math short: ${j.input}`,
-    maxInput: 200,
-  },
-  brief: {
-    label: "Brief an idea",
-    input: "topic",
-    describe: (j) => `brief: ${j.input}`,
-    maxInput: 200,
-  },
-  edit: {
-    label: "AI Cut footage from the inbox",
-    input: "file name in data/footage",
-    describe: (j) => `edit: ${j.input}`,
-    maxInput: 300,
-  },
+  math: { label: "Math short", input: "topic", describe: (j) => `math short: ${j.input}`, maxInput: 200 },
+  brief: { label: "Brief an idea", input: "topic", describe: (j) => `brief: ${j.input}`, maxInput: 200 },
+  edit: { label: "AI Cut footage", input: "file name in data/footage", describe: (j) => `edit: ${j.input}`, maxInput: 300 },
 };
+
+/**
+ * ANY registry command can be queued, not just the three above.
+ *
+ * The portal at factory.coderfact.com is always up, but half its commands spawn
+ * ffmpeg, Chrome, Manim or whisper and therefore need the laptop. Rather than
+ * greying those out, they are QUEUED: the page says what will happen and when,
+ * and the laptop runs them the next time it wakes.
+ *
+ * SAFETY IS UNCHANGED. A queue entry still cannot name a command — `cmd` is a
+ * registry KEY, validated against the table, and argv is rebuilt locally from
+ * that key. A hostile write can request a video about a rude topic; it cannot
+ * request a shell.
+ *
+ * Deliberately NOT queueable: `publish --go` (the one real upload, kept a
+ * manual terminal action), `worker` (a daemon), and `auth-youtube` (interactive
+ * OAuth). Those are excluded by the registry itself, which never lists them.
+ */
+export const COMMAND_KIND = "command";
 
 const PREFIX = "queue";
 const STATES = ["pending", "running", "done", "failed"];
@@ -62,33 +67,98 @@ const STATES = ["pending", "running", "done", "failed"];
 const keyFor = (state, id) => `${PREFIX}/${state}/${id}.json`;
 const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
-/** Reject anything not on the allowlist, and cap input length. */
-const VERTICALS = new Set(["all", "beauty", "coding", "ai-automation", "math"]);
+/** Verticals a queued job can carry, so colour protection survives the queue. */
+export const VERTICALS = new Set(["all", "beauty", "makeup", "nails", "coding", "ai-automation", "math"]);
 
-export function validate({ kind, input, requestedBy, vertical }) {
-  const spec = JOB_KINDS[kind];
-  if (!spec) throw new Error(`unknown job kind "${kind}" — allowed: ${Object.keys(JOB_KINDS).join(", ")}`);
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+/**
+ * Validate a job.
+ *
+ * Two shapes, one record:
+ *   { kind: "command", cmd: "<registry key>" }  any of the 76 portal commands
+ *   { kind: "math"|"brief"|"edit", input }      the original three
+ *
+ * SAFETY IS THE SAME EITHER WAY. `cmd` is a registry KEY, never a command line;
+ * the drainer rebuilds argv locally from that key. A hostile write can ask for a
+ * video about a rude topic. It cannot ask for a shell.
+ */
+export function validate({ kind, input, requestedBy, cmd, vertical = "all" }) {
+  const who = String(requestedBy || "portal").slice(0, 40);
+  const v = VERTICALS.has(String(vertical)) ? String(vertical) : "all";
   const text = String(input ?? "").trim();
+
+  if (CONTROL.test(text)) throw new Error("input contains control characters");
+  if (text.length > 300) throw new Error("input too long (max 300 characters)");
+
+  if (kind === COMMAND_KIND) {
+    if (!cmd) throw new Error("a command job needs a registry key");
+    return { kind, cmd: String(cmd).slice(0, 60), input: text, requestedBy: who, vertical: v };
+  }
+
+  const spec = JOB_KINDS[kind];
+  if (!spec) throw new Error(`unknown job kind "${kind}" - allowed: ${Object.keys(JOB_KINDS).join(", ")}, ${COMMAND_KIND}`);
   if (!text) throw new Error(`"${kind}" needs ${spec.input}`);
   if (text.length > spec.maxInput) throw new Error(`input too long (max ${spec.maxInput} characters)`);
-  // Control characters would corrupt logs and could smuggle terminal escapes.
-  if (/[\u0000-\u001f\u007f]/.test(text)) throw new Error("input contains control characters");
-  return {
-    kind,
-    input: text,
-    requestedBy: String(requestedBy || "someone").slice(0, 40),
-    // Carried so a queued beauty edit keeps its colour protection. Without it
-    // the job runs as a generic edit and the saturation lock never applies.
-    vertical: VERTICALS.has(String(vertical)) ? String(vertical) : "all",
-  };
+  // Carried so a queued beauty edit keeps its colour protection - without it the
+  // job would run as a generic edit and the saturation lock would never apply.
+  return { kind, input: text, requestedBy: who, vertical: v };
 }
 
+/**
+ * Add a job, unless the identical job is already waiting or running.
+ *
+ * Returns the EXISTING record with `duplicate: true` rather than throwing: the
+ * caller asked for a thing to happen, and it is going to happen - there is just
+ * no second copy. Callers that report an id keep working unchanged.
+ *
+ * Only pending and running block. A finished job must be re-runnable, or you
+ * could never render the same short twice.
+ */
 export async function enqueue(job) {
   const clean = validate(job);
+  const want = jobIdentity(clean);
+
+  /* Keyed reads only. R2 LIST is eventually consistent, so scanning the pending
+     prefix missed a job written a second earlier and two fast clicks still
+     produced two jobs. The marker is a hint: it counts only while the job it
+     names is still pending or running, which makes a stale marker harmless. */
+  const marker = await readJsonOrNull(dedupeKey(want));
+  if (marker && marker.identity === want) {
+    for (const state of ["pending", "running"]) {
+      const existing = await readJsonOrNull(keyFor(state, marker.jobId));
+      if (existing) return { ...existing, duplicate: true };
+    }
+  }
+
   const id = newId();
   const record = { id, ...clean, state: "pending", queuedAt: new Date().toISOString() };
   await putObject(keyFor("pending", id), JSON.stringify(record, null, 2), { contentType: "application/json" });
+  // after the job, so the marker can never point at something that is not there
+  await putObject(dedupeKey(want), JSON.stringify({ identity: want, jobId: id }), { contentType: "application/json" });
   return record;
+}
+
+/** GET by key, absent-tolerant — strongly consistent, unlike list(). */
+async function readJsonOrNull(key) {
+  try {
+    return await readJson(key);
+  } catch {
+    return null;
+  }
+}
+
+/** Read one exact id without relying on R2 LIST consistency. */
+export async function findJob(id, wantedState = null) {
+  const safe = String(id || "").trim();
+  if (!/^[a-z0-9]{8,40}$/i.test(safe)) throw new Error("invalid queue job id");
+  const states = wantedState ? [wantedState] : STATES;
+  if (wantedState && !STATES.includes(wantedState)) throw new Error(`unknown state ${wantedState}`);
+  for (const state of states) {
+    const job = await readJsonOrNull(keyFor(state, safe));
+    if (job) return { ...job, state: job.state || state };
+  }
+  return null;
 }
 
 async function readJson(key) {
@@ -134,10 +204,25 @@ async function move(job, from, to, extra = {}) {
 }
 
 export const claim = (job) => move(job, "pending", "running", { startedAt: new Date().toISOString() });
-export const complete = (job, result) =>
-  move(job, "running", "done", { finishedAt: new Date().toISOString(), result: String(result || "").slice(0, 500) });
-export const fail = (job, error) =>
-  move(job, "running", "failed", { finishedAt: new Date().toISOString(), error: String(error || "").slice(0, 500) });
+/** Finishing frees the identity, so the same thing can be asked for again. */
+async function clearMarker(job) {
+  try {
+    await deleteObject(dedupeKey(jobIdentity(job)));
+  } catch {
+    /* findDuplicate re-checks the job is live, so a leftover marker is inert */
+  }
+}
+
+export const complete = async (job, result) => {
+  const moved = await move(job, "running", "done", { finishedAt: new Date().toISOString(), result: String(result || "").slice(0, 500) });
+  await clearMarker(job);
+  return moved;
+};
+export const fail = async (job, error) => {
+  const moved = await move(job, "running", "failed", { finishedAt: new Date().toISOString(), error: String(error || "").slice(0, 500) });
+  await clearMarker(job);
+  return moved;
+};
 
 /**
  * Return jobs stuck in `running` for too long back to pending.
@@ -146,9 +231,14 @@ export const fail = (job, error) =>
  * claimed forever. Without this the queue silently stops draining, which looks
  * identical to "nothing was requested".
  */
-export async function requeueStuck({ olderThanMin = 45 } = {}) {
+export async function requeueStuck({ olderThanMin = 45, executor = null, excludeExecutor = null } = {}) {
   const cutoff = Date.now() - olderThanMin * 60000;
-  const stuck = (await list("running")).filter((j) => (Date.parse(j.startedAt || "") || 0) < cutoff);
+  const stuck = (await list("running")).filter((j) => {
+    if ((Date.parse(j.startedAt || "") || 0) >= cutoff) return false;
+    if (executor !== null && j.executor !== executor) return false;
+    if (excludeExecutor !== null && j.executor === excludeExecutor) return false;
+    return true;
+  });
   for (const j of stuck) await move(j, "running", "pending", { requeuedAt: new Date().toISOString() });
   return stuck;
 }

@@ -4,7 +4,23 @@
     {
       "name": "mission-control",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/mission-control"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/mission-control"
+      ],
+      "port": 4600
+    },
+    {
+      "name": "mission-control-open",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:open",
+        "--prefix",
+        "apps/mission-control"
+      ],
       "port": 4600
     }
   ]

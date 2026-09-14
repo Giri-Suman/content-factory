@@ -33,12 +33,26 @@ const pad = (s, n) => String(s).padEnd(n);
 
 const UPLOADABLE = /\.(mp4|png|jpg|webp)$/i;
 
+/**
+ * Every uploadable file under a render, including subdirectories.
+ *
+ * This used to read only the top level, so thumbs/ and carousel/ were never
+ * pushed - the Packaging page showed 14 broken images because the files it asks
+ * for had never left the laptop.
+ */
 function filesFor(id) {
   const dir = path.join(rendersDir, id);
   if (!existsSync(dir)) return null;
-  return readdirSync(dir)
-    .filter((f) => UPLOADABLE.test(f))
-    .map((f) => path.join(dir, f));
+  const out = [];
+  const walk = (d) => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (UPLOADABLE.test(entry.name)) out.push(full);
+    }
+  };
+  walk(dir);
+  return out;
 }
 
 function allRenderIds() {

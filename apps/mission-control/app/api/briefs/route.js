@@ -1,53 +1,80 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * Briefs — read from R2, generate by queueing.
+ *
+ * Ported from the disk version: `readFileSync(data/os/briefs.json)` becomes an
+ * R2 read of the same file, pushed there by `factory sync push`. Generating a
+ * brief used to spawn the CLI; on Workers it queues, and the response says when
+ * the laptop will run it.
+ */
 
-const STORE = path.join(repoRoot, "data", "os", "briefs.json");
+import { getEnv } from "@factory-env";
+import { actOn, readCollection, writeCollection } from "../../../lib/cloud.js";
 
-const read = () => {
-  if (!existsSync(STORE)) return [];
-  try {
-    return JSON.parse(readFileSync(STORE, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
-const write = (rows) => writeFileSync(STORE, JSON.stringify({ updatedAt: new Date().toISOString(), rows }, null, 2));
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  return NextResponse.json({ briefs: read().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
+  const env = getEnv();
+  const rows = await readCollection(env, "briefs");
+  return json({ briefs: rows.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")) });
 }
 
-// POST {clusterId} | {wishlistId} -> generate via the CLI
 export async function POST(request) {
-  const { clusterId, wishlistId } = await request.json();
-  const target = clusterId || wishlistId;
-  if (!target) return NextResponse.json({ ok: false, error: "missing clusterId/wishlistId" }, { status: 400 });
-  const { code, out } = await runCli(["brief", target], 240000);
-  return code === 0
-    ? NextResponse.json({ ok: true, out })
-    : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  // The old route spawned `factory brief ...`. Same intent, queued instead.
+  const cmd = body.topic ? "brief-topic" : "brief";
+  try {
+    return json(await actOn(env, request, { cmd, arg: body.topic || "", requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
+  }
 }
 
-// PATCH {id, status?|payload?|checklistState?|lane?} — direct JSON edit per repo convention
+/**
+ * Edit a brief: approve, kill, tick a checklist item, override the lane.
+ *
+ * This WRITES rather than queues. Approving a brief is the gate the whole
+ * pipeline waits on, and a button that does nothing visible until the laptop
+ * wakes would make the page useless from a phone. writeCollection explains the
+ * ordering rule this creates with `factory sync push`.
+ *
+ * The approval side effects (entering the idea bank, fanning out derivatives)
+ * DO still need the laptop, so they queue. That is why an approval can be
+ * visible here instantly while its downstream work is still pending.
+ */
 export async function PATCH(request) {
-  const { id, status, payload, checklistState, lane } = await request.json();
-  const rows = read();
+  const env = getEnv();
+  const { id, status, payload, checklistState, lane } = await request.json().catch(() => ({}));
+
+  const rows = await readCollection(env, "briefs");
   const i = rows.findIndex((r) => r.id === id);
-  if (i === -1) return NextResponse.json({ ok: false, error: "unknown brief" }, { status: 404 });
+  if (i === -1) return json({ ok: false, error: "unknown brief" }, 404);
+
   const becameApproved = status === "approved" && rows[i].status !== "approved";
+  const now = new Date().toISOString();
+
   if (status && ["draft", "approved", "killed"].includes(status)) rows[i].status = status;
   if (payload && typeof payload === "object") rows[i].payload = payload;
   if (Array.isArray(checklistState)) rows[i].checklistState = checklistState.map(Boolean);
-  if (lane === "synthetic" || lane === "capture") rows[i].lane = lane; // P20 manual override
-  if (becameApproved && !rows[i].pipeline) rows[i].pipeline = { state: "approved", updatedAt: new Date().toISOString(), history: [{ state: "approved", at: new Date().toISOString() }] };
-  rows[i].updatedAt = new Date().toISOString();
-  write(rows);
-  // P14: approval auto-enters the Idea Bank · P24: and fans out derivatives
-  if (becameApproved) {
-    await runCli(["ideabank", "enter", id], 120000).catch(() => {});
-    await runCli(["catalog", "fanout", id], 120000).catch(() => {});
+  if (lane === "synthetic" || lane === "capture") rows[i].lane = lane;
+  if (becameApproved && !rows[i].pipeline) {
+    rows[i].pipeline = { state: "approved", updatedAt: now, history: [{ state: "approved", at: now }] };
   }
-  return NextResponse.json({ ok: true, brief: rows[i] });
+  rows[i].updatedAt = now;
+
+  await writeCollection(env, "briefs", rows);
+
+  let queued = null;
+  if (becameApproved) {
+    // Best effort: the edit itself already succeeded, and failing the whole
+    // request because the queue was full would be a lie about what happened.
+    // runs here when approving from this laptop, queues when approving remotely
+    queued = await actOn(env, request, { cmd: "catalog-fanout", arg: id, requestedBy: "portal" })
+      .then((r) => r.out)
+      .catch((e) => `approved, but the follow-up did not run: ${e.message}`);
+  }
+  return json({ ok: true, brief: rows[i], queued });
 }

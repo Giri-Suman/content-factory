@@ -1,62 +1,49 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { repoRoot, runCli, envSet } from "../../../lib/factory.js";
+/**
+ * Wishlist — posts you want to learn from, and their autopsies.
+ *
+ * The page reads `entries` and `hasYtKey`; the port returned `wishlist`, so the
+ * list was permanently empty and the "add by URL" box never explained that it
+ * needs a YouTube key.
+ */
 
-const STORE = path.join(repoRoot, "data", "os", "wishlist.json");
+import { getEnv } from "@factory-env";
+import { actOn, notAvailable, readCollection, readEnvFlags } from "../../../lib/cloud.js";
 
-const read = () => {
-  if (!existsSync(STORE)) return [];
-  try {
-    return JSON.parse(readFileSync(STORE, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 export async function GET() {
-  const rows = read().sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-  return NextResponse.json({
-    entries: rows,
-    hasYtKey: envSet("YOUTUBE_API_KEY"),
-  });
+  const env = getEnv();
+  const [rows, flags] = await Promise.all([readCollection(env, "wishlist"), readEnvFlags(env)]);
+  return json({ entries: rows, hasYtKey: Boolean(flags.youtube), wishlist: rows });
 }
 
-// POST {url} (YouTube) | {manual:{...}} | {action:"poll"} — all via the CLI (never import factory packages here)
+/**
+ * Which registry command each button means.
+ *
+ * The port dropped `action` entirely and enqueued one command whatever was
+ * pressed, so every button on this page did the same thing. `null` marks an
+ * action the registry has no row for - those are refused by name rather than
+ * quietly running something else.
+ */
+const ACTIONS = {
+  poll: null,
+};
+const HINTS = { poll: "factory wishlist poll" };
+
 export async function POST(request) {
-  const body = await request.json();
-
-  if (body.action === "poll") {
-    const { code, out } = await runCli(["wishlist", "poll"], 180000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-300) });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  const action = String(body.action || "").trim();
+  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
+  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
+  try {
+    const r = await actOn(env, request, { cmd, arg: "", requestedBy: body.requestedBy || "portal", });
+    return json(r);
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-
-  if (body.manual) {
-    const tmpDir = path.join(repoRoot, "data", "os");
-    mkdirSync(tmpDir, { recursive: true });
-    const tmp = path.join(tmpDir, `manual-${Date.now()}.tmp.json`);
-    writeFileSync(tmp, JSON.stringify(body.manual));
-    const { code, out } = await runCli(["wishlist", "manual", tmp], 180000);
-    return code === 0
-      ? NextResponse.json({ ok: true, out })
-      : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
-  }
-
-  if (body.url) {
-    const { code, out } = await runCli(["wishlist", "add", body.url], 180000);
-    return code === 0
-      ? NextResponse.json({ ok: true, out })
-      : NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: false, error: "missing url / manual / action" }, { status: 400 });
-}
-
-// DELETE — direct JSON rewrite (same convention as writeConfig in lib/factory.js)
-export async function DELETE(request) {
-  const id = new URL(request.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ ok: false }, { status: 400 });
-  const rows = read().filter((r) => r.id !== id);
-  writeFileSync(STORE, JSON.stringify({ updatedAt: new Date().toISOString(), rows }, null, 2));
-  return NextResponse.json({ ok: true });
 }

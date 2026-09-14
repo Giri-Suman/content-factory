@@ -1,43 +1,56 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { repoRoot, runCli, readEnvKeys } from "../../../lib/factory.js";
+/**
+ * Calibration — measured performance vs the system's predictions.
+ *
+ * The port returned `{ snapshots }`, a key the page never reads. It wants
+ * `perf` (the calibration record) and `youtube` (whether a key is configured).
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getEnv } from "@factory-env";
+import { actOn, notAvailable, readEnvFlags, readPerf } from "../../../lib/cloud.js";
 
-// GET -> calibration state (joins/memo/scorecard/tuning) computed via CLI --json
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function GET() {
-  const { code, out } = await runCli(["calibrate", "state", "--json"], 60000);
-  const line = out.split(/\r?\n/).reverse().find((l) => l.startsWith("RESULT "));
-  const state = code === 0 && line ? JSON.parse(line.slice(7)) : null;
-  return NextResponse.json({
-    state,
-    memo: os("memos")[0] || null,
-    tuning: os("tuning").slice(-20).reverse(),
-    youtube: readEnvKeys().youtube,
+  const env = getEnv();
+  const [perf, flags] = await Promise.all([readPerf(env), readEnvFlags(env)]);
+  return json({
+    perf,
+    youtube: Boolean(flags.youtube),
+    tuning: perf?.tuning || null,
+    snapshots: perf?.snapshots || [],
   });
 }
 
-// POST {action: seed|ingest|memo|tune|revert, id?}
+/**
+ * Which registry command each button means.
+ *
+ * The port dropped `action` entirely and enqueued one command whatever was
+ * pressed, so every button on this page did the same thing. `null` marks an
+ * action the registry has no row for - those are refused by name rather than
+ * quietly running something else.
+ */
+const ACTIONS = {
+  ingest: "analytics",
+  tune: "analytics",
+  memo: "cal-memo",
+  seed: null,
+  revert: null,
+};
+const HINTS = { seed: "factory seed myposts", revert: "factory analytics" };
+
 export async function POST(request) {
-  const { action, id } = await request.json().catch(() => ({}));
-  const map = {
-    seed: ["calibrate", "seed", "25"],
-    ingest: ["calibrate", "ingest"],
-    memo: ["calibrate", "memo"],
-    tune: ["calibrate", "tune"],
-    revert: ["calibrate", "revert", id || ""],
-  };
-  const args = map[action];
-  if (!args) return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
-  const { code, out } = await runCli(args, 1000 * 60 * 3);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-400) }, { status: code === 0 ? 200 : 500 });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  const action = String(body.action || "").trim();
+  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
+  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
+  try {
+    return json(await actOn(env, request, { cmd, arg: "", requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
+  }
 }

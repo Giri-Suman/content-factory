@@ -1221,3 +1221,348 @@ explicitly, and cross-reference each other.
 xAI slots in as the FIRST option in the `cheap` tier rather than `free`, because
 it is paid — a paid option in a tier labelled free would quietly spend money.
 Verified the free tier is unchanged and xai leads cheap only when the key exists.
+
+## What kept jobs laptop-only was STATE, not CPU
+
+**tried** — assuming briefs, edits and renders could not move to the cloud
+because they are heavy.
+
+**broke** — the assumption. They were laptop-only because they read
+`data/os/*` — briefs, clusters, publishitems, scripts — which existed on one
+machine. Measured: **71 JSON files, 3.3MB.** That is the entire reason those
+jobs could not run anywhere else. Math shorts moved months' worth of CPU to the
+cloud only because they happen to need no state at all.
+
+**rule** — when something "cannot" move to another environment, separate the
+compute reason from the data reason before accepting it. Here the data was
+trivial to move and the compute was never the obstacle.
+
+Footage is the genuine weight (436MB) and is synced per file, on demand, only
+for the jobs that need it. R2's zero egress means the runner's download costs
+nothing, which is what makes this viable at all.
+
+The step that is easy to omit and expensive to forget: **push state BACK after
+the cloud job.** Decisions made on a runner — a brief marked used, a new publish
+item — exist only there until pushed, and the laptop's next pull would silently
+overwrite them with older local state. `if: always()` so it happens even when
+the job failed.
+
+## Split reading from executing, and the always-on problem dissolves
+
+**tried** — treating "make factory.coderfact.com available 24/7" as a hosting
+question, and repeatedly concluding it could not be done without either keeping
+the laptop awake or renting a server.
+
+**broke** — the framing, not the facts. The portal cannot move to Cloudflare
+because 30 of its 37 routes spawn ffmpeg, Chrome, Manim or whisper, and Workers
+has no `child_process`. All of that is true and stays true. But it only applies
+to EXECUTING. Reading the factory's state needs none of it: briefs, clusters,
+publish items and scores are 71 JSON files totalling 3.3MB, and they are already
+synced to R2.
+
+**rule** — when something "cannot be always-on", separate the read path from the
+write path before accepting it. Here the answer was not one portal in a better
+place; it was two surfaces with different requirements — execution stays on the
+machine that has the binaries, information lives on a static page backed by
+object storage, always on and free.
+
+Worth noting how long that took to see: the same constraint had been restated
+several times across the session as though it were one indivisible problem.
+
+Practical trap this exposed: R2 credentials are needed in THREE separate places
+and none of them implies the others - the local `.env`, GitHub Actions secrets,
+and a Cloudflare Pages binding. "I added the R2 keys" was true for two of the
+three, and the third failed with a message that did not obviously mean
+"different place".
+
+## Queue the laptop-bound work instead of hiding it
+
+**tried** — treating "the portal must be always available" as a hosting problem
+with three answers: keep the laptop awake, rent a server, or accept a read-only
+page.
+
+**broke** — all three were wrong because they assumed the portal is one thing.
+It is two: a surface people look at, and a machine that spawns ffmpeg. Splitting
+them gives a fourth answer that is better than any of the three — the surface
+lives on Pages (always up, free), and the 25 of 76 commands that genuinely need
+the laptop are QUEUED with a message saying when they will run.
+
+**rule** — when a capability cannot be available, check whether it can be
+*deferred* instead. "Queued, runs at about 20:00" is a working feature. A greyed
+out button is not, and neither is a portal that returns 530.
+
+Two things that made this safe rather than clever:
+- **A queue entry carries a registry KEY, never a command line.** The laptop
+  rebuilds argv from its own registry when it drains, so a public write surface
+  can request a video about a rude topic but cannot request a shell.
+- **The registry is published to R2 as data on every `sync push`.** Workers
+  cannot import the repo's ESM, and a hand-maintained copy would drift — a
+  button that appears and then fails is worse than a missing button.
+
+Cost of the region rewrite that enabled this: deleting a block of a file to
+replace it also deleted `PREFIX`, `STATES`, `keyFor` and `newId`, which lived
+between the two functions being replaced. Syntax checked fine; it failed at
+runtime on the first call. When cutting a range out of a file, list what was in
+the range before deciding the range is what you meant.
+
+## One portal, and laptop jobs QUEUE rather than disappear
+
+**tried** — splitting the factory across two hostnames: an always-on read-only
+page, and `ops.` for the real portal when the laptop happened to be awake.
+
+**broke** — the framing, again. Two addresses meant remembering which one did
+what, and `ops.` was down most of the time by design. What was actually wanted
+was ONE address that is always up, shows everything, and is honest about what
+has to wait.
+
+**rule** — when a capability is unavailable right now, queue it and say WHEN,
+rather than hiding it or greying it out. "Render the demo is queued. It needs the
+laptop, so it will run at about 20:00 (in 1h 43m). 3 jobs ahead of it." is more
+useful than a disabled button, and it removes the second hostname entirely.
+
+The safety property survives the move to a public endpoint unchanged: the client
+sends a registry KEY, never a command line. The key is checked against a manifest
+published by `sync push`, and argv is rebuilt on the laptop from that key alone.
+Verified against the live endpoint - `{"cmd":"; rm -rf /"}` returns
+`unknown command`, and a missing argument returns
+`Brief a specific idea needs Topic or angle` rather than queueing something
+broken.
+
+**Do not trust a derived timestamp from a stale record.** The first version read
+`nextWake` straight from the heartbeat and produced "at about 03:30 (in 0 min)" -
+that value had been computed 26 hours earlier and was long past. `wakeTimes` is
+the durable fact; the next occurrence has to be recomputed at read time. Same
+class of bug as clamping a negative age to zero: a stale derived value looks like
+a fresh one unless something checks.
+
+## `node --check` is not a syntax gate for App Router routes
+
+*Tried* — after porting 30 route files, ran `node --check` over every one, got
+"all 37 routes ok", and treated that as proof the code parsed.
+
+*Broke* — the first real build failed on
+`String(body.briefId || body.id ?? "")`. Mixing `||` with `??` without
+parentheses is a SyntaxError, and swc rejects it. `node --check` returns exit 0
+on the same file. Nine routes had shipped that pattern past a green check,
+because the port template that generated them contained it.
+
+*Rule* — **the build is the only syntax gate.** `node --check` disagrees with the
+bundler's parser, so a green check means nothing about whether Next will compile
+it. A second-order lesson from the same session: the first check loop piped node
+into `head`, so `$?` was head's exit code and every file "passed". If a check
+loop reports zero failures across dozens of files on the first attempt, verify
+the loop can actually fail before believing it.
+
+## Audit by capability, not by import string
+
+*Tried* — found every route that needed porting to Workers with
+`grep -rl '^import.*node:' app`, drove it to zero, and called the port complete.
+
+*Broke* — `vercel build` failed with "Unable to find lambda for route:
+/api/renders". Seven routes imported `lib/factory.js`, which imports `node:fs`
+itself. They had no `node:` string of their own, so the grep never saw them.
+
+*Rule* — grep finds direct imports, not transitive ones. The honest audit
+question was never "which files say `node:`" but **"which files still reach the
+disk"** — answered by grepping for the *module* that does it. Same shape as the
+`runtime = "edge"` audit: the property that matters is what a route can do, and
+the import line is only one symptom of it.
+
+## Windows cannot finish a Vercel build, and that is fine
+
+*Tried* — building the Pages bundle locally, repeatedly.
+
+*Broke* — `vercel build` deduplicates identical functions with symlinks, and
+Windows refuses `fs.symlink` without Developer Mode. The Next build compiles
+100% clean and then dies with `EPERM: symlink`. Worse, each aborted run leaves a
+partial `.vercel/output`, so `next-on-pages` then reports whichever routes had
+not been emitted yet as "not configured to run with the Edge Runtime" — false
+positives that change every run and look exactly like real errors.
+
+*Rule* — on Windows, trust the **compile** result locally and get the edge-runtime
+verdict from CI. When reading a next-on-pages runtime complaint, first check
+whether the build that produced the output actually finished; only a complaint
+from a completed build is real. `/_not-found` was the one true finding, and it
+needs `app/not-found.js` to exist, because Next's generated version does not
+inherit `runtime` from the root layout.
+
+## A Windows-built Cloudflare bundle deploys and then 500s
+
+*Tried* — building the Pages bundle on Windows once the symlink problem was
+worked around, deploying it, and treating a green build as a working portal.
+
+*Broke* — every page answered 500 with "Could not find the module <id> in the
+React Server Consumer Manifest", while the API routes worked perfectly. The
+build printed no warning; the failure only exists at runtime. The same commit
+built in Linux CI works completely.
+
+*Rule* — **the adapter's "not reliable on Windows" warning means the artifact,
+not the build.** Never judge a Cloudflare bundle by whether it built. Build in
+CI and deploy that exact tarball (`node scripts/deploy-portal.mjs`). The tell
+that something is path-related: the build log printed
+`_worker.js\nop-build-log.json`, where a Windows separator had been read as an
+escape.
+
+## An unanchored .gitignore rule hid two source files for months
+
+*Tried* — trusting that a page working locally meant it was in the repository.
+
+*Broke* — the first deploy from a clean CI checkout answered 404 on `/renders`
+and `/api/renders` while the other 24 pages worked. `.gitignore` line 12 was
+`renders/` — no leading slash — so besides the repo-root output directory it
+also matched `app/renders/` and `app/api/renders/`. Those two files had never
+been committed. Nothing noticed because the local portal reads the working tree.
+
+*Rule* — **anchor ignore rules for build output: `/renders/`, not `renders/`.**
+And when a deploy is missing exactly one feature, check `git ls-files` before
+debugging the bundler. `git ls-files --others --ignored --exclude-standard` over
+the source directories lists everything being hidden this way.
+
+## Porting route-by-route silently deletes the readers
+
+*Tried* — porting ~40 API routes one at a time, classifying each by what it
+mainly did ("this one runs a command"), and verifying with a page-level sweep
+that returned 200.
+
+*Broke* — nine routes lost a handler. Three had their GET deleted, three had it
+replaced with a `{note: "POST to run"}` stub, and three writes were dropped
+entirely. Every affected PAGE still returned 200 — the shell renders, then its
+`useEffect` fetch 405s and the page sits empty. A sweep of page status codes
+cannot see this.
+
+*Rule* — when porting a set of endpoints, diff the **exported method sets**
+against the pre-port commit, per file. `grep -oE 'export (async )?function
+(GET|POST|PUT|DELETE|PATCH)'` on both sides catches in one pass what
+route-by-route review misses. Also check for a second handler further down the
+file: two `export async function GET` in one module is a duplicate-export
+SyntaxError that `node --check` does not report — the same blind spot as the
+`||`/`??` case above.
+
+## A page that returns 200 can still be a blank page
+
+*Tried* — verifying the ported portal by sweeping every route's status code.
+26/26 pages returned 200, so the port was called done.
+
+*Broke* — two pages were dead anyway. Math Studio queued jobs correctly but
+showed a badge reading "undefined" over an empty log, because `useJob`/`JobLog`
+read `job.status` and `job.log` while a queue record carries `state` and
+`result`/`error`. Settings never rendered at all: it starts with
+`if (!config || !env) return "loading…"`, and the ported endpoint had stopped
+returning `env`. Both pages are client shells - the HTML renders, returns 200,
+and then the fetch underneath disagrees with what the component expects.
+
+*Rule* — **a status-code sweep proves routing, not function.** For a
+"use client" app, check the SHAPE the component reads, not just that a response
+arrived. Two cheap checks catch this whole class: grep the page for the fields
+it destructures off a fetch and confirm the endpoint returns those keys, and
+grep for early `if (!x) return "loading"` guards, which turn a missing field
+into a permanently blank page rather than an error.
+
+A second-order lesson: when a port changes an operation from synchronous to
+queued, it introduces a state the old UI has no word for. "queued" needed
+adding to the status vocabulary rather than being folded into "running" - a
+spinner for work that starts in five hours is a lie, and mapping it to "done"
+would have been worse.
+
+## R2 LIST is eventually consistent; GET by key is not
+
+*Tried* — deduplicating the queue by listing the pending prefix and comparing
+each job's command and input against the new one.
+
+*Broke* — clicking Render three times still produced two jobs. Click 1 created
+one, click 2 (about a second later) listed the prefix, could not see it, and
+created a second; click 3 finally saw it and deduped. The logic was right and
+the read was stale.
+
+*Rule* — **in R2, LIST is eventually consistent and GET by key is strongly
+consistent.** Anything that must observe a write that just happened has to be a
+keyed read, which means the key must be derivable from the request itself — so
+dedupe needs a marker object at a deterministic key, not a scan. Store the full
+identity inside the marker and compare it on read, so a hash collision cannot
+silently merge two different jobs.
+
+A keyed read still is not enough for simultaneous writers: five requests fired
+together all read "absent" before any of them wrote. That needs an atomic
+create, `put(..., { onlyIf: { etagDoesNotMatch: "*" } })` on the Workers
+binding, which returns null to the loser. The loser then re-reads with a short
+grace window, because the winner may have claimed the key but not yet written
+the job — during that gap the job is genuinely unreadable and still a duplicate.
+
+**The same guarantee is NOT available over R2's S3 API.** `If-None-Match: *` on
+a signed PUT was accepted and the object was overwritten anyway — measured, the
+second create returned success. So the conditional path exists only on the
+binding, and the S3 side was left without a conditional-write option rather than
+carrying one that quietly does nothing.
+
+Last thing: a marker scheme only protects rows that HAVE a marker. Jobs queued
+before the feature existed had none and slipped straight past the check, which
+needed a one-time backfill. Any dedupe keyed on a side-table has this migration.
+
+## Deciding a verdict and recording it must not share a try block
+
+*Tried* — running a queued job and writing its outcome to R2 inside one
+try/catch, with the catch calling `fail()`.
+
+*Broke* — a math demo rendered correctly, `renders/math-gauss-sum/short.mp4`
+was on disk, and the portal said `failed - fetch failed`. The job never failed.
+`complete()` hit a transient network error, landed in the same catch as a
+crashed render, and inverted a success into a failure. Nothing in the record
+distinguished the two, so the only way to find out was to look for the file.
+
+*Rule* — **the verdict comes from the work; the write is separate and retried.**
+A storage error may delay the record or repeat the work; it must never change
+what the record says. Anything that reports an outcome over a network needs this
+split, and if the write ultimately fails, leaving the job visibly stuck is
+better than confidently recording the opposite of what happened.
+
+## A fallback that does not fall back
+
+*Tried* — `chat()` logging `all AI options failed — using the built-in fallback`
+and returning null.
+
+*Broke* — there was no fallback. 28 of its 30 callers dereference the result on
+the very next line, so an OpenRouter `free-models-per-day` rate limit surfaced
+as `TypeError: Cannot read properties of null (reading 'text')` with a stack
+trace into llm internals. The actual cause — a daily quota — appeared nowhere.
+
+*Rule* — a message describing a recovery that does not exist is worse than no
+message, because it sends the next person looking for a bug in the fallback.
+Either implement the degradation or throw with the real reason. When a helper
+returns null on failure, check what its callers actually do: if nearly all of
+them deref it, the null contract is wrong, not the callers.
+
+Same shape one layer up: `runJob` used `stdio:"inherit"`, showing everything
+live and keeping none of it, so a cloud failure reported `exited 1 after 0.4 min`
+and nothing else. Live output and a captured tail are not alternatives — the
+console reader and the portal reader are different people.
+
+## Test the pages, not the endpoints — and diff the shape, not the status
+
+*Tried* — declaring the cloud portal working because all 26 routes returned 200
+and every endpoint returned JSON.
+
+*Broke* — nine pages were unusable. Settings threw on hydration (`s.ready[tier]`
+where the data carries `tiers[].available`). Production threw
+`Cannot read properties of undefined (reading 'map')` because the route returned
+`{briefs}` and the page renders a kanban from `columns`/`states`/`alerts`.
+Trend Radar had been empty since the port: `readTrends` reads state/trends.json
+and nothing ever wrote it, because trends.json is in the sync EXCLUDE list.
+YouTube, QC, Wishlist, Ideas, Analytics and Publish each returned a payload
+whose keys the page never reads. Every one served a clean 200.
+
+*Rule* — for a client-shell app, the useful check is **"does the payload have the
+keys this page destructures?"**, run against the deployed URL. Two things make
+it work in practice:
+
+- Extract the field names from the page source rather than guessing. My first
+  version only matched `d.<field>`; Production aliases its payload `data`, so
+  the worst break in the set was invisible until the regex covered every alias.
+- **Cache-bust the probe.** Cloudflare served stale bodies and a fixed route
+  looked broken for two more deploys, which nearly sent me rewriting code that
+  was already correct.
+
+And the fastest way to drive a gated portal honestly is a PREVIEW deployment:
+same Workers runtime, same bindings, and Pages keeps preview environment
+secrets separate, so it comes up ungated without touching production or handling
+a password. Delete it afterwards - `wrangler pages deployment delete <id>
+--force`, since the branch alias counts as active.

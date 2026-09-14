@@ -1,42 +1,84 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { repoRoot, startJob } from "../../../lib/factory.js";
-import { EFFECTS, benchResults, effectPerformance, getEffect, suggestEffects } from "../../../../../packages/studio/src/motionLab.js";
+/**
+ * Motion effect catalog.
+ *
+ * Ported for the Workers runtime. The disk version spawned the CLI; this queues
+ * the same command and answers with when the laptop will run it. Execution is
+ * the only thing that changed - the work is identical, it just happens on the
+ * machine that has ffmpeg rather than inside this request.
+ */
 
+import { getEnv } from "@factory-env";
+import { actOn, notAvailable, readMotionMeta } from "../../../lib/cloud.js";
+import { EFFECTS, suggestEffects } from "../../../../../packages/studio/src/motionEffects.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+/**
+ * The effect catalog, with the measurements the laptop published.
+ *
+ * The first port hardcoded `measured: null` and `hasPreview: false` on the
+ * grounds that neither can be produced inside a Worker. True, but they do not
+ * have to be produced here - the preview mp4s are in R2 under renders/_motion/,
+ * and the bench numbers are pushed to state/motion.json by `sync push`. Left as
+ * they were, the page showed 22 effects with every column blank and no preview,
+ * which reads as "never measured" rather than "measured elsewhere".
+ */
 export async function GET(request) {
+  const env = getEnv();
   const u = new URL(request.url);
   const scene = u.searchParams.get("scene");
   const niche = u.searchParams.get("niche");
 
-  const bench = Object.fromEntries(benchResults().map((b) => [b.effectId, b]));
-  const perf = effectPerformance();
-  const previewDir = path.join(repoRoot, "renders", "_motion");
+  const [meta, listed] = await Promise.all([
+    readMotionMeta(env),
+    env?.QUEUE ? env.QUEUE.list({ prefix: "renders/_motion/", limit: 100 }) : Promise.resolve({ objects: [] }),
+  ]);
+  const previews = new Set(listed.objects.map((o) => o.key.slice("renders/_motion/".length).replace(/\.mp4$/i, "")));
+  const bench = Object.fromEntries((meta.bench || []).map((b) => [b.effectId || b.id, b]));
+  const perf = meta.performance || {};
 
-  return NextResponse.json({
+  return json({
     ok: true,
     effects: EFFECTS.map((e) => ({
       ...e,
       measured: bench[e.id] || null,
       yours: perf[e.id] || null,
-      hasPreview: existsSync(path.join(previewDir, `${e.id}.mp4`)),
+      hasPreview: previews.has(e.id),
     })),
     suggested: scene ? suggestEffects({ sceneType: scene, niche: niche || "coding", limit: 6 }) : [],
     hasResults: Object.keys(perf).length > 0,
+    benchedAt: meta.at || null,
   });
 }
 
-export async function POST(request) {
-  const { action, id, seconds = 3 } = await request.json();
+/**
+ * Which registry command each button means.
+ *
+ * The port dropped `action` entirely and enqueued one command whatever was
+ * pressed, so every button on this page did the same thing. `null` marks an
+ * action the registry has no row for - those are refused by name rather than
+ * quietly running something else.
+ */
+const ACTIONS = {
+  bench: null,
+  benchAll: null,
+};
+const HINTS = { bench: "factory motion bench <id>", benchAll: "factory motion bench --all" };
 
-  if (action === "bench") {
-    if (!getEffect(id)) return NextResponse.json({ ok: false, error: "unknown effect" }, { status: 400 });
-    const job = startJob("motion-bench", ["motion", "bench", id, `--seconds=${seconds}`]);
-    return NextResponse.json({ ok: true, jobId: job.id });
+export async function POST(request) {
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  const action = String(body.action || "").trim();
+  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
+  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
+  const arg = "";
+  try {
+    return json(await actOn(env, request, { cmd, arg, requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (action === "benchAll") {
-    const job = startJob("motion-bench", ["motion", "bench", "--all", "--seconds=3"]);
-    return NextResponse.json({ ok: true, jobId: job.id });
-  }
-  return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
 }

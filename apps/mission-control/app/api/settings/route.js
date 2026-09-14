@@ -1,17 +1,30 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { readConfig, writeConfig, readEnvKeys, repoRoot, envSet } from "../../../lib/factory.js";
-import { EDIT_DEFAULTS, EDIT_OPTIONS, LANGUAGES, isLanguage, loadEnv } from "../../../../../packages/shared/src/config.js";
-import {
-  DEFAULT_SERVICE_TIERS,
-  DEFAULT_TIERS,
-  TIER_META,
-  TIER_NAMES,
-  canonicalTier,
-  serviceAvailability,
-  tierAvailability,
-} from "../../../../../packages/llm/src/tiers.js";
+/**
+ * Settings, composed for the cloud portal.
+ *
+ * THE FIRST PORT BROKE THIS PAGE COMPLETELY. It returned `{ ...config }` -
+ * config's fields spread at the top level - but the page reads `d.config` and
+ * bails with `if (!config || !env) return "loading…"`. So Settings sat on
+ * "loading…" forever behind a 200, which is indistinguishable from a slow
+ * network and shows up in no log.
+ *
+ * The shape below is the disk version's, rebuilt from three sources:
+ *   config + collections   R2, pushed by `factory sync push`
+ *   env                    state/envkeys.json - booleans, never key values
+ *   tier tables            state/ui.json - packages/llm imports node:fs and so
+ *                          cannot run at the edge; the laptop publishes it
+ *
+ * Remote writes go to the canonical R2 copy and carry the verified Access
+ * identity. The sync layer refuses to overwrite a newer cloud edit.
+ */
+
+import { getEnv } from "@factory-env";
+import { readCollection, readConfig, readEnvFlags, readUiMeta, writeConfig } from "../../../lib/cloud.js";
+import { identityFromRequest } from "../../../lib/identity.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 const MODULE_BUDGETS = {
   watchlist: 800, trending: 200, nicheHeat: 600, keywordGap: 2200,
@@ -23,134 +36,119 @@ const JOB_MODULE = {
   wishlist: "wishlistTracking", "my-channel": "myChannel", "yt-saturation": "reserve", publish: "reserve",
 };
 
-function budgetDashboard() {
-  const today = new Date().toISOString().slice(0, 10);
-  const p = path.join(repoRoot, "data", "os", "quota.json");
-  const rows = existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")).rows || []).filter((r) => r.date === today) : [];
-  const spent = Object.fromEntries(Object.keys(MODULE_BUDGETS).map((m) => [m, 0]));
-  for (const r of rows) spent[JOB_MODULE[r.job] || "reserve"] += r.units;
-  return Object.entries(MODULE_BUDGETS).map(([name, budget]) => ({ name, budget, used: spent[name], remaining: budget - spent[name], pct: Math.round((spent[name] / budget) * 100) }));
-}
-
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
-
 export const DEFAULT_WEIGHTS = { velocity: 1, crossSource: 1, nicheFit: 1, saturationGap: 1 };
 
-export async function GET() {
-  loadEnv(); // needs() checks read process.env; Next does not load the factory .env
-  const config = readConfig();
+function budgetDashboard(quotaRows) {
+  const spent = Object.fromEntries(Object.keys(MODULE_BUDGETS).map((m) => [m, 0]));
+  for (const r of quotaRows) spent[JOB_MODULE[r.job] || "reserve"] += Number(r.units) || 0;
+  return Object.entries(MODULE_BUDGETS).map(([name, budget]) => ({
+    name,
+    budget,
+    used: spent[name],
+    remaining: budget - spent[name],
+    pct: Math.round((spent[name] / budget) * 100),
+  }));
+}
+
+export async function GET(request) {
+  const env = getEnv();
+  const [config, envKeys, ui, quota, jobruns, watchchannels] = await Promise.all([
+    readConfig(env),
+    readEnvFlags(env),
+    readUiMeta(env),
+    readCollection(env, "quota"),
+    readCollection(env, "jobruns"),
+    readCollection(env, "watchchannels"),
+  ]);
+
   const today = new Date().toISOString().slice(0, 10);
-  return NextResponse.json({
+  const todaysQuota = quota.filter((r) => r.date === today);
+
+  return json({
     config: {
       ...config,
-      youtubeKeywords: config.youtubeKeywords || ["ai automation", "claude code", "cursor ai", "n8n workflow", "python automation", "ai agents"],
-      scoreWeights: { ...DEFAULT_WEIGHTS, ...(config.scoreWeights || {}) },
+      youtubeKeywords: config.youtubeKeywords || [
+        "ai automation", "claude code", "cursor ai", "n8n workflow", "python automation", "ai agents",
+      ],
+      scoreWeights: { ...(ui.weights || DEFAULT_WEIGHTS), ...(config.scoreWeights || {}) },
       availableHoursPerWeek: config.availableHoursPerWeek || 6,
     },
-    env: readEnvKeys(),
-    /**
-     * Derived from the tier registry, never re-listed here. This block used to
-     * be a hand-maintained copy and it had drifted to advertising
-     * "llama-3.3-70b:free" and "gemini-2.0-flash" — both DEAD ids that 404 —
-     * so Settings confidently displayed models that could not run.
-     */
+    env: envKeys,
     aiTiers: {
-      assigned: { ...DEFAULT_TIERS, ...(config.aiTiers || {}) },
-      tierMeta: TIER_META,
-      availability: tierAvailability(),
+      assigned: { ...(ui.aiTiers?.defaults || {}), ...(config.aiTiers || {}) },
+      tierMeta: ui.aiTiers?.tierMeta || {},
+      availability: ui.aiTiers?.availability || [],
+    },
+    serviceTiers: {
+      assigned: { ...(ui.serviceTiers?.defaults || {}), ...(config.serviceTiers || {}) },
+      tierNames: ui.serviceTiers?.tierNames || [],
+      services: ui.serviceTiers?.services || [],
     },
     language: config.language || "",
-    edit: { ...EDIT_DEFAULTS, ...(config.edit || {}) },
-    editOptions: EDIT_OPTIONS,
-    languages: LANGUAGES,
-    serviceTiers: {
-      assigned: { ...DEFAULT_SERVICE_TIERS, ...(config.serviceTiers || {}) },
-      tierNames: TIER_NAMES,
-      services: serviceAvailability(),
-    },
-    quotaToday: os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0),
-    budgets: budgetDashboard(),
-    flags: {
-      publishMode: envSet("PUBLISH_MODE") ? "auto" : "staged",
-      youtubeVerified: envSet("YOUTUBE_APP_VERIFIED"),
-      metaReviewed: envSet("META_APP_REVIEWED"),
-      autoTune: config.autoTune !== false,
-    },
-    jobruns: os("jobruns").slice(-30).reverse(),
+    edit: { ...(ui.editDefaults || {}), ...(config.edit || {}) },
+    editOptions: ui.editOptions || [],
+    languages: ui.languages || [],
+    quotaToday: todaysQuota.reduce((a, r) => a + (Number(r.units) || 0), 0),
+    budgets: budgetDashboard(todaysQuota),
+    flags: { ...(ui.flags || {}), autoTune: config.autoTune !== false },
+    jobruns: jobruns.slice(-30).reverse(),
     dailyProjection: (() => {
       // mirrors packages/radar estimateDailyUnits (routes never import factory packages)
       const kw = (config.youtubeKeywords || ["a", "b", "c", "d", "e", "f"]).length;
-      const channels = os("watchchannels").length;
+      const channels = watchchannels.length;
       const t = 96 + kw * 100 + Math.ceil((kw * 10) / 50) + channels * 2 + 15 * 101;
       return { total: t, channels, at300: t - channels * 2 + 600 };
     })(),
+    readOnly: false,
+    note: `Changes are saved to cloud state as ${identityFromRequest(request).email}.`,
   });
 }
 
-export async function PUT(request) {
-  const body = await request.json();
-  const config = readConfig();
-  if (body.categories && typeof body.categories === "object") {
-    for (const key of Object.keys(config.categories)) {
-      if (typeof body.categories[key] === "boolean") config.categories[key] = body.categories[key];
-    }
-  }
+const boolMap = (value, allowed) => Object.fromEntries(
+  Object.entries(value || {}).filter(([key, item]) => allowed.includes(key) && typeof item === "boolean")
+);
+
+function validatedPatch(body) {
+  const out = {};
+  if (body.categories) out.categories = boolMap(body.categories, ["coding", "ai", "math", "makeup"]);
+  if (body.edit) out.edit = boolMap(body.edit, ["transitions", "punch", "denoise", "captions", "fillers", "retakes", "transcript"]);
   if (Array.isArray(body.youtubeKeywords)) {
-    config.youtubeKeywords = body.youtubeKeywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean).slice(0, 12);
+    out.youtubeKeywords = body.youtubeKeywords.map((item) => String(item).trim().slice(0, 80)).filter(Boolean).slice(0, 12);
   }
-  if (typeof body.autoTune === "boolean") config.autoTune = body.autoTune;
-
-  /* Transcription language. Validated against the known list so the settings
-     endpoint cannot inject an arbitrary string into a whisper command line. */
-  /* Edit toggles. Only known keys, only booleans - the settings endpoint must
-     not be able to write arbitrary shapes into the config the pipeline reads. */
-  if (body.edit && typeof body.edit === "object") {
-    config.edit = { ...(config.edit || {}) };
-    for (const o of EDIT_OPTIONS) {
-      if (typeof body.edit[o.key] === "boolean") config.edit[o.key] = body.edit[o.key];
-    }
-  }
-
-  if (typeof body.language === "string") {
-    const l = body.language.trim().toLowerCase().slice(0, 5);
-    if (isLanguage(l)) config.language = l;
-  }
-  // canonicalTier accepts the legacy budget/premium names and normalises them,
-  // so an older client can't persist a tier the resolver would silently read
-  // as "free". Keys come from the registry, not a second hardcoded list.
-  if (body.serviceTiers && typeof body.serviceTiers === "object") {
-    config.serviceTiers = { ...(config.serviceTiers || {}) };
-    for (const svc of Object.keys(DEFAULT_SERVICE_TIERS)) {
-      const t = canonicalTier(body.serviceTiers[svc]);
-      if (t) config.serviceTiers[svc] = t;
-    }
-  }
-  if (body.aiTiers && typeof body.aiTiers === "object") {
-    config.aiTiers = { ...(config.aiTiers || {}) };
-    for (const task of Object.keys(DEFAULT_TIERS)) {
-      const t = canonicalTier(body.aiTiers[task]);
-      if (t) config.aiTiers[task] = t;
+  if (body.scoreWeights && typeof body.scoreWeights === "object") {
+    out.scoreWeights = {};
+    for (const key of ["velocity", "crossSource", "nicheFit", "saturationGap"]) {
+      const value = Number(body.scoreWeights[key]);
+      if (Number.isFinite(value)) out.scoreWeights[key] = Math.min(1.5, Math.max(0.5, value));
     }
   }
   if (body.availableHoursPerWeek !== undefined) {
-    const h = Number(body.availableHoursPerWeek);
-    config.availableHoursPerWeek = Number.isFinite(h) ? Math.max(1, Math.min(60, h)) : 6;
+    out.availableHoursPerWeek = Math.min(60, Math.max(1, Number(body.availableHoursPerWeek) || 1));
   }
-  if (body.scoreWeights && typeof body.scoreWeights === "object") {
-    config.scoreWeights = {};
-    for (const k of Object.keys(DEFAULT_WEIGHTS)) {
-      const v = Number(body.scoreWeights[k]);
-      config.scoreWeights[k] = Number.isFinite(v) ? Math.max(0.5, Math.min(1.5, v)) : 1;
-    }
+  const tiers = new Set(["free", "cheap", "medium", "best"]);
+  for (const field of ["aiTiers", "serviceTiers"]) {
+    if (!body[field] || typeof body[field] !== "object") continue;
+    out[field] = Object.fromEntries(Object.entries(body[field]).filter(([, value]) => tiers.has(String(value))));
   }
-  writeConfig(config);
-  return NextResponse.json({ ok: true, config });
+  if (body.language !== undefined) {
+    const language = String(body.language).trim().toLowerCase();
+    if (!/^[a-z]{0,8}(?:-[a-z0-9]{1,8})?$/.test(language)) throw new Error("invalid language code");
+    out.language = language;
+  }
+  if (typeof body.autoTune === "boolean") out.autoTune = body.autoTune;
+  if (typeof body.thumbnailTimedSwap === "boolean") out.thumbnailTimedSwap = body.thumbnailTimedSwap;
+  if (!Object.keys(out).length) throw new Error("no supported settings supplied");
+  return out;
+}
+
+export async function PUT(request) {
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  try {
+    const patch = validatedPatch(body);
+    const config = await writeConfig(env, patch, identityFromRequest(request).email);
+    return json({ ok: true, config });
+  } catch (error) {
+    return json({ ok: false, error: error.message }, 400);
+  }
 }

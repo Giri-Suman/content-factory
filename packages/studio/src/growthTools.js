@@ -47,7 +47,7 @@ const median = (arr) => (arr.length ? [...arr].sort((x, y) => x - y)[Math.floor(
  */
 export function catalogGaps({ limit = 15 } = {}) {
   loadEnv();
-  const published = collection("myposts").all().map((m) => words(m.title));
+  const published = collection("myposts").find((m) => !m.seed).map((m) => words(m.title));
   const covered = (title) => published.some((p) => overlap(words(title), p) >= 0.5);
 
   const candidates = [
@@ -84,7 +84,7 @@ export function catalogGaps({ limit = 15 } = {}) {
  */
 export function repurposeScan() {
   loadEnv();
-  const posts = collection("myposts").all().filter((m) => m.title);
+  const posts = collection("myposts").find((m) => !m.seed && m.title);
   if (posts.length < 3) return { posts: posts.length, suggestions: [], note: "need 3+ published posts" };
 
   const med = median(posts.map(outcome));

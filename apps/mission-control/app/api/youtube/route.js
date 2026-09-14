@@ -1,100 +1,96 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
-import { startJob, runCli, repoRoot, envSet } from "../../../lib/factory.js";
+/**
+ * YouTube radar — trending, niche heat, watched channels and outliers.
+ *
+ * The port returned `{ trends: [] }`, a key the page does not read, so every
+ * panel was empty and the "no API key" hint never appeared either. The page
+ * wants hasKey, trending, heat, channels, outliers.
+ *
+ * Sources are the same rows the disk version used, now read from R2:
+ * state/trends.json for the scraped feed, watchchannels/watchvideos for the
+ * channel tracker.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getEnv } from "@factory-env";
+import { actOn, notAvailable, readCollection, readEnvFlags, readTrends } from "../../../lib/cloud.js";
 
-// GET -> everything the YouTube page needs, read straight from the OS stores
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
 export async function GET() {
-  const hasKey = envSet("YOUTUBE_API_KEY");
-
-  const trends = (() => {
-    const p = path.join(repoRoot, "data", "trends.json");
-    if (!existsSync(p)) return [];
-    try {
-      return Object.values(JSON.parse(readFileSync(p, "utf8")).trends || {});
-    } catch {
-      return [];
-    }
-  })();
-
-  const channels = os("watchchannels");
-  const videos = os("watchvideos");
-  const chTitle = new Map(channels.map((c) => [c.id, c.title]));
-  const cutoff = Date.now() - 14 * 864e5;
-  const outliers = videos
-    .filter((v) => v.outlierRatio >= 3 && v.publishedAt && new Date(v.publishedAt).getTime() >= cutoff)
-    .map((v) => ({ ...v, channelTitle: chTitle.get(v.channelId) || v.channelId }))
-    .sort((a, b) => b.outlierRatio - a.outlierRatio);
+  const env = getEnv();
+  const [trends, channels, videos, flags, quota, discoveries, nichemap] = await Promise.all([
+    readTrends(env),
+    readCollection(env, "watchchannels"),
+    readCollection(env, "watchvideos"),
+    readEnvFlags(env),
+    readCollection(env, "quota"),
+    readCollection(env, "discoveries"),
+    readCollection(env, "nichemap"),
+  ]);
 
   const today = new Date().toISOString().slice(0, 10);
-  const quotaToday = os("quota").filter((r) => r.date === today).reduce((a, r) => a + r.units, 0);
+  const chTitle = new Map(channels.map((c) => [c.id, c.title]));
+  const cutoff = Date.now() - 14 * 864e5;
 
-  const shortsOutliers = videos
-    .filter((v) => v.isShort && v.outlierRatio >= 3 && v.publishedAt && new Date(v.publishedAt).getTime() >= cutoff)
-    .map((v) => ({ ...v, channelTitle: chTitle.get(v.channelId) || v.channelId }))
-    .sort((a, b) => b.outlierRatio - a.outlierRatio);
+  const outliers = videos
+    .filter((v) => v.publishedAt && new Date(v.publishedAt).getTime() > cutoff)
+    .map((v) => ({ ...v, channelTitle: chTitle.get(v.channelId) || "?" }))
+    .sort((a, b) => (b.outlierRatio || 0) - (a.outlierRatio || 0));
 
-  return NextResponse.json({
-    hasKey,
-    quotaToday,
-    trending: trends.filter((t) => t.source === "yt-trending").sort((a, b) => b.points - a.points).slice(0, 25),
-    heat: trends.filter((t) => t.source === "yt-heat").sort((a, b) => b.points - a.points).slice(0, 25),
+  const bySource = (s) =>
+    trends.filter((t) => t.source === s).sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 25);
+
+  return json({
+    hasKey: Boolean(flags.youtube),
+    quotaToday: quota.filter((r) => r.date === today).reduce((a, r) => a + (Number(r.units) || 0), 0),
+    trending: bySource("yt-trending"),
+    heat: bySource("yt-heat"),
     channels: channels.map((c) => ({
       ...c,
-      videos: videos.filter((v) => v.channelId === c.id).sort((a, b) => (b.outlierRatio || 0) - (a.outlierRatio || 0)).slice(0, 8),
+      videos: videos
+        .filter((v) => v.channelId === c.id)
+        .sort((a, b) => (b.outlierRatio || 0) - (a.outlierRatio || 0))
+        .slice(0, 8),
     })),
     outliers: outliers.slice(0, 20),
-    shortsOutliers: shortsOutliers.slice(0, 25),
-    discovery: os("discoveries").sort((a, b) => (b.at || "").localeCompare(a.at || ""))[0] || null,
-    nichemap: os("nichemap")[0] || null,
+    // a Short beating its channel's baseline by 3x is the signal worth copying
+    shortsOutliers: videos
+      .filter((v) => v.isShort && v.outlierRatio >= 3 && v.publishedAt && new Date(v.publishedAt).getTime() >= cutoff)
+      .map((v) => ({ ...v, channelTitle: chTitle.get(v.channelId) || v.channelId }))
+      .sort((a, b) => b.outlierRatio - a.outlierRatio)
+      .slice(0, 25),
+    discovery: [...discoveries].sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")))[0] || null,
+    nichemap: nichemap[0] || null,
   });
 }
 
-// POST {action: "watch"|"scan"|"discover"|"analyzeShort"} -> live API work via the CLI
+/**
+ * Which registry command each button means.
+ *
+ * The port dropped `action` entirely and enqueued one command whatever was
+ * pressed, so every button on this page did the same thing. `null` marks an
+ * action the registry has no row for - those are refused by name rather than
+ * quietly running something else.
+ */
+const ACTIONS = {
+  scan: "yt-trending",
+  watch: null,
+  discover: null,
+};
+const HINTS = { watch: "factory yt watch <handle>", discover: "factory yt discover" };
+
 export async function POST(request) {
-  const { action, handle, seed, videoId } = await request.json();
-  if (action === "discover") {
-    if (!seed || typeof seed !== "string") return NextResponse.json({ ok: false, error: "missing seed" }, { status: 400 });
-    const { code, out } = await runCli(["yt", "discover", seed.trim()], 240000);
-    return NextResponse.json({ ok: code === 0, out: out.slice(-400) }, { status: code === 0 ? 200 : 500 });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  const action = String(body.action || "").trim();
+  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
+  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
+  try {
+    return json(await actOn(env, request, { cmd, arg: "", requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (action === "analyzeShort" || action === "briefShort") {
-    if (!videoId) return NextResponse.json({ ok: false, error: "missing videoId" }, { status: 400 });
-    const { code, out } = await runCli(["wishlist", "add", `https://youtube.com/watch?v=${videoId}`], 180000);
-    if (code !== 0) return NextResponse.json({ ok: false, error: out.slice(-300) }, { status: 500 });
-    if (action === "briefShort") {
-      const line = out.split(/\r?\n/).reverse().find((l) => l.startsWith("RESULT "));
-      const entryId = line ? JSON.parse(line.slice(7)).id : null;
-      if (entryId) {
-        const b = await runCli(["brief", entryId], 240000);
-        return NextResponse.json({ ok: b.code === 0, out: b.out.slice(-300), briefed: true });
-      }
-    }
-    return NextResponse.json({ ok: true, out: out.slice(-300) });
-  }
-  if (action === "watch") {
-    if (!handle || typeof handle !== "string") {
-      return NextResponse.json({ ok: false, error: "missing handle" }, { status: 400 });
-    }
-    const { code, out } = await runCli(["yt", "watch", handle.trim()], 120000);
-    return code === 0
-      ? NextResponse.json({ ok: true, out })
-      : NextResponse.json({ ok: false, error: out.slice(-400) }, { status: 500 });
-  }
-  if (action === "scan") {
-    const job = startJob("yt-scan", ["yt", "trending"]);
-    const job2 = startJob("yt-heat", ["yt", "heat"]);
-    return NextResponse.json({ ok: true, jobIds: [job.id, job2.id] });
-  }
-  return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
 }

@@ -13,10 +13,13 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../../shared/src/config.js";
-import { JOB_KINDS, claim, complete, counts, enqueue, fail, list, requeueStuck } from "../../shared/src/queue.js";
+import { JOB_KINDS, claim, complete, counts, enqueue, fail, findJob, list, requeueStuck } from "../../shared/src/queue.js";
+import { CLOUD_RUNNABLE_KEYS, COMMANDS, argvFor, keyOf } from "../../shared/src/commands.js";
 import { isConfigured, missingConfig } from "../../shared/src/r2.js";
+import { pullFootage, pullState, pushState } from "../../shared/src/stateSync.js";
 import { beat } from "../../shared/src/status.js";
 import { resolveInInbox } from "./inbox.js";
 
@@ -30,6 +33,11 @@ const pad = (s, n) => String(s).padEnd(n);
  */
 /** Measured medians, so the page can say "about 11 min" instead of "soon". */
 const ETA = { math: "11 min", brief: "1 min", edit: "depends on footage length" };
+const CAN_START_WITHOUT_STATE = new Set([
+  "drive-import", "math", "math-demo", "brief-topic", "radar-collect", "edit-beauty",
+  "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut", "edit-screencast",
+  "edit-screencast-ai", "reframe",
+]);
 
 const ARGV = {
   math: (job) => ["math", job.input],
@@ -40,21 +48,203 @@ const ARGV = {
   edit: (job) => ["edit", ...(job.vertical === "beauty" ? ["--beauty"] : []), resolveInInbox(job.input)],
 };
 
-function runJob(job) {
-  const build = ARGV[job.kind];
-  if (!build) throw new Error(`no runner for kind "${job.kind}"`);
-  const argv = build(job);
+/**
+ * Run one queued job, capturing enough of its output to explain a failure.
+ *
+ * This used to be spawnSync with stdio:"inherit", which showed everything live
+ * and kept none of it - so a job that died reported `exited 1 after 0.4 min` and
+ * that string was the entire diagnosis available from the cloud portal, where
+ * nobody can see the console. Piping and echoing keeps the live view AND the
+ * last lines, which is what actually gets read on the Jobs page.
+ */
+async function runJob(job, { cloud = false } = {}) {
+  let argv;
+  if (job.kind === "command") {
+    /* A generic job carries a registry KEY. argv is rebuilt here from the
+       registry, never taken from the queue entry - which is what keeps a public
+       write surface from being able to name a command. */
+    const row = COMMANDS.find((c) => keyOf(c) === job.cmd);
+    if (!row) throw new Error(`queued command "${job.cmd}" is not in the registry`);
+    if (cloud && !CLOUD_RUNNABLE_KEYS.has(job.cmd)) {
+      throw new Error(`command "${job.cmd}" is not allowed on the cloud runner`);
+    }
+    let input = job.input || undefined;
+    if (row.argKind === "scriptId") {
+      const id = String(job.input || "").trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/.test(id)) throw new Error("invalid script id");
+      input = path.join(repoRoot, "data", "scripts", `${id}.json`);
+    }
+    if (row.argKind === "file") {
+      const base = path.basename(String(job.input || ""));
+      if (!base || base !== job.input || !/\.(mp4|mov|mkv|avi|m4v|webm)$/i.test(base)) {
+        throw new Error("a remote file command needs one uploaded footage name");
+      }
+      if (cloud) input = (await pullFootage(base)).file;
+      else {
+        const local = path.join(repoRoot, "data", "footage", base);
+        if (existsSync(local)) input = local;
+      }
+    }
+    argv = argvFor(row, input);
+  } else {
+    const build = ARGV[job.kind];
+    if (!build) throw new Error(`no runner for kind "${job.kind}"`);
+    argv = build(job);
+  }
+
+  if (cloud) {
+    const pulled = await pullState();
+    if (pulled?.error && !(pulled.missing && CAN_START_WITHOUT_STATE.has(job.cmd || job.kind))) throw new Error(pulled.error);
+  }
+
   const started = Date.now();
   const res = spawnSync(process.execPath, [CLI, ...argv], {
     cwd: repoRoot,
     encoding: "utf8",
-    stdio: "inherit",
+    // piped rather than inherited so the tail survives for the error message
+    stdio: ["ignore", "pipe", "pipe"],
     timeout: 1000 * 60 * 180,
+    maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, FACTORY_REQUESTED_BY: String(job.requestedBy || "cloud") },
   });
+
+  const out = `${res.stdout || ""}${res.stderr || ""}`;
+  if (out) process.stdout.write(out);
+
   const mins = ((Date.now() - started) / 60000).toFixed(1);
-  if (res.error) throw new Error(`${res.error.message} (after ${mins} min)`);
-  if (res.status !== 0) throw new Error(`exited ${res.status} after ${mins} min`);
-  return `ok in ${mins} min`;
+  /* The last non-empty lines are where a stack trace or "missing key" lands.
+     Trimmed to 400 chars because complete() stores 500 and the rest is noise. */
+  const tail = out
+    .split(String.fromCharCode(10))
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(-6)
+    .join(" | ")
+    .slice(0, 400);
+
+  if (res.error) throw new Error(`${res.error.message} (after ${mins} min)${tail ? " - " + tail : ""}`);
+  if (res.status !== 0) throw new Error(`exited ${res.status} after ${mins} min${tail ? " - " + tail : ""}`);
+
+  let syncNote = "";
+  if (cloud) {
+    try {
+      const synced = await pushState();
+      syncNote = `; synced ${synced.pushed.length} state file(s)`;
+      if (synced.conflicts?.length) syncNote += ` (${synced.conflicts.length} conflict(s) skipped)`;
+    } catch (error) {
+      // The command outcome and R2 bookkeeping are distinct. A finished video
+      // must not be labelled failed because the final state copy had a blip.
+      syncNote = `; warning: state sync failed: ${String(error.message).slice(0, 140)}`;
+    }
+  }
+  return `ok in ${mins} min${syncNote}${tail ? ` — ${tail}` : ""}`;
+}
+
+/**
+ * Run everything pending, once. Shared by `drain` and `watch`.
+ *
+ * Returns {ok, bad, ran} so a caller can decide whether anything happened -
+ * `watch` uses that to stay quiet on an empty poll instead of printing a line
+ * every few seconds.
+ */
+async function runPending({ limit = 0, quiet = false, watching = false, jobId = null, cloud = false } = {}) {
+  const say = (m) => { if (!quiet) console.log(m); };
+
+  // A crashed run leaves a job claimed forever, which looks identical to an
+  // empty queue. Recover those before deciding there is nothing to do.
+  const stuck = await requeueStuck(
+    cloud
+      ? { olderThanMin: 200, executor: "github-actions" }
+      : { olderThanMin: 45, excludeExecutor: "github-actions" }
+  );
+  if (stuck.length) console.log(`
+  requeued ${stuck.length} job(s) stuck in running`);
+
+  const candidates = jobId ? [await findJob(jobId, "pending")].filter(Boolean) : await list("pending");
+  // A laptop watcher and GitHub Actions may be online at the same time. Each
+  // executor claims only its own work so the same render cannot run twice.
+  const pending = candidates.filter((job) =>
+    cloud ? job.executor === "github-actions" : job.executor !== "github-actions"
+  );
+  if (!pending.length) {
+    say(`
+  queue is empty - nothing to do
+`);
+    if (!cloud) await beat("idle", { pending: 0, watching });
+    return { ok: 0, bad: 0, ran: 0 };
+  }
+
+  const todo = limit ? pending.slice(0, limit) : pending;
+  console.log(`
+  ${todo.length} job(s) to run
+`);
+
+  let ok = 0;
+  let bad = 0;
+  for (const job of todo) {
+    console.log(`
+  ---- ${job.kind}: ${job.input.slice(0, 60)}  (asked by ${job.requestedBy}) ----`);
+    let claimed;
+    try {
+      claimed = await claim(job);
+    } catch (e) {
+      console.log(`  could not claim: ${e.message}`);
+      continue;
+    }
+    // Publish WHICH job is running, so the page can name it rather than saying
+    // a vague "working". This is the message someone waiting wants.
+    if (!cloud) {
+      await beat("working", {
+        current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
+        pending: todo.length - ok - bad - 1,
+        watching,
+      });
+    }
+    /* RUNNING THE JOB AND RECORDING THE OUTCOME ARE SEPARATE FAILURES.
+       They used to share one try, so an R2 blip on the completion write landed
+       in the same catch as a crashed render and called fail(). A demo short
+       that rendered fine was reported to the portal as
+       `failed - fetch failed`, with the finished mp4 sitting on disk. Whether
+       the work succeeded is decided here, and only here. */
+    let result = null;
+    let jobError = null;
+    try {
+      result = await runJob(claimed, { cloud });
+    } catch (e) {
+      jobError = e;
+    }
+
+    if (jobError) {
+      console.log(`  FAILED - ${String(jobError.message).slice(0, 160)}`);
+      bad++;
+    } else {
+      console.log(`  DONE - ${result}`);
+      ok++;
+    }
+
+    // Bookkeeping, retried - a network error here must never change the verdict.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (jobError) await fail(claimed, jobError.message);
+        else await complete(claimed, result);
+        break;
+      } catch (writeErr) {
+        if (attempt === 3) {
+          console.log(`  (could not record the outcome: ${writeErr.message} - requeueStuck will recover it)`);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, attempt * 2000));
+      }
+    }
+  }
+  if (!cloud) await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad, watching });
+  console.log(`
+  ${ok} done, ${bad} failed`);
+  // Renders push themselves to R2, so finished work is already shareable - but
+  // the viewer's file list is a static page and has to be regenerated.
+  if (ok) console.log(`  refresh the public page:  factory viewer build  &&  wrangler pages deploy
+`);
+  return { ok, bad, ran: todo.length };
 }
 
 export async function queue(argv) {
@@ -76,7 +266,7 @@ export async function queue(argv) {
       if (pending.length) {
         console.log("");
         for (const j of pending) {
-          console.log(`  ${pad(j.kind, 6)} ${pad(j.input.slice(0, 40), 42)} by ${pad(j.requestedBy, 12)} ${j.queuedAt.slice(0, 16).replace("T", " ")}`);
+          console.log(`  ${pad(j.cmd || j.kind, 16)} ${pad((j.input||"").slice(0, 32), 34)} by ${pad(j.requestedBy, 12)} ${j.queuedAt.slice(0, 16).replace("T", " ")}`);
         }
         console.log(`\n  run them:  factory queue drain`);
       }
@@ -113,57 +303,99 @@ export async function queue(argv) {
       // Announce we are up before doing anything, so someone refreshing the
       // page during a long job sees "awake" rather than a stale "asleep".
       await beat("awake");
+      const limit = Number((rest.find((a) => a.startsWith("--max=")) || "").split("=")[1]) || 0;
+      const { bad } = await runPending({ limit });
+      return bad === 0;
+    }
 
-      // A crashed run leaves a job claimed forever, which looks identical to an
-      // empty queue. Recover those before deciding there is nothing to do.
-      const stuck = await requeueStuck({ olderThanMin: 45 });
-      if (stuck.length) console.log(`\n  requeued ${stuck.length} job(s) stuck in running`);
-
-      const pending = await list("pending");
-      if (!pending.length) {
-        console.log(`\n  queue is empty — nothing to do\n`);
-        await beat("idle", { pending: 0 });
+    /* --------------------------------------------------------- run --- */
+    case "run": {
+      const id = targs[0];
+      if (!id) {
+        console.log("\nusage: factory queue run <job-id> [--cloud]\n");
+        return false;
+      }
+      const existing = await findJob(id);
+      if (!existing) {
+        console.log(`\n  no queue job ${id}\n`);
+        return false;
+      }
+      if (existing.state === "done") {
+        console.log(`\n  ${id} is already done\n`);
         return true;
       }
-      const limit = Number((rest.find((a) => a.startsWith("--max=")) || "").split("=")[1]) || pending.length;
-      const todo = pending.slice(0, limit);
-      console.log(`\n  ${todo.length} job(s) to run\n`);
-
-      let ok = 0;
-      let bad = 0;
-      for (const job of todo) {
-        console.log(`\n  ---- ${job.kind}: ${job.input.slice(0, 60)}  (asked by ${job.requestedBy}) ----`);
-        let claimed;
-        try {
-          claimed = await claim(job);
-        } catch (e) {
-          console.log(`  could not claim: ${e.message}`);
-          continue;
-        }
-        // Publish WHICH job is running, so the page can name it rather than
-        // saying a vague "working". This is the message someone waiting wants.
-        await beat("working", {
-          current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
-          pending: todo.length - ok - bad - 1,
-        });
-        try {
-          const result = runJob(claimed);
-          await complete(claimed, result);
-          console.log(`  DONE — ${result}`);
-          ok++;
-        } catch (e) {
-          await fail(claimed, e.message);
-          console.log(`  FAILED — ${String(e.message).slice(0, 160)}`);
-          bad++;
-          // Keep going: one bad job must not strand everything behind it.
-        }
+      if (existing.state === "running") {
+        console.log(`\n  ${id} is already running\n`);
+        return true;
       }
-      await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad });
-      console.log(`\n  ${ok} done, ${bad} failed`);
-      // Renders push themselves to R2, so finished work is already shareable —
-      // but the viewer's file list is a static page and has to be regenerated.
-      if (ok) console.log(`  refresh the public page:  factory viewer build  &&  wrangler pages deploy\n`);
-      return bad === 0;
+      if (existing.state === "failed") {
+        console.log(`\n  ${id} already failed: ${existing.error || "unknown error"}\n`);
+        return false;
+      }
+      const { bad, ran } = await runPending({ jobId: id, limit: 1, cloud: rest.includes("--cloud") });
+      return ran === 1 && bad === 0;
+    }
+
+    /* ----------------------------------------------------- watch --- */
+    /**
+     * Stay up and run work the moment it is asked for.
+     *
+     * `drain` is a scheduled visit: it runs at 09:00 and again at 14:00, so
+     * something queued at 09:05 waits five hours even though the machine is
+     * sitting there switched on. That is the gap this closes - while this runs,
+     * queued work starts within one poll.
+     *
+     * It also keeps the heartbeat FRESH, which is what lets the portal say "the
+     * laptop is awake, it runs now" at all. The heartbeat was only ever written
+     * during a drain, so between scheduled runs an awake machine was
+     * indistinguishable from a sleeping one, and every queued job was quoted a
+     * time hours away.
+     *
+     * Ctrl-C to stop. Safe to run alongside the scheduled task: claiming a job
+     * is atomic, so whichever gets there first runs it and the other skips it.
+     */
+    case "watch": {
+      const every = Math.max(2, Number((rest.find((a) => a.startsWith("--every=")) || "").split("=")[1]) || 3);
+      // The portal treats a heartbeat older than 20 minutes as asleep, so beat
+      // well inside that even when there is nothing to do.
+      const BEAT_EVERY_MS = 5 * 60 * 1000;
+
+      console.log(`
+  watching the queue every ${every}s - Ctrl-C to stop
+`);
+      /* `watching` is what lets the portal promise immediacy honestly. A fresh
+         heartbeat alone only means someone touched R2 recently - it could be a
+         scheduled drain that is about to finish and go back to sleep. Only a
+         live watcher guarantees the next job starts in seconds. */
+      await beat("awake", { watching: true });
+      let lastBeat = Date.now();
+      let idle = false;
+
+      for (;;) {
+        let pending = [];
+        try {
+          pending = await list("pending");
+        } catch (e) {
+          // A network blip must not kill an all-day watcher.
+          console.log(`  (could not reach R2: ${String(e.message).slice(0, 80)})`);
+        }
+
+        if (pending.length) {
+          idle = false;
+          await runPending({ watching: true });
+          lastBeat = Date.now();
+        } else {
+          if (!idle) {
+            idle = true;
+            console.log(`  idle - waiting for work (${new Date().toLocaleTimeString()})`);
+          }
+          if (Date.now() - lastBeat > BEAT_EVERY_MS) {
+            await beat("idle", { pending: 0, watching: true });
+            lastBeat = Date.now();
+          }
+        }
+        await new Promise((r) => setTimeout(r, every * 1000));
+      }
     }
 
     /* ----------------------------------------------------- retry --- */
@@ -172,7 +404,7 @@ export async function queue(argv) {
       if (!failed.length) return console.log("\n  nothing failed\n"), true;
       let n = 0;
       for (const j of failed) {
-        await enqueue({ kind: j.kind, input: j.input, requestedBy: j.requestedBy });
+        await enqueue({ kind: j.kind, cmd: j.cmd, input: j.input, vertical: j.vertical, requestedBy: j.requestedBy });
         n++;
       }
       console.log(`\n  requeued ${n} failed job(s) — they keep their failed record for history\n`);
@@ -180,7 +412,7 @@ export async function queue(argv) {
     }
 
     default:
-      console.log(`unknown: queue ${action}\n  status · add · drain · retry`);
+      console.log(`unknown: queue ${action}\n  status · add · run · drain · watch · retry`);
       return false;
   }
 }

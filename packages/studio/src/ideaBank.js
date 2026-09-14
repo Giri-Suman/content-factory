@@ -117,7 +117,7 @@ export function rankIdeas() {
 
   // pillar + format balance from the last 14 days of MyPost history (P24)
   const cutoff = Date.now() - 14 * 864e5;
-  const recent = collection("myposts").find((m) => m.postedAt && new Date(m.postedAt).getTime() >= cutoff);
+  const recent = collection("myposts").find((m) => !m.seed && m.postedAt && new Date(m.postedAt).getTime() >= cutoff);
   const byPillar = {};
   const byFormat = {};
   for (const m of recent) {

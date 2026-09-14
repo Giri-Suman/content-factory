@@ -2,15 +2,23 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useJob, JobLog } from "../../components/useJob.js";
+import { CloudFootagePicker } from "../../components/CloudFootagePicker.js";
 
 export default function FootagePage() {
   const router = useRouter();
   const { job, start, running } = useJob();
   const [file, setFile] = useState("");
-  const [noPunch, setNoPunch] = useState(false);
-  const [noDenoise, setNoDenoise] = useState(false);
-  const [noFillers, setNoFillers] = useState(false);
-  const [noise, setNoise] = useState("-35dB");
+  const [uploads, setUploads] = useState([]);
+  const [style, setStyle] = useState("edit-beauty");
+
+  const refreshUploads = async () => {
+    const data = await fetch("/api/upload").then((response) => response.json()).catch(() => null);
+    if (data?.ok) setUploads(data.files || []);
+  };
+
+  useEffect(() => {
+    refreshUploads();
+  }, []);
 
   useEffect(() => {
     if (job?.status === "done") {
@@ -21,7 +29,7 @@ export default function FootagePage() {
     }
   }, [job, router]);
 
-  const go = () => file.trim() && start("/api/autoedit", { file: file.trim(), noPunch, noDenoise, noFillers, noise });
+  const go = () => file.trim() && start("/api/run", { key: style, input: file.trim() });
 
   return (
     <div>
@@ -29,42 +37,27 @@ export default function FootagePage() {
       <p className="sub">
         AI Cut for filmed talking-head footage: pauses and filler words (“um”, “uh”) become jump cuts, self-corrections
         get backtracked (with an LLM key), audio is noise-cancelled + loudness-normalized, the picture gets a subtle
-        grade/vignette/punch-ins, and karaoke captions burn in per aspect ratio. Your jargon spells right via{" "}
-        <span className="mono">data/dictionary.json</span>. 100% local — footage never leaves this machine.
+        grade/vignette/punch-ins, and karaoke captions burn in per aspect ratio. Upload from this device or choose footage
+        already in the private family bucket; the cloud runner can edit it while the laptop is off.
       </p>
 
       <div className="panel">
-        <label className="field" style={{ marginTop: 0 }}>
-          full path to your footage file
-        </label>
-        <input
-          type="text"
-          placeholder="D:\footage\gr-look-tutorial.mp4"
+        <label className="field" style={{ marginTop: 0 }}>footage</label>
+        <CloudFootagePicker
           value={file}
-          onChange={(e) => setFile(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && go()}
-          className="mono"
+          onChange={setFile}
+          uploads={uploads}
+          refreshUploads={refreshUploads}
+          label="full path to footage"
         />
         <div style={{ display: "flex", gap: 18, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
-            <input type="checkbox" checked={noPunch} onChange={(e) => setNoPunch(e.target.checked)} />
-            no punch-ins
-          </label>
-          <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
-            <input type="checkbox" checked={noDenoise} onChange={(e) => setNoDenoise(e.target.checked)} />
-            no noise cancellation
-          </label>
-          <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5, cursor: "pointer" }}>
-            <input type="checkbox" checked={noFillers} onChange={(e) => setNoFillers(e.target.checked)} />
-            keep “um” / “uh”
-          </label>
           <label style={{ display: "flex", gap: 7, alignItems: "center", fontSize: 13.5 }}>
-            silence threshold
-            <select value={noise} onChange={(e) => setNoise(e.target.value)}>
-              <option value="-30dB">-30dB (aggressive)</option>
-              <option value="-35dB">-35dB (default)</option>
-              <option value="-40dB">-40dB (gentle)</option>
-              <option value="-45dB">-45dB (quiet room)</option>
+            edit style
+            <select value={style} onChange={(event) => setStyle(event.target.value)}>
+              <option value="edit-beauty">captions + measured colour</option>
+              <option value="edit-beauty-nocap">faster, without captions</option>
+              <option value="edit-beauty-dissolve">soft dissolves</option>
+              <option value="edit-hardcut">hard cuts</option>
             </select>
           </label>
           <button className="btn" disabled={running || !file.trim()} onClick={go}>

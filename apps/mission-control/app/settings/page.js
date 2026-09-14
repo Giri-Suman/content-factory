@@ -11,6 +11,7 @@ const CATEGORIES = [
 const PROVIDERS = [
   ["anthropic", "Anthropic", "best writing quality — ANTHROPIC_API_KEY"],
   ["openrouter", "OpenRouter", "hundreds of models, cheap + free (:free) — OPENROUTER_API_KEY"],
+  ["google", "Gemini (AI Studio)", "free tier with its OWN daily quota — GEMINI_API_KEY"],
   ["ollama", "Ollama", "100% free, runs locally — OLLAMA_MODEL"],
 ];
 
@@ -45,7 +46,7 @@ export default function SettingsPage() {
         setFlags(d.flags || null);
         setAiTiers(d.aiTiers || null);
         setSvcTiers(d.serviceTiers || null);
-        setLanguage(d.language ?? "");
+        setLanguage(d.language || "");
         setEdit(d.edit || {});
         setEditOptions(d.editOptions || []);
         setLanguages(d.languages || []);
@@ -59,8 +60,10 @@ export default function SettingsPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => r.json());
-    if (res.config) setConfig((c) => ({ ...c, ...res.config }));
-    setSaved(true);
+    if (res.config) {
+      setConfig((c) => ({ ...c, ...res.config }));
+      setSaved(true);
+    }
   };
 
   const toggle = async (cat) => {
@@ -194,7 +197,7 @@ export default function SettingsPage() {
                       put({ serviceTiers: next });
                     }}
                   >
-                    {tier}{s.ready[tier] ? "" : " ○"}
+                    {tier}{(s.tiers || []).find((t) => t.tier === tier)?.available ? "" : " ○"}
                   </button>
                 ))}
                 <span className="muted" style={{ fontSize: 11, flex: 1 }}>{s.note}</span>
@@ -292,7 +295,7 @@ export default function SettingsPage() {
             <span className={`badge ${env.elevenlabs ? "ok" : "cool"}`}>{env.elevenlabs ? "configured" : "not set"}</span>
             <strong style={{ width: 90 }}>ElevenLabs</strong>
             <span className="muted" style={{ fontSize: 12 }}>
-              your cloned voice — until set, renders use the Windows TTS placeholder
+              your cloned voice — until set, renders use the system TTS placeholder
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

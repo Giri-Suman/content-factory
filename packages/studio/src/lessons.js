@@ -67,7 +67,7 @@ function distillFromCritiques() {
 
 /** Calibration joins (P15) -> timing/topic/script lessons. */
 function distillFromCalibration() {
-  const posts = collection("myposts").find((m) => (m.statsSnapshots || []).length > 0);
+  const posts = collection("myposts").find((m) => !m.seed && (m.statsSnapshots || []).length > 0);
   if (posts.length < 5) return [];
   const views = (m) => (m.statsSnapshots || []).slice(-1)[0]?.views || 0;
   const median = (a) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);

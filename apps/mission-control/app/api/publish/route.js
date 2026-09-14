@@ -1,30 +1,42 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync } from "node:fs";
-import { rendersDir, readEnvKeys, compliance, startJob } from "../../../lib/factory.js";
+/**
+ * Publish dry run. The real upload (--go) is deliberately absent from the registry and stays a terminal action.
+ */
 
-const safe = (id) => path.basename(String(id || "")).replace(/[^a-z0-9-]/gi, "");
+import { getEnv } from "@factory-env";
+export const runtime = "edge";
 
-// GET ?id= -> compliance report + youtube readiness (no side effects)
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+import { actOn } from "../../../lib/cloud.js";
+
+/**
+ * Compliance report for one render.
+ *
+ * The disk version ran `compliance <id> --json` and returned the parsed report.
+ * That check inspects the actual video file with ffmpeg, so it cannot run here -
+ * it queues, and the page is told to come back for the result rather than being
+ * handed a made-up verdict on whether something is safe to publish.
+ */
 export async function GET(request) {
-  const id = safe(new URL(request.url).searchParams.get("id"));
-  if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
-  const report = await compliance(id);
-  return NextResponse.json({ report, canRealUpload: readEnvKeys().youtube });
+  const env = getEnv();
+  const id = String(new URL(request.url).searchParams.get("id") || "").replace(/[^a-z0-9-]/gi, "");
+  if (!id) return json({ error: "missing id" }, 400);
+  try {
+    const r = await actOn(env, request, { cmd: "compliance", arg: id, requestedBy: "portal" });
+    return json({ report: null, canRealUpload: false, ...r });
+  } catch (e) {
+    return json({ report: null, error: e.message }, 400);
+  }
 }
 
-// POST {id, which, privacy, at, go} -> runs `factory publish` as a job
 export async function POST(request) {
-  const { id, which, privacy, at, go } = await request.json();
-  const safeId = safe(id);
-  if (!safeId || !existsSync(path.join(rendersDir, safeId))) {
-    return NextResponse.json({ ok: false, error: "no render for that id" }, { status: 404 });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  try {
+    return json(await actOn(env, request, { cmd: "publish", arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" }));
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  const args = ["publish", safeId, which === "wide" ? "--wide" : "--short"];
-  if (privacy === "public") args.push("--public");
-  else if (privacy === "unlisted") args.push("--unlisted");
-  if (at) args.push("--at", at);
-  if (go) args.push("--go");
-  const job = startJob("publish", args);
-  return NextResponse.json({ ok: true, jobId: job.id });
 }
+

@@ -4,6 +4,7 @@ import path from "node:path";
 import { loadEnv, loadUserConfig, repoRoot, NICHE_CONTEXT } from "../../shared/src/config.js";
 import { collection } from "../../shared/src/store.js";
 import { chat, providerStatus } from "../../llm/src/llm.js";
+import { degradationsFor } from "../../shared/src/degradations.js";
 
 /**
  * P18 QC Judge Network. Each judge returns {score 0-100, verdict, reasons[],
@@ -310,6 +311,23 @@ export function audioJudge(videoFile, expectedSec) {
   const reasons = [];
   let score = 100;
   if (!existsSync(videoFile)) return finalize("audio", 0, ["render missing"], "render first", "programmatic");
+
+  /**
+   * Degradations the FILE cannot reveal.
+   *
+   * Everything below this measures the finished mp4, which is exactly why a
+   * substituted voice used to score 100: Windows TTS at correct loudness with
+   * no dead air is, by every measurement here, a perfect track. It is also not
+   * the voice that was paid for. The pipeline now records when it settled for
+   * less, keyed by render id, and that is read here so the judge can see the
+   * one defect its instruments are blind to.
+   */
+  const renderId = path.basename(path.dirname(videoFile));
+  for (const d of degradationsFor(renderId)) {
+    // voice substitution is the serious one - it changes what the viewer hears
+    score -= d.stage.startsWith("voice") ? 30 : 15;
+    reasons.push(`degraded at ${d.stage}: ${d.detail}`);
+  }
 
   const dur = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", videoFile], { encoding: "utf8", windowsHide: true }).stdout || 0);
   if (!dur) return finalize("audio", 0, ["corrupt render — no readable audio/duration"], "re-render the video", "programmatic");

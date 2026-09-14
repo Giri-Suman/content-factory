@@ -83,6 +83,7 @@ function whisperCmd() {
   const candidates = [
     { cmd: path.join(venvBin, "whisper-ctranslate2.exe"), kind: "whisper-ctranslate2" },
     { cmd: path.join(venvBin, "whisper.exe"), kind: "openai-whisper" },
+    { cmd: "whisper-ctranslate2", kind: "whisper-ctranslate2" },
     { cmd: "whisper", kind: "openai-whisper" },
   ];
   for (const c of candidates) {

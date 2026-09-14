@@ -70,9 +70,11 @@ export const COMMANDS = [
 
   /* ---------------- make ---------------- */
   { id: "produce", args: [], argKind: "briefId", stage: "make", cat: "all", label: "Produce", desc: "the whole conveyor — routes by vertical automatically", primary: true, slow: true },
+  { id: "render", args: [], argKind: "scriptId", argLabel: "Reviewed script id", stage: "make", cat: "all", label: "Render a reviewed script", desc: "render the saved scene edits exactly as reviewed", key: "render-script", slow: true },
+  { id: "drive", args: ["import"], argKind: "url", argLabel: "Shared Google Drive video link", stage: "make", cat: "all", label: "Import from Google Drive", desc: "copy a shared video into private cloud footage without downloading it to a laptop", key: "drive-import", primary: true, slow: true },
   { id: "math", args: [], argKind: "text", argLabel: "Math topic", stage: "make", cat: "math", label: "Make a math short", desc: "LLM writes the Manim scene and renders it", primary: true, slow: true },
   { id: "math", args: ["gauss-sum", "--demo"], stage: "make", cat: "math", label: "Render the demo", desc: "bundled scene, works with no AI key", key: "math-demo", slow: true },
-  { id: "edit", args: ["--beauty"], argKind: "file", argLabel: "Path to your footage", stage: "make", cat: "beauty", label: "AI Cut your footage", desc: "silences, fillers, retakes, captions - colour measured, never pushed", primary: true, slow: true },
+  { id: "edit", args: ["--beauty"], argKind: "file", argLabel: "Path to your footage", stage: "make", cat: "beauty", label: "AI Cut your footage", desc: "silences, fillers, retakes, captions - colour measured, never pushed", key: "edit-beauty", primary: true, slow: true },
   { id: "edit", args: ["--beauty", "--no-transcript"], argKind: "file", argLabel: "Path to your footage", stage: "make", cat: "beauty", label: "AI Cut (no captions)", desc: "for Bengali or any language the local model handles badly - skips whisper, much faster", key: "edit-beauty-nocap", slow: true },
   { id: "edit", args: ["--beauty", "--transition=dissolve"], argKind: "file", argLabel: "Path to your footage", stage: "make", cat: "beauty", label: "AI Cut, soft dissolves", desc: "gentler transitions between cuts", key: "edit-beauty-dissolve", slow: true },
   { id: "edit", args: ["--no-transitions"], argKind: "file", argLabel: "Path to your footage", stage: "make", cat: "all", label: "AI Cut, hard cuts only", desc: "no transitions - punchier, and the old behaviour", key: "edit-hardcut", slow: true },
@@ -91,6 +93,15 @@ export const COMMANDS = [
   { id: "tools", args: ["chapters"], argKind: "renderId", stage: "package", cat: "all", label: "Chapters", desc: "markers for the description", key: "tools-chapters" },
   { id: "tools", args: ["silent"], argKind: "renderId", stage: "package", cat: "all", label: "Silent copy", desc: "for muted autoplay feeds", key: "tools-silent", slow: true },
   { id: "tools", args: ["teleprompter"], argKind: "briefId", stage: "package", cat: "beauty", label: "Teleprompter", desc: "speed-matched script for the shoot", key: "tools-prompter" },
+  // The Tools page read-only views. They were reachable only through
+  // /api/tools?view=..., which ran the CLI inline - impossible from the cloud
+  // portal. As registry rows they queue like everything else, and they show up
+  // in Studio for free.
+  { id: "tools", args: ["gaps"], stage: "plan", cat: "all", label: "Content gaps", desc: "topics your niche covers and you have not", key: "tools-gaps" },
+  { id: "tools", args: ["repurpose"], stage: "package", cat: "all", label: "Repurpose", desc: "what to cut down or re-angle from existing posts", key: "tools-repurpose" },
+  { id: "tools", args: ["competitors"], stage: "find", cat: "all", label: "Competitors", desc: "who is shipping in this niche right now", key: "tools-competitors" },
+  { id: "tools", args: ["calendar", "14"], stage: "plan", cat: "all", label: "Two-week calendar", desc: "a publishing schedule from the current backlog", key: "tools-calendar" },
+  { id: "tools", args: ["niche"], stage: "find", cat: "all", label: "Niche check", desc: "how well the current mix matches the niches you picked", key: "tools-niche" },
   { id: "humanize", args: ["script"], argKind: "briefId", stage: "package", cat: "all", label: "Check for AI tells", desc: "per-scene score with the specific tells named", key: "humanize-script" },
   { id: "humanize", args: ["audit"], stage: "package", cat: "all", label: "Audit all copy", desc: "how machine-written everything reads", key: "humanize-audit" },
   { id: "qc", args: [], argKind: "briefId", stage: "package", cat: "all", label: "Run the judges", desc: "all five quality gates" },
@@ -99,17 +110,21 @@ export const COMMANDS = [
   { id: "compliance", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Compliance check", desc: "exactly what is blocking publication", primary: true },
   { id: "publish", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Publish dry run", desc: "uploads nothing — shows what would happen", primary: true },
   { id: "center", args: [], stage: "ship", cat: "all", label: "Publish queue", desc: "what is staged and ready" },
+  { id: "sync", args: ["status"], stage: "ship", cat: "all", label: "Cloud sync status", desc: "is the cloud able to run your jobs", key: "sync-status" },
+  { id: "sync", args: ["push"], stage: "ship", cat: "all", label: "Send state to cloud", desc: "lets GitHub Actions render and edit your briefs", key: "sync-push", danger: "owner maintenance" },
+  { id: "sync", args: ["pull"], stage: "ship", cat: "all", label: "Get cloud results", desc: "bring back what the cloud did while this PC slept", key: "sync-pull", danger: "owner maintenance" },
+  { id: "sync", args: ["footage", "push"], argKind: "text", argLabel: "Footage file name", stage: "ship", cat: "beauty", label: "Send footage to cloud", desc: "so a cloud edit can use it - no laptop needed after this", key: "sync-footage-push", slow: true },
   { id: "r2", args: ["status"], stage: "ship", cat: "all", label: "Off-machine storage", desc: "what is backed up to R2 and what is not", key: "r2-status" },
   { id: "inbox", args: ["list"], stage: "make", cat: "all", label: "Footage drop folder", desc: "where to copy big files instead of uploading them", key: "inbox-list", primary: true },
   { id: "inbox", args: ["edit"], argKind: "text", argLabel: "File name from the drop folder", stage: "make", cat: "beauty", label: "AI Cut a dropped file", desc: "no upload — just the file name", key: "inbox-edit", slow: true },
   { id: "queue", args: ["status"], stage: "ship", cat: "all", label: "Request queue", desc: "what others have asked for while this PC was asleep", key: "queue-status", primary: true },
-  { id: "queue", args: ["drain"], stage: "ship", cat: "all", label: "Run queued requests", desc: "work through the backlog oldest first", key: "queue-drain", slow: true },
-  { id: "queue", args: ["retry"], stage: "ship", cat: "all", label: "Retry failed requests", desc: "requeue everything that errored", key: "queue-retry" },
+  { id: "queue", args: ["drain"], stage: "ship", cat: "all", label: "Run queued requests", desc: "work through the backlog oldest first", key: "queue-drain", danger: "owner maintenance", slow: true },
+  { id: "queue", args: ["retry"], stage: "ship", cat: "all", label: "Retry failed requests", desc: "requeue everything that errored", key: "queue-retry", danger: "may repeat paid work" },
   { id: "viewer", args: ["build"], stage: "ship", cat: "all", label: "Rebuild public page", desc: "refresh the always-on video list", key: "viewer-build" },
   { id: "r2", args: ["push"], argKind: "renderId", stage: "ship", cat: "all", label: "Push a render off this PC", desc: "makes it downloadable anywhere, even with this laptop asleep", key: "r2-push", slow: true },
   { id: "r2", args: ["push", "--all"], stage: "ship", cat: "all", label: "Push every render", desc: "backfill everything not yet uploaded", key: "r2-push-all", slow: true },
   { id: "r2", args: ["url"], argKind: "renderId", stage: "ship", cat: "all", label: "Get download links", desc: "shareable links, valid up to 7 days", key: "r2-url" },
-  { id: "r2", args: ["prune"], stage: "ship", cat: "all", label: "Free expired storage", desc: "delete anything past 48h — permanent", key: "r2-prune" },
+  { id: "r2", args: ["prune"], stage: "ship", cat: "all", label: "Free expired storage", desc: "delete anything past 48h — permanent", key: "r2-prune", danger: "deletes remote files" },
   { id: "r2", args: ["prune", "--dry-run"], stage: "ship", cat: "all", label: "Preview what expires", desc: "shows what prune would delete, deletes nothing", key: "r2-prune-dry" },
   { id: "r2", args: ["rm"], argKind: "renderId", stage: "ship", cat: "all", label: "Delete one from storage", desc: "permanent in R2; the local copy stays", key: "r2-rm", danger: "deletes remote files" },
 
@@ -150,6 +165,23 @@ export function argvFor(cmd, input = "") {
 export const RUNNABLE_IDS = [...new Set(COMMANDS.map((c) => c.id))];
 
 /**
+ * Commands an ephemeral Linux runner is allowed to execute from a remote job.
+ * This is intentionally an allowlist. Local maintenance, interactive OAuth,
+ * publishing, and recursive queue/sync commands cannot be reached by changing
+ * an R2 record.
+ */
+export const CLOUD_RUNNABLE_KEYS = new Set([
+  "radar-collect", "score", "evidence-report", "evidence-quotes", "cap-seasonal", "cap-seasonal-makeup",
+  "keywords", "ideabank-rank", "lab-extract", "yt-trending", "brief", "brief-topic", "claims-map",
+  "claims-audit", "capture-log", "catalog-fanout", "produce", "render-script", "drive-import", "math",
+  "math-demo", "edit-beauty", "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut",
+  "edit-screencast", "edit-screencast-ai", "reframe", "motion-list", "tools-prompter", "tools-gaps",
+  "tools-repurpose", "tools-competitors", "tools-calendar", "tools-niche", "humanize-script",
+  "humanize-audit", "center", "analytics", "cal-scorecard", "cal-memo",
+  "lessons", "playbook", "prompts", "digest",
+]);
+
+/**
  * Deliberately terminal-only, with the reason. Listed so "why is this not a
  * button" has an answer in the UI rather than looking like an oversight.
  */
@@ -175,3 +207,50 @@ export function verifyRegistry(cliCommandIds) {
   }
   return { ok: !missing.length && !dupes.length, missing, dupes, total: COMMANDS.length };
 }
+
+/**
+ * When are two queue entries the SAME request?
+ *
+ * Clicking a button twice because the page gave no feedback queued the job
+ * twice, and the queue happily ran both - three identical Manim demos in a row,
+ * about eleven minutes each, producing byte-identical output. Nobody wants a
+ * second copy of the thing they are already waiting for.
+ *
+ * Identity is what the job ASKS FOR, not who asked or when: the command, its
+ * input, and the vertical (a beauty edit and a coding edit of the same file are
+ * genuinely different jobs). Input is trimmed and lowercased so "Gauss Sum" and
+ * "gauss sum " do not both get rendered.
+ *
+ * This lives in the registry module because it is needed on both sides of a
+ * runtime boundary - the laptop CLI and the Cloudflare Worker - and this is the
+ * only shared module the Worker can import (no node: builtins). One definition
+ * means the two halves cannot disagree about what a duplicate is.
+ */
+export const jobIdentity = (job) =>
+  [job.cmd || job.kind || "", String(job.input ?? "").trim().toLowerCase(), job.vertical || ""].join("|");
+
+/**
+ * Where the dedupe marker for a job identity lives.
+ *
+ * WHY A MARKER AND NOT A LIST SCAN: R2 LIST is eventually consistent. Checking
+ * for an existing job by listing the pending prefix missed a job written one
+ * second earlier, so two fast clicks still produced two jobs - measured, not
+ * theorised: click 1 created a job, click 2 could not see it and created a
+ * second, click 3 (a few seconds later) saw it and deduped. GET by key IS
+ * strongly consistent, so the check has to be a keyed read, which means the key
+ * must be derivable from the request itself.
+ *
+ * The marker stores the full identity so a hash collision cannot silently merge
+ * two different jobs - the reader compares the identity and ignores a marker
+ * that does not match.
+ */
+const fnv1a = (s) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+};
+
+export const dedupeKey = (identity) => `queue/dedupe/${fnv1a(identity)}.json`;

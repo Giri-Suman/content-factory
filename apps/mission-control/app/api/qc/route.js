@@ -1,45 +1,51 @@
-import { NextResponse } from "next/server";
-import path from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { repoRoot, runCli } from "../../../lib/factory.js";
+/**
+ * QC judge network — pass rates per judge, recent failures, open escalations.
+ *
+ * The port returned only `{ escalations }`, so the page read `total.toString()`,
+ * `perJudge.map` and `recentFailures.map` off undefined. The aggregation is the
+ * disk version's; only the source moved to R2.
+ */
 
-const os = (name) => {
-  const p = path.join(repoRoot, "data", "os", `${name}.json`);
-  if (!existsSync(p)) return [];
-  try {
-    return JSON.parse(readFileSync(p, "utf8")).rows || [];
-  } catch {
-    return [];
-  }
-};
+import { getEnv } from "@factory-env";
+import { actOn, readCollection } from "../../../lib/cloud.js";
+
+export const runtime = "edge";
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+const JUDGES = ["idea", "script", "metadata", "visual", "audio"];
 
 export async function GET() {
-  const crits = os("critiques");
-  const judges = ["idea", "script", "metadata", "visual", "audio"];
-  const perJudge = judges.map((j) => {
-    const rows = crits.filter((c) => c.judge === j);
+  const env = getEnv();
+  const [crits, escalations] = await Promise.all([
+    readCollection(env, "critiques"),
+    readCollection(env, "escalations"),
+  ]);
+
+  const perJudge = JUDGES.map((judge) => {
+    const rows = crits.filter((c) => c.judge === judge);
     const passes = rows.filter((c) => c.verdict === "pass").length;
-    return { judge: j, total: rows.length, passes, passRate: rows.length ? Math.round((passes / rows.length) * 100) : null };
+    return { judge, total: rows.length, passes, passRate: rows.length ? Math.round((passes / rows.length) * 100) : null };
   });
-  const recentFailures = crits.filter((c) => c.verdict === "fail").slice(-15).reverse();
-  const escalations = os("escalations").filter((e) => !e.resolved);
-  return NextResponse.json({ perJudge, recentFailures, escalations, total: crits.length });
+
+  return json({
+    perJudge,
+    recentFailures: crits.filter((c) => c.verdict === "fail").slice(-15).reverse(),
+    escalations: escalations.filter((e) => !e.resolved),
+    total: crits.length,
+  });
 }
 
-// POST {briefId} -> run QC chain | {resolve: escalationId}
 export async function POST(request) {
-  const { briefId, resolve } = await request.json();
-  if (resolve) {
-    const p = path.join(repoRoot, "data", "os", "escalations.json");
-    if (existsSync(p)) {
-      const store = JSON.parse(readFileSync(p, "utf8"));
-      const row = (store.rows || []).find((e) => e.id === resolve);
-      if (row) row.resolved = true;
-      writeFileSync(p, JSON.stringify(store, null, 2));
-    }
-    return NextResponse.json({ ok: true });
+  const env = getEnv();
+  const body = await request.json().catch(() => ({}));
+  // Resolving an escalation is a WRITE to a collection the laptop owns; the next
+  // `sync push` would overwrite it, so it queues like everything else.
+  try {
+    const r = await actOn(env, request, { cmd: "qc", arg: String(body.briefId || body.id || "").trim(), requestedBy: body.requestedBy || "portal", });
+    return json(r);
+  } catch (e) {
+    return json({ ok: false, error: e.message }, 400);
   }
-  if (!briefId) return NextResponse.json({ ok: false, error: "missing briefId" }, { status: 400 });
-  const { code, out } = await runCli(["qc", "brief", briefId], 1000 * 60 * 5);
-  return NextResponse.json({ ok: code === 0, out: out.slice(-500) }, { status: code === 0 ? 200 : 500 });
 }

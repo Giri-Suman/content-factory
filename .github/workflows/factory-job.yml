@@ -1,0 +1,102 @@
+name: factory cloud job
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Opaque R2 queue job id"
+        required: true
+        type: string
+
+# All jobs share small mutable JSON collections in R2. Serial execution avoids
+# two ephemeral runners pulling the same version and overwriting each other.
+concurrency:
+  group: content-factory-cloud-state
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install media dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libcairo2-dev libpango1.0-dev pkg-config espeak-ng
+
+      # Cairo/Pango must exist before npm ci in case the canvas package needs
+      # to compile instead of receiving a prebuilt binary for this runner.
+      - name: Install Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python media tools
+        run: pip install --quiet manim faster-whisper whisper-ctranslate2
+
+      - name: Run exact queue job
+        env:
+          FACTORY_JOB_ID: ${{ inputs.job_id }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FREE_MODEL: ${{ secrets.OPENROUTER_FREE_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          FAL_KEY: ${{ secrets.FAL_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_DRIVE_PRIVATE_KEY: ${{ secrets.GOOGLE_DRIVE_PRIVATE_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          YT_DAILY_UNIT_CAP: ${{ vars.YT_DAILY_UNIT_CAP }}
+          FACTORY_LANGUAGE: ${{ secrets.FACTORY_LANGUAGE }}
+          FACTORY_FORCE_X264: "1"
+        run: node packages/cli/bin/factory.js queue run "$FACTORY_JOB_ID" --cloud
+
+      - name: Preserve generated files if R2 upload failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-${{ inputs.job_id }}
+          path: |
+            renders/**/*
+            data/scripts/**/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Dependency setup can fail before the CLI has a chance to claim the R2
+      # job. Without this, the portal would say "queued" forever even though
+      # the Actions run had already stopped.
+      - name: Record runner setup failure
+        if: failure()
+        env:
+          FACTORY_JOB_ID: ${{ inputs.job_id }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: node scripts/fail-cloud-job.mjs

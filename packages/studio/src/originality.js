@@ -59,7 +59,7 @@ export function similarity(a, b) {
  */
 function corpus() {
   const rows = [];
-  for (const p of collection("myposts").all()) {
+  for (const p of collection("myposts").find((m) => !m.seed)) {
     if (p.title) rows.push({ text: p.title, kind: "published", id: p.id, weight: 1 });
   }
   for (const b of collection("briefs").all()) {

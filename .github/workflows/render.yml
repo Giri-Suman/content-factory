@@ -1,0 +1,155 @@
+# =============================================================================
+#  Render or edit in the cloud, using state synced from the laptop.
+# =============================================================================
+#  `render-math.yml` handles the one job that needs no local state. This handles
+#  the rest - brief renders, produce, edits, reframes - by pulling `data/os/*`
+#  from R2 first. That state is 71 JSON files, 3.3MB; it was the only reason
+#  these jobs were laptop-only, and it had nothing to do with CPU.
+#
+#  BOTH PATHS STAY. The laptop still runs any of these locally, unchanged. This
+#  is a second way in, not a replacement.
+#
+#  THE ORDER MATTERS:
+#    1. pull state  - so briefs and clusters exist
+#    2. pull footage - only for edits, and only the one file named
+#    3. run
+#    4. push state back - so decisions made here (a brief marked used, a new
+#       publishitem) are not lost when the runner is destroyed
+#    5. push the video to R2
+#
+#  Step 4 is the one that is easy to forget and expensive to omit: without it
+#  the laptop's next `sync pull` would overwrite the cloud's work with older
+#  local state.
+# =============================================================================
+
+name: render or edit
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "What to run"
+        required: true
+        type: choice
+        options: [render-brief, produce, edit, reframe, shorts]
+      target:
+        description: "Brief id, render id, or footage file name (see `factory sync footage`)"
+        required: true
+        type: string
+      flags:
+        description: 'Extra flags, e.g. "--beauty --no-transcript"'
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: render-cloud
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180 # a long edit is genuinely slow on a 2-core runner
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libcairo2-dev libpango1.0-dev pkg-config
+          ffmpeg -version | head -1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # whisper is only needed by `edit`, and it is a slow install. Skip it for
+      # render jobs rather than paying for it every run.
+      - name: Install whisper (edit only)
+        if: inputs.job == 'edit'
+        run: pip install --quiet faster-whisper whisper-ctranslate2
+
+      - name: Install renderer
+        if: inputs.job != 'edit' && inputs.job != 'reframe'
+        working-directory: renderers/code-report
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Pull state from R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: node packages/cli/bin/factory.js sync pull
+
+      - name: Pull footage from R2 (edit and reframe only)
+        if: inputs.job == 'edit' || inputs.job == 'reframe'
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: node packages/cli/bin/factory.js sync footage pull "${{ inputs.target }}"
+
+      - name: Run
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_FREE_MODEL: ${{ secrets.OPENROUTER_FREE_MODEL }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          FACTORY_LANGUAGE: ${{ secrets.FACTORY_LANGUAGE }}
+          FACTORY_FORCE_X264: "1" # no Intel iGPU on a runner
+        run: |
+          set -e
+          T='${{ inputs.target }}'
+          F='${{ inputs.flags }}'
+          case '${{ inputs.job }}' in
+            render-brief) node packages/cli/bin/factory.js render brief "$T" $F ;;
+            produce)      node packages/cli/bin/factory.js produce "$T" $F ;;
+            edit)         node packages/cli/bin/factory.js edit "data/footage/$T" $F ;;
+            reframe)      node packages/cli/bin/factory.js reframe "data/footage/$T" $F ;;
+            shorts)       node packages/cli/bin/factory.js shorts "$T" $F ;;
+            *) echo "unknown job"; exit 1 ;;
+          esac
+
+      # Decisions made here (a brief marked used, a new publish item) exist only
+      # on this runner until pushed. Without this the laptop's next pull would
+      # silently overwrite them with older local state.
+      - name: Push state back to R2
+        if: always()
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: node packages/cli/bin/factory.js sync push || echo "state push failed - the video is still in R2"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ inputs.job }} - ${{ inputs.target }}"
+            echo ""
+            find renders -name '*.mp4' -newermt '-4 hours' -printf '- `%p` (%sB)\n' 2>/dev/null || echo "- no new video"
+            echo ""
+            echo "Pull the state changes back to your laptop with: \`npm run factory -- sync pull\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Artifact fallback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job }}-output
+          path: renders/**/*.mp4
+          if-no-files-found: warn
+          retention-days: 7

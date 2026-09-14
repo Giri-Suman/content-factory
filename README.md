@@ -143,9 +143,17 @@ flowchart TB
 
 ### Ops runbook
 
+- **Free AI, two independent pools:** OpenRouter meters every `:free` model
+  against ONE account-wide daily budget, so when it trips the whole free tier
+  stops. Add `GEMINI_API_KEY` (free from https://aistudio.google.com/apikey) and
+  the free tier tries Gemini first, on its own separate quota. List the ids your
+  key can call with `factory ai gemini`.
 - **Keep it fresh:** run `factory worker` in a terminal you leave open
   (collect 30m, YouTube+tracking 60m, deep refresh 6h, digest + memo +
-  auto-tune Mon 08:00 IST). Do NOT run two workers — no singleton lock yet.
+  auto-tune Mon 08:00 IST). Do NOT run two workers — there is no singleton
+  process lock. Concurrent writes to `data/os/` ARE safe (every collection
+  mutation takes a cross-process file lock), but two workers still duplicate
+  the scheduled work itself.
 - **Backup:** Settings → Export backup (one JSON of all `data/os/` +
   config). `data/` is gitignored; back it up before big changes.
 - **Failure states:** missing keys → clear "add key" notices, heuristics

@@ -1,29 +1,35 @@
-import { NextResponse } from "next/server";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import { scriptsDir, readJson } from "../../../../lib/factory.js";
+/**
+ * One compiled script.
+ *
+ * R2 is canonical for remote edits. The sync layer compares remote timestamps
+ * before a laptop push, so a reviewed script cannot be silently overwritten.
+ */
 
-const safe = (id) => path.basename(id).replace(/[^a-z0-9-]/gi, "");
+import { getEnv } from "@factory-env";
+export const runtime = "edge";
 
-export async function GET(_req, { params }) {
-  const id = safe(params.id);
-  const file = path.join(scriptsDir, `${id}.json`);
-  if (!existsSync(file)) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const script = JSON.parse(readFileSync(file, "utf8"));
-  const meta = readJson(path.join(scriptsDir, `${id}.meta.json`), null);
-  return NextResponse.json({ script, meta });
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+import { readScript, writeScript } from "../../../../lib/cloud.js";
+import { identityFromRequest } from "../../../../lib/identity.js";
+
+export async function GET(request, { params }) {
+  const env = getEnv();
+  const { id } = await params; // Next 15: params is a Promise
+  const script = await readScript(env, id);
+  if (!script) return json({ error: "not found" }, 404);
+  return json({ script });
 }
 
 export async function PUT(request, { params }) {
-  const id = safe(params.id);
-  const file = path.join(scriptsDir, `${id}.json`);
-  if (!existsSync(file)) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const { script } = await request.json();
-  if (!script || !Array.isArray(script.scenes)) {
-    return NextResponse.json({ error: "invalid script" }, { status: 400 });
+  const env = getEnv();
+  const { id } = await params;
+  const { script } = await request.json().catch(() => ({}));
+  try {
+    const saved = await writeScript(env, id, script, identityFromRequest(request).email);
+    return json({ ok: true, script: saved });
+  } catch (error) {
+    return json({ ok: false, error: error.message }, 400);
   }
-  script.id = id; // the filename is the identity
-  script.reviewedAt = new Date().toISOString(); // a human opened + saved this = the review gate
-  writeFileSync(file, JSON.stringify(script, null, 2));
-  return NextResponse.json({ ok: true });
 }

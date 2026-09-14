@@ -1,97 +1,193 @@
-import { NextResponse } from "next/server";
-import { createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { repoRoot } from "../../../lib/factory.js";
-
 /**
- * Footage upload.
+ * Upload footage straight to R2, so either machine can use it.
  *
- * Once the portal is reachable from anywhere, typing "D:\footage\take1.mp4" is
- * meaningless — that path only exists on the machine you were sitting at. The
- * capture lane (makeup, nails, screencasts) is exactly the workflow you want to
- * drive from a laptop or phone after filming, so uploads are what make remote
- * use real rather than nominal.
+ * The disk version wrote into data/footage on the laptop, which only worked
+ * while that machine was awake and serving. This puts the file where both sides
+ * reach it: the laptop pulls it with `factory sync footage pull`, and a GitHub
+ * Actions edit pulls the same object.
  *
- * SAFETY
- *  - the filename is REPLACED, never trusted. A name like "../../.env" would
- *    otherwise escape the folder, and an "x.mp4.exe" would sit on disk as an
- *    executable.
- *  - extension allowlist: only media this pipeline can actually process.
- *  - streamed to disk, so a large upload never sits in memory.
- *  - a size ceiling, because the disk here is small and a stuck upload
- *    shouldn't fill it.
+ * The uploaded name is REPLACED, not sanitised, and only an allowlisted
+ * extension survives. A name like "../../.env" would otherwise escape the
+ * prefix, and "clip.mp4.exe" would sit in storage as an executable.
  */
 
-const FOOTAGE_DIR = path.join(repoRoot, "data", "footage");
-const ALLOWED = new Set([".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".mp3", ".wav", ".m4a", ".png", ".jpg", ".jpeg"]);
-const MAX_BYTES = 4 * 1024 * 1024 * 1024; // 4GB
+import { getEnv } from "@factory-env";
+import { identityFromRequest, ownerRequired } from "../../../lib/identity.js";
+import { presignR2Put } from "../../../lib/r2-sign.js";
 
-const safeName = (original, prefix) => {
-  const ext = path.extname(String(original || "")).toLowerCase();
-  if (!ALLOWED.has(ext)) throw new Error(`"${ext || "no extension"}" isn't a media type this pipeline handles`);
-  // the uploaded name is discarded entirely — only the extension survives
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const tag = String(prefix || "footage").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "footage";
-  return `${tag}-${stamp}${ext}`;
+export const runtime = "edge";
+
+const ALLOWED = new Set(["mp4", "mov", "mkv", "avi", "m4v", "webm"]);
+const MIME = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  m4v: "video/x-m4v",
+  webm: "video/webm",
 };
+const R2_SINGLE_PUT_MAX = 5 * 1024 ** 3;
+
+const json = (o, status = 200) =>
+  new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+
+const uploadLimit = (env) => Math.min(R2_SINGLE_PUT_MAX, Math.max(1, Number(env.R2_UPLOAD_MAX_BYTES) || R2_SINGLE_PUT_MAX));
+
+function cleanUpload({ name, label = "footage" }) {
+  const ext = String(name || "").split(".").pop()?.toLowerCase();
+  if (!ALLOWED.has(ext)) throw new Error(`extension not allowed — one of ${[...ALLOWED].join(", ")}`);
+  const stem = String(label || name || "footage")
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "footage";
+  return { ext, mime: MIME[ext], stem };
+}
+
+function exactName(value) {
+  const name = String(value || "");
+  if (!/^[a-z0-9][a-z0-9._-]{0,180}\.(mp4|mov|mkv|avi|m4v|webm)$/i.test(name)) return null;
+  if (name.includes("/") || name.includes("\\")) return null;
+  return name;
+}
 
 export async function GET() {
-  mkdirSync(FOOTAGE_DIR, { recursive: true });
-  const files = readdirSync(FOOTAGE_DIR)
-    .filter((f) => ALLOWED.has(path.extname(f).toLowerCase()))
-    .map((f) => {
-      const full = path.join(FOOTAGE_DIR, f);
-      const st = statSync(full);
-      return { name: f, path: full, bytes: st.size, at: st.mtime.toISOString() };
-    })
-    .sort((a, b) => b.at.localeCompare(a.at));
-  return NextResponse.json({ ok: true, dir: FOOTAGE_DIR, files });
+  const env = getEnv();
+  if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
+  const listed = await env.QUEUE.list({ prefix: "footage/", limit: 200 });
+  const items = listed.objects.map((o) => ({
+    name: o.key.slice("footage/".length),
+    path: o.key.slice("footage/".length),
+    bytes: o.size,
+    size: o.size,
+    uploaded: o.uploaded,
+  }));
+  // Studio reads `files`; the first port named it `footage`, so the uploads list
+  // was always empty. Both are returned so neither name is a trap.
+  return json({ ok: true, files: items, footage: items });
 }
 
 export async function POST(request) {
-  const form = await request.formData();
-  const file = form.get("file");
-  const label = form.get("label") || "footage";
-  if (!file || typeof file === "string") {
-    return NextResponse.json({ ok: false, error: "no file in the upload" }, { status: 400 });
-  }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ ok: false, error: `${(file.size / 1e9).toFixed(1)}GB is over the 4GB limit` }, { status: 413 });
+  const env = getEnv();
+  if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
+
+  if (request.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+    const body = await request.json().catch(() => null);
+    if (!body) return json({ ok: false, error: "invalid upload request" }, 400);
+    let parsed;
+    try {
+      parsed = cleanUpload({ name: body.name, label: body.label });
+    } catch (error) {
+      return json({ ok: false, error: error.message }, 400);
+    }
+    const size = Number(body.size);
+    const maxBytes = uploadLimit(env);
+    if (!Number.isSafeInteger(size) || size < 1) return json({ ok: false, error: "file size is required" }, 400);
+    if (size > maxBytes) return json({ ok: false, error: `file is over the ${Math.round(maxBytes / 1024 ** 2)}MB upload limit` }, 413);
+
+    const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 10);
+    const name = `${parsed.stem}-${Date.now().toString(36)}-${suffix}.${parsed.ext}`;
+    const key = `footage/${name}`;
+    let signed;
+    try {
+      signed = await presignR2Put(
+        {
+          accountId: env.R2_ACCOUNT_ID,
+          accessKeyId: env.R2_ACCESS_KEY_ID,
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+          bucket: env.R2_BUCKET,
+        },
+        { key, contentType: parsed.mime, expiresSec: 900 }
+      );
+    } catch (error) {
+      return json({ ok: false, error: error.message }, 503);
+    }
+
+    const identity = identityFromRequest(request);
+    const audit = {
+      name,
+      key,
+      originalName: String(body.name || "").slice(0, 200),
+      expectedBytes: size,
+      contentType: parsed.mime,
+      requestedBy: identity.email,
+      requestedRole: identity.role,
+      state: "pending",
+      createdAt: new Date().toISOString(),
+      expiresAt: signed.expiresAt,
+    };
+    await env.QUEUE.put(`uploads/${name}.json`, JSON.stringify(audit, null, 2), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return json({ ok: true, upload: { name, path: name, key, ...signed }, maxBytes });
   }
 
-  let name;
+  const form = await request.formData().catch(() => null);
+  const file = form?.get("file");
+  if (!file || typeof file === "string") return json({ ok: false, error: "no file" }, 400);
+
+  let parsed;
   try {
-    name = safeName(file.name, label);
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
+    parsed = cleanUpload({ name: file.name, label: form.get("label") });
+  } catch (error) {
+    return json({ ok: false, error: error.message }, 400);
   }
+  if (file.size > uploadLimit(env)) return json({ ok: false, error: "file is over the upload limit" }, 413);
 
-  mkdirSync(FOOTAGE_DIR, { recursive: true });
-  const dest = path.join(FOOTAGE_DIR, name);
-  try {
-    await pipeline(Readable.fromWeb(file.stream()), createWriteStream(dest));
-  } catch (e) {
-    if (existsSync(dest)) unlinkSync(dest); // never leave a half-written file for the editor to choke on
-    return NextResponse.json({ ok: false, error: `upload failed: ${e.message}` }, { status: 500 });
-  }
+  const name = `${parsed.stem}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${parsed.ext}`;
 
-  const bytes = statSync(dest).size;
-  return NextResponse.json({
-    ok: true,
+  await env.QUEUE.put(`footage/${name}`, file.stream(), { httpMetadata: { contentType: parsed.mime } });
+  const identity = identityFromRequest(request);
+  await env.QUEUE.put(`uploads/${name}.json`, JSON.stringify({
     name,
-    path: dest,
-    bytes,
-    note: "paste this path into AI Cut, Reframe or Mine Shorts",
+    key: `footage/${name}`,
+    originalName: String(file.name || "").slice(0, 200),
+    bytes: file.size,
+    contentType: parsed.mime,
+    requestedBy: identity.email,
+    requestedRole: identity.role,
+    state: "ready",
+    createdAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  }, null, 2), { httpMetadata: { contentType: "application/json" } });
+  return json({ ok: true, name, path: name, bytes: file.size, note: "ready for a cloud edit" });
+}
+
+export async function PATCH(request) {
+  const env = getEnv();
+  if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
+  const body = await request.json().catch(() => ({}));
+  const name = exactName(body.name);
+  if (!name) return json({ ok: false, error: "valid upload name required" }, 400);
+  const key = `footage/${name}`;
+  const object = await env.QUEUE.head(key);
+  if (!object) return json({ ok: false, error: "R2 has not received this upload" }, 404);
+  const maxBytes = uploadLimit(env);
+  if (object.size > maxBytes) {
+    await env.QUEUE.delete(key);
+    return json({ ok: false, error: "uploaded object exceeded the workspace limit and was removed" }, 413);
+  }
+  const pending = await env.QUEUE.get(`uploads/${name}.json`);
+  const audit = pending ? await pending.json().catch(() => ({})) : {};
+  if (audit.expectedBytes && Number(audit.expectedBytes) !== object.size) {
+    await env.QUEUE.delete(key);
+    return json({ ok: false, error: "uploaded byte count did not match the selected file" }, 400);
+  }
+  const completed = { ...audit, name, key, bytes: object.size, state: "ready", completedAt: new Date().toISOString() };
+  await env.QUEUE.put(`uploads/${name}.json`, JSON.stringify(completed, null, 2), {
+    httpMetadata: { contentType: "application/json" },
   });
+  return json({ ok: true, name, path: name, bytes: object.size, uploaded: object.uploaded });
 }
 
 export async function DELETE(request) {
-  const name = new URL(request.url).searchParams.get("name");
-  // basename strips any traversal — "../../x" can only ever delete "x" here
-  const target = path.join(FOOTAGE_DIR, path.basename(String(name || "")));
-  if (!name || !existsSync(target)) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  unlinkSync(target);
-  return NextResponse.json({ ok: true });
+  const gate = ownerRequired(request);
+  if (gate.response) return gate.response;
+  const env = getEnv();
+  if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
+  const name = exactName(new URL(request.url).searchParams.get("name"));
+  if (!name) return json({ ok: false, error: "valid name required" }, 400);
+  await Promise.all([env.QUEUE.delete(`footage/${name}`), env.QUEUE.delete(`uploads/${name}.json`)]);
+  return json({ ok: true });
 }

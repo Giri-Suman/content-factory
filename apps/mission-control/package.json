@@ -2,15 +2,22 @@
   "name": "@factory/mission-control",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev -p 4600",
     "build": "next build",
-    "start": "next start -p 4600"
+    "start": "next start -p 4600",
+    "dev:open": "node scripts/dev-open.mjs",
+    "dev:cloud": "node scripts/dev-cloud.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.11.0",
-    "next": "^14.2.5",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "next": "15.5.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@cloudflare/next-on-pages": "1.13.16",
+    "vercel": "47.0.4"
   }
 }
