@@ -26,10 +26,12 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { repoRoot } from "./config.js";
-import { isConfigured, listObjects, presignGet, putObject } from "./r2.js";
+import { isConfigured, listObjects, presignGet, putFileObject, putObject } from "./r2.js";
 
 const PREFIX = "state";
 const DATA = path.join(repoRoot, "data");
@@ -92,12 +94,14 @@ const LAPTOP_IDS = new Set([
 ]);
 
 async function pushCommandManifest() {
-  const { COMMANDS, STAGES, keyOf } = await import("./commands.js");
+  const { CLOUD_RUNNABLE_KEYS, COMMANDS, STAGES, keyOf } = await import("./commands.js");
   const manifest = {
     at: new Date().toISOString(),
     stages: STAGES,
     commands: COMMANDS.map((c) => ({
       key: keyOf(c),
+      id: c.id,
+      args: c.args,
       label: c.label,
       desc: c.desc,
       stage: c.stage,
@@ -105,8 +109,10 @@ async function pushCommandManifest() {
       argKind: c.argKind || null,
       argLabel: c.argLabel || null,
       slow: Boolean(c.slow),
+      primary: Boolean(c.primary),
       danger: c.danger || null,
       laptop: LAPTOP_IDS.has(c.id),
+      cloud: CLOUD_RUNNABLE_KEYS.has(keyOf(c)),
     })),
   };
   await putObject(`${PREFIX}/_commands.json`, JSON.stringify(manifest, null, 2), { contentType: "application/json" });
@@ -258,19 +264,25 @@ export async function pushState({ force = false } = {}) {
     const buf = readFileSync(f.abs);
     const key = `${PREFIX}/${f.rel}`;
     const r = remote.get(key);
-    // Size is a cheap first filter; identical size AND unchanged mtime is a
-    // strong enough signal to skip without downloading to compare.
-    if (!force && r && r.size === buf.length) {
-      skipped.push(f.rel);
-      continue;
-    }
     // The cloud portal can now edit collections directly (approving a brief,
     // ticking a checklist item). If the remote copy is NEWER than this machine's
     // file, pushing would delete an edit made from the phone. Refuse and say so
     // - run `factory sync pull` first, then push.
-    if (!force && r && r.uploaded && statSync(f.abs).mtimeMs < new Date(r.uploaded).getTime()) {
+    if (!force && r && r.modified && statSync(f.abs).mtimeMs < new Date(r.modified).getTime()) {
       conflicts.push(f.rel);
       continue;
+    }
+    // Equal byte length does not mean equal JSON. A command can change a value
+    // without changing the file size, so compare the actual remote bytes before
+    // skipping. State is only a few MB; correctness is worth the small reads.
+    if (!force && r && r.size === buf.length) {
+      const response = await fetch(presignGet(key, 300));
+      if (!response.ok) throw new Error(`could not compare cloud state ${f.rel}: ${response.status}`);
+      const remoteBody = Buffer.from(await response.arrayBuffer());
+      if (sha(remoteBody) === sha(buf)) {
+        skipped.push(f.rel);
+        continue;
+      }
     }
     await putObject(key, buf, { contentType: "application/json" });
     pushed.push({ rel: f.rel, bytes: buf.length });
@@ -305,31 +317,44 @@ export async function pullState({ dryRun = false } = {}) {
   let manifest;
   try {
     const res = await fetch(presignGet(`${PREFIX}/_manifest.json`, 300));
-    if (!res.ok) throw new Error(String(res.status));
+    if (res.status === 404) {
+      return { error: "no state in R2 yet — run `factory sync push` from the machine that has it", missing: true };
+    }
+    if (!res.ok) {
+      return { error: `could not read cloud state (${res.status})`, missing: false };
+    }
     manifest = await res.json();
-  } catch {
-    return { error: "no state in R2 yet — run `factory sync push` from the machine that has it" };
+    if (!manifest || !Array.isArray(manifest.files)) throw new Error("state manifest is invalid");
+  } catch (error) {
+    return { error: `could not read cloud state: ${error.message}`, missing: false };
   }
 
   const written = [];
   const same = [];
   for (const entry of manifest.files) {
-    if (EXCLUDE.has(path.basename(entry.rel))) continue;
-    const abs = path.join(DATA, entry.rel);
-    if (existsSync(abs) && sha(readFileSync(abs)) === entry.hash) {
-      same.push(entry.rel);
+    const rel = String(entry?.rel || "").replaceAll("\\", "/");
+    const allowed = ROOT_FILES.includes(rel) || DIRS.some((dir) => rel.startsWith(`${dir}/`) && !rel.slice(dir.length + 1).includes("/"));
+    if (!allowed || !rel.endsWith(".json") || EXCLUDE.has(path.basename(rel))) continue;
+    const abs = path.resolve(DATA, rel);
+    if (abs !== DATA && !abs.startsWith(`${DATA}${path.sep}`)) continue;
+    // The portal can edit an existing R2 object without rewriting this
+    // manifest. Compare with the object that is actually stored, rather than
+    // trusting a now-stale manifest hash, or `sync pull` could miss a phone edit
+    // whose local file still matched the previous manifest.
+    const res = await fetch(presignGet(`${PREFIX}/${rel}`, 600));
+    if (!res.ok) throw new Error(`could not pull ${rel}: ${res.status}`);
+    const body = Buffer.from(await res.arrayBuffer());
+    if (existsSync(abs) && sha(readFileSync(abs)) === sha(body)) {
+      same.push(rel);
       continue;
     }
     if (dryRun) {
-      written.push(entry.rel);
+      written.push(rel);
       continue;
     }
-    const res = await fetch(presignGet(`${PREFIX}/${entry.rel}`, 600));
-    if (!res.ok) continue;
-    const body = Buffer.from(await res.arrayBuffer());
     mkdirSync(path.dirname(abs), { recursive: true });
     writeFileSync(abs, body);
-    written.push(entry.rel);
+    written.push(rel);
   }
   return { written, same, at: manifest.at, dryRun };
 }
@@ -349,10 +374,9 @@ export async function pushFootage(name) {
   const abs = path.join(DATA, "footage", path.basename(name));
   if (!existsSync(abs)) throw new Error(`no such footage: ${path.basename(name)}`);
   if (!MEDIA.test(abs)) throw new Error(`not a video file: ${path.basename(name)}`);
-  const buf = readFileSync(abs);
   const key = `${FOOTAGE_PREFIX}/${path.basename(abs)}`;
-  await putObject(key, buf, { contentType: "video/mp4" });
-  return { key, bytes: buf.length };
+  const result = await putFileObject(key, abs, { contentType: "video/mp4" });
+  return { key, bytes: result.bytes };
 }
 
 /** What footage is already in R2 and available to a cloud job. */
@@ -371,7 +395,7 @@ export async function pullFootage(name) {
   const abs = path.join(DATA, "footage", base);
   mkdirSync(path.dirname(abs), { recursive: true });
   const res = await fetch(presignGet(`${FOOTAGE_PREFIX}/${base}`, 900));
-  if (!res.ok) throw new Error(`could not fetch footage ${base}: ${res.status}`);
-  writeFileSync(abs, Buffer.from(await res.arrayBuffer()));
+  if (!res.ok || !res.body) throw new Error(`could not fetch footage ${base}: ${res.status}`);
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(abs));
   return { file: abs, bytes: statSync(abs).size };
 }

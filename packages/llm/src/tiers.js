@@ -236,9 +236,9 @@ export function tierAvailability() {
 export const SERVICES = {
   voice: {
     label: "Voice",
-    note: "free = Windows TTS (robotic but usable) · best = YOUR cloned voice",
+    note: "free = system TTS (robotic but usable) · best = YOUR cloned voice",
     tiers: {
-      free: [{ id: "sapi", licenseId: "windows-sapi", label: "Windows SAPI (local)", costPerChar: 0, needs: () => process.platform === "win32" }],
+      free: [{ id: "sapi", licenseId: "windows-sapi", label: "System TTS (SAPI/eSpeak)", costPerChar: 0, needs: () => true }],
       cheap: [
         { id: "eleven-flash", licenseId: "elevenlabs", label: "ElevenLabs Flash", model: "eleven_flash_v2_5", costPerChar: 0.00005, needs: () => Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID) },
       ],

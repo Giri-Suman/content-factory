@@ -13,11 +13,13 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "../../shared/src/config.js";
-import { JOB_KINDS, claim, complete, counts, enqueue, fail, list, requeueStuck } from "../../shared/src/queue.js";
-import { COMMANDS, argvFor, keyOf } from "../../shared/src/commands.js";
+import { JOB_KINDS, claim, complete, counts, enqueue, fail, findJob, list, requeueStuck } from "../../shared/src/queue.js";
+import { CLOUD_RUNNABLE_KEYS, COMMANDS, argvFor, keyOf } from "../../shared/src/commands.js";
 import { isConfigured, missingConfig } from "../../shared/src/r2.js";
+import { pullFootage, pullState, pushState } from "../../shared/src/stateSync.js";
 import { beat } from "../../shared/src/status.js";
 import { resolveInInbox } from "./inbox.js";
 
@@ -31,6 +33,11 @@ const pad = (s, n) => String(s).padEnd(n);
  */
 /** Measured medians, so the page can say "about 11 min" instead of "soon". */
 const ETA = { math: "11 min", brief: "1 min", edit: "depends on footage length" };
+const CAN_START_WITHOUT_STATE = new Set([
+  "drive-import", "math", "math-demo", "brief-topic", "radar-collect", "edit-beauty",
+  "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut", "edit-screencast",
+  "edit-screencast-ai", "reframe",
+]);
 
 const ARGV = {
   math: (job) => ["math", job.input],
@@ -50,7 +57,7 @@ const ARGV = {
  * nobody can see the console. Piping and echoing keeps the live view AND the
  * last lines, which is what actually gets read on the Jobs page.
  */
-function runJob(job) {
+async function runJob(job, { cloud = false } = {}) {
   let argv;
   if (job.kind === "command") {
     /* A generic job carries a registry KEY. argv is rebuilt here from the
@@ -58,11 +65,36 @@ function runJob(job) {
        write surface from being able to name a command. */
     const row = COMMANDS.find((c) => keyOf(c) === job.cmd);
     if (!row) throw new Error(`queued command "${job.cmd}" is not in the registry`);
-    argv = argvFor(row, job.input || undefined);
+    if (cloud && !CLOUD_RUNNABLE_KEYS.has(job.cmd)) {
+      throw new Error(`command "${job.cmd}" is not allowed on the cloud runner`);
+    }
+    let input = job.input || undefined;
+    if (row.argKind === "scriptId") {
+      const id = String(job.input || "").trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/.test(id)) throw new Error("invalid script id");
+      input = path.join(repoRoot, "data", "scripts", `${id}.json`);
+    }
+    if (row.argKind === "file") {
+      const base = path.basename(String(job.input || ""));
+      if (!base || base !== job.input || !/\.(mp4|mov|mkv|avi|m4v|webm)$/i.test(base)) {
+        throw new Error("a remote file command needs one uploaded footage name");
+      }
+      if (cloud) input = (await pullFootage(base)).file;
+      else {
+        const local = path.join(repoRoot, "data", "footage", base);
+        if (existsSync(local)) input = local;
+      }
+    }
+    argv = argvFor(row, input);
   } else {
     const build = ARGV[job.kind];
     if (!build) throw new Error(`no runner for kind "${job.kind}"`);
     argv = build(job);
+  }
+
+  if (cloud) {
+    const pulled = await pullState();
+    if (pulled?.error && !(pulled.missing && CAN_START_WITHOUT_STATE.has(job.cmd || job.kind))) throw new Error(pulled.error);
   }
 
   const started = Date.now();
@@ -73,6 +105,7 @@ function runJob(job) {
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 1000 * 60 * 180,
     maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, FACTORY_REQUESTED_BY: String(job.requestedBy || "cloud") },
   });
 
   const out = `${res.stdout || ""}${res.stderr || ""}`;
@@ -91,7 +124,20 @@ function runJob(job) {
 
   if (res.error) throw new Error(`${res.error.message} (after ${mins} min)${tail ? " - " + tail : ""}`);
   if (res.status !== 0) throw new Error(`exited ${res.status} after ${mins} min${tail ? " - " + tail : ""}`);
-  return `ok in ${mins} min`;
+
+  let syncNote = "";
+  if (cloud) {
+    try {
+      const synced = await pushState();
+      syncNote = `; synced ${synced.pushed.length} state file(s)`;
+      if (synced.conflicts?.length) syncNote += ` (${synced.conflicts.length} conflict(s) skipped)`;
+    } catch (error) {
+      // The command outcome and R2 bookkeeping are distinct. A finished video
+      // must not be labelled failed because the final state copy had a blip.
+      syncNote = `; warning: state sync failed: ${String(error.message).slice(0, 140)}`;
+    }
+  }
+  return `ok in ${mins} min${syncNote}${tail ? ` — ${tail}` : ""}`;
 }
 
 /**
@@ -101,21 +147,30 @@ function runJob(job) {
  * `watch` uses that to stay quiet on an empty poll instead of printing a line
  * every few seconds.
  */
-async function runPending({ limit = 0, quiet = false, watching = false } = {}) {
+async function runPending({ limit = 0, quiet = false, watching = false, jobId = null, cloud = false } = {}) {
   const say = (m) => { if (!quiet) console.log(m); };
 
   // A crashed run leaves a job claimed forever, which looks identical to an
   // empty queue. Recover those before deciding there is nothing to do.
-  const stuck = await requeueStuck({ olderThanMin: 45 });
+  const stuck = await requeueStuck(
+    cloud
+      ? { olderThanMin: 200, executor: "github-actions" }
+      : { olderThanMin: 45, excludeExecutor: "github-actions" }
+  );
   if (stuck.length) console.log(`
   requeued ${stuck.length} job(s) stuck in running`);
 
-  const pending = await list("pending");
+  const candidates = jobId ? [await findJob(jobId, "pending")].filter(Boolean) : await list("pending");
+  // A laptop watcher and GitHub Actions may be online at the same time. Each
+  // executor claims only its own work so the same render cannot run twice.
+  const pending = candidates.filter((job) =>
+    cloud ? job.executor === "github-actions" : job.executor !== "github-actions"
+  );
   if (!pending.length) {
     say(`
   queue is empty - nothing to do
 `);
-    await beat("idle", { pending: 0, watching });
+    if (!cloud) await beat("idle", { pending: 0, watching });
     return { ok: 0, bad: 0, ran: 0 };
   }
 
@@ -138,11 +193,13 @@ async function runPending({ limit = 0, quiet = false, watching = false } = {}) {
     }
     // Publish WHICH job is running, so the page can name it rather than saying
     // a vague "working". This is the message someone waiting wants.
-    await beat("working", {
-      current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
-      pending: todo.length - ok - bad - 1,
-      watching,
-    });
+    if (!cloud) {
+      await beat("working", {
+        current: { kind: claimed.kind, input: claimed.input, startedAt: new Date().toISOString(), eta: ETA[claimed.kind] || "a few minutes" },
+        pending: todo.length - ok - bad - 1,
+        watching,
+      });
+    }
     /* RUNNING THE JOB AND RECORDING THE OUTCOME ARE SEPARATE FAILURES.
        They used to share one try, so an R2 blip on the completion write landed
        in the same catch as a crashed render and called fail(). A demo short
@@ -152,7 +209,7 @@ async function runPending({ limit = 0, quiet = false, watching = false } = {}) {
     let result = null;
     let jobError = null;
     try {
-      result = runJob(claimed);
+      result = await runJob(claimed, { cloud });
     } catch (e) {
       jobError = e;
     }
@@ -180,7 +237,7 @@ async function runPending({ limit = 0, quiet = false, watching = false } = {}) {
       }
     }
   }
-  await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad, watching });
+  if (!cloud) await beat("idle", { lastFinishedAt: new Date().toISOString(), done: ok, failed: bad, watching });
   console.log(`
   ${ok} done, ${bad} failed`);
   // Renders push themselves to R2, so finished work is already shareable - but
@@ -251,6 +308,34 @@ export async function queue(argv) {
       return bad === 0;
     }
 
+    /* --------------------------------------------------------- run --- */
+    case "run": {
+      const id = targs[0];
+      if (!id) {
+        console.log("\nusage: factory queue run <job-id> [--cloud]\n");
+        return false;
+      }
+      const existing = await findJob(id);
+      if (!existing) {
+        console.log(`\n  no queue job ${id}\n`);
+        return false;
+      }
+      if (existing.state === "done") {
+        console.log(`\n  ${id} is already done\n`);
+        return true;
+      }
+      if (existing.state === "running") {
+        console.log(`\n  ${id} is already running\n`);
+        return true;
+      }
+      if (existing.state === "failed") {
+        console.log(`\n  ${id} already failed: ${existing.error || "unknown error"}\n`);
+        return false;
+      }
+      const { bad, ran } = await runPending({ jobId: id, limit: 1, cloud: rest.includes("--cloud") });
+      return ran === 1 && bad === 0;
+    }
+
     /* ----------------------------------------------------- watch --- */
     /**
      * Stay up and run work the moment it is asked for.
@@ -319,7 +404,7 @@ export async function queue(argv) {
       if (!failed.length) return console.log("\n  nothing failed\n"), true;
       let n = 0;
       for (const j of failed) {
-        await enqueue({ kind: j.kind, input: j.input, requestedBy: j.requestedBy });
+        await enqueue({ kind: j.kind, cmd: j.cmd, input: j.input, vertical: j.vertical, requestedBy: j.requestedBy });
         n++;
       }
       console.log(`\n  requeued ${n} failed job(s) — they keep their failed record for history\n`);
@@ -327,7 +412,7 @@ export async function queue(argv) {
     }
 
     default:
-      console.log(`unknown: queue ${action}\n  status · add · drain · watch · retry`);
+      console.log(`unknown: queue ${action}\n  status · add · run · drain · watch · retry`);
       return false;
   }
 }

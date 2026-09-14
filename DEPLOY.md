@@ -1,5 +1,136 @@
 # Deploying the portal
 
+## Current setup: private family portal with no laptop runner
+
+The always-on path is now:
+
+```text
+phone / browser
+      │  Cloudflare Access (three allowed email addresses)
+      ▼
+Cloudflare Pages portal ── direct upload ──► private R2 bucket
+      │                                           ▲
+      └── opaque job id ──► GitHub Actions ───────┘
+                              ffmpeg / Manim / whisper
+```
+
+The laptop can be off. The portal reads and writes shared state in R2, large
+uploads go from the browser straight to R2, and a GitHub-hosted Linux runner
+claims the exact requested job. The request passed to Actions contains only a
+generated job id; the runner fetches the job and rebuilds argv from the command
+allowlist in the repository.
+
+Family members can browse, edit briefs and scripts, change workspace settings,
+upload footage, import a shared Drive video, start supported generation/edit
+jobs, preview renders, and download finished files. Destructive and spending
+controls marked `danger` are owner-only. Real publishing remains a deliberate
+terminal action.
+
+### 1. Put the workflow on the default branch
+
+`.github/workflows/factory-job.yml` must exist on GitHub's default branch before
+the API can dispatch it. Merge this implementation first. Keep
+`GITHUB_REF` set to the branch that contains the code the runner should execute.
+
+### 2. Configure the private R2 bucket
+
+Keep the bucket private and keep the existing `QUEUE` Pages binding. Create an
+R2 Object Read & Write API token scoped to this bucket. Add these four values in
+both places:
+
+- Cloudflare Pages → Settings → Variables and Secrets
+- GitHub repository → Settings → Secrets and variables → Actions → Secrets
+
+```text
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET
+```
+
+Direct uploads need an R2 CORS policy. In R2 → the bucket → Settings → CORS,
+paste [`apps/mission-control/r2-cors.json`](apps/mission-control/r2-cors.json).
+Replace `https://factory.coderfact.com` if the portal uses another hostname.
+The policy permits `PUT` only from the portal and local development origins.
+
+### 3. Let Pages start GitHub Actions
+
+Create a fine-grained GitHub personal access token limited to this repository
+with **Actions: write** permission. Add it to Cloudflare Pages as a secret, then
+add the remaining values as Pages variables:
+
+```text
+GITHUB_ACTIONS_TOKEN=<fine-grained token>
+GITHUB_REPOSITORY=Giri-Suman/content-factory
+GITHUB_REF=master
+GITHUB_WORKFLOW=factory-job.yml
+```
+
+The cloud workflow needs the four R2 secrets above. Add only the provider
+secrets for features you use, such as `OPENROUTER_API_KEY`, `GEMINI_API_KEY`,
+`GROQ_API_KEY`, and `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. It installs
+ffmpeg, Manim, whisper and eSpeak on an ephemeral Ubuntu runner. Renders and
+edited videos stream back to R2 before the runner disappears.
+
+### 4. Restrict the URL to your family
+
+In Cloudflare Zero Trust, create a self-hosted Access application for the portal
+hostname. Create one Allow policy whose Include rules contain exactly the three
+family email addresses. Use one-time PIN or your chosen identity provider.
+Do not add an `Everyone` allow rule.
+
+Copy the application's audience tag and set these Pages values:
+
+```text
+CF_ACCESS_TEAM_DOMAIN=<your-team>.cloudflareaccess.com
+CF_ACCESS_AUD=<application audience tag>
+FACTORY_OWNER_EMAIL=<your email, lowercase>
+```
+
+The portal verifies the Access JWT signature, issuer, audience and expiry on
+every request. The verified email is written into upload and job audit records;
+the browser cannot choose or spoof it.
+
+### 5. Optional Google Drive intake
+
+Enable Google Drive API in a Google Cloud project, create a service account,
+and create a JSON key for it. Add these GitHub Actions secrets:
+
+```text
+GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL=<client_email from the JSON key>
+GOOGLE_DRIVE_PRIVATE_KEY=<private_key from the JSON key>
+```
+
+Share each source video (or its containing folder) with the service-account
+email as **Viewer**. In Studio choose **Import from Google Drive** and paste the
+file link. The runner downloads that file directly from Drive and streams it to
+private R2 footage; it never passes through the laptop or the Pages Worker.
+
+### 6. Deploy and verify
+
+The existing `Deploy portal` workflow builds the Pages-compatible Next app and
+deploys `content-factory-viewer` from `master`. Add `CLOUDFLARE_API_TOKEN` to
+GitHub Actions if it is not already present, merge to `master`, then run that
+workflow.
+
+Verify with one small MP4 and the bundled math demo:
+
+1. Sign in with each allowed family email and confirm another email is denied.
+2. Upload the MP4 in Studio. It should show browser-to-R2 progress and appear in
+   the picker without the laptop running.
+3. Run **Render the demo**. The job should change from queued → running → done
+   and the result should appear under Renders.
+4. Edit a script, reload it, and confirm the edit remains.
+5. Download the finished MP4 with the laptop switched off.
+
+If you already have useful state only on the laptop, run `factory sync push`
+once before switching it off. New edits then live in R2 and the sync conflict
+guard refuses to overwrite a newer cloud copy.
+
+---
+
+## Legacy laptop-hosted route
+
 ## Zero-cost, from anywhere — the short version
 
 You own **coderfact.com and it is already on Cloudflare**, which makes the free

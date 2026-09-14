@@ -38,17 +38,24 @@ export default function ScriptEditorPage() {
 
   const save = async () => {
     setSaving(true);
-    await fetch(`/api/scripts/${id}`, {
+    setError(null);
+    const result = await fetch(`/api/scripts/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ script }),
-    });
+    }).then((r) => r.json()).catch(() => ({ ok: false, error: "save failed" }));
     setSaving(false);
+    if (!result.ok) {
+      setError(result.error || "save failed");
+      return false;
+    }
+    setScript(result.script);
     setSaved(true);
+    return true;
   };
 
   const render = async () => {
-    await save();
+    if (!(await save())) return;
     const res = await fetch("/api/render", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -62,7 +69,7 @@ export default function ScriptEditorPage() {
     const poll = async () => {
       const jr = await fetch(`/api/jobs/${data.jobId}`).then((r) => r.json());
       setJob(jr.job);
-      if (jr.job?.status !== "running") clearInterval(pollRef.current);
+      if (jr.job?.status !== "running" && jr.job?.status !== "queued") clearInterval(pollRef.current);
     };
     poll();
     pollRef.current = setInterval(poll, 2500);
@@ -79,8 +86,8 @@ export default function ScriptEditorPage() {
           {saving ? <span className="spin" /> : null}
           {saved ? "Saved ✓" : "Save"}
         </button>
-        <button className="btn" onClick={render} disabled={job?.status === "running"}>
-          {job?.status === "running" ? (
+        <button className="btn" onClick={render} disabled={job?.status === "running" || job?.status === "queued"}>
+          {job?.status === "running" || job?.status === "queued" ? (
             <>
               <span className="spin" />
               rendering…

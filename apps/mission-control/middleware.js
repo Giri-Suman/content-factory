@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { getEnv } from "@factory-env";
+import { accessConfig, verifyAccessToken } from "./lib/access.js";
+import { AUTH_MODE_HEADER, USER_EMAIL_HEADER, USER_ROLE_HEADER } from "./lib/identity.js";
 
 /**
  * Gate for every route.
@@ -8,13 +11,10 @@ import { NextResponse } from "next/server";
  * the internet without this, anyone who finds the URL can run 39 commands on
  * your host and burn your OpenRouter balance.
  *
- * Deliberately simple: one shared password in FACTORY_PASSWORD, exchanged for
- * a signed cookie. A single-operator tool does not need accounts, and a real
- * auth provider would be more moving parts to get wrong.
- *
- * If FACTORY_PASSWORD is unset the portal stays open — that is correct for
- * localhost and is exactly why the deploy guide makes setting it step one. The
- * banner in Settings says which mode you are in, so "open" is never a surprise.
+ * Remote deployments use Cloudflare Access identities. A shared-password mode
+ * remains available for local/LAN use, and an entirely unconfigured portal is
+ * open only on loopback. That last rule matters: a missed Pages variable must
+ * fail closed instead of silently exposing the command surface.
  */
 
 const COOKIE = "factory_session";
@@ -37,6 +37,26 @@ function noRobots(res) {
   return res;
 }
 
+function requestWithIdentity(request, { email, role, mode }) {
+  const headers = new Headers(request.headers);
+  // These values are trusted only when set here. Delete anything supplied by
+  // the browser before inserting the verified identity.
+  headers.delete(USER_EMAIL_HEADER);
+  headers.delete(USER_ROLE_HEADER);
+  headers.delete(AUTH_MODE_HEADER);
+  headers.set(USER_EMAIL_HEADER, email);
+  headers.set(USER_ROLE_HEADER, role);
+  headers.set(AUTH_MODE_HEADER, mode);
+  return noRobots(NextResponse.next({ request: { headers } }));
+}
+
+function denied(request, message, status = 401) {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return noRobots(NextResponse.json({ ok: false, error: message }, { status }));
+  }
+  return noRobots(new NextResponse(message, { status, headers: { "content-type": "text/plain; charset=utf-8" } }));
+}
+
 /** Constant-time-ish compare so the response time does not leak the password. */
 function safeEqual(a, b) {
   const x = String(a);
@@ -55,11 +75,64 @@ async function tokenFor(password) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function middleware(request) {
-  const password = process.env.FACTORY_PASSWORD;
+/**
+ * Pages bindings live on getRequestContext().env, while local Next builds read
+ * process.env. Keep the lookup in one place so Access cannot accidentally look
+ * configured in one runtime and absent in the other.
+ */
+function runtimeEnv() {
+  const local = typeof process !== "undefined" ? process.env : {};
+  try {
+    return { ...local, ...(getEnv() || {}) };
+  } catch {
+    return local;
+  }
+}
 
-  // No password configured → local mode, everything open.
-  if (!password) return noRobots(NextResponse.next());
+const isLoopback = (hostname) => {
+  const host = String(hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+};
+
+export async function middleware(request) {
+  const env = runtimeEnv();
+  const password = env.FACTORY_PASSWORD;
+
+  let cfAccess;
+  try {
+    cfAccess = accessConfig(env);
+  } catch (e) {
+    return denied(request, e.message, 503);
+  }
+
+  if (cfAccess) {
+    const token = request.headers.get("cf-access-jwt-assertion");
+    if (!token) return denied(request, "Cloudflare Access authentication required");
+    try {
+      const claims = await verifyAccessToken(token, cfAccess);
+      const owner = String(env.FACTORY_OWNER_EMAIL || "").trim().toLowerCase();
+      const role = owner && claims.email === owner ? "owner" : "member";
+      if (request.nextUrl.pathname === "/login") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/";
+        url.search = "";
+        return noRobots(NextResponse.redirect(url));
+      }
+      return requestWithIdentity(request, { email: claims.email, role, mode: "cloudflare-access" });
+    } catch (e) {
+      return denied(request, e.message || "Cloudflare Access authentication failed");
+    }
+  }
+
+  // An unconfigured deployment is safe only on this machine. Pages must have
+  // Access or a password before it serves any page or API route.
+  if (!password) {
+    if (!isLoopback(request.nextUrl.hostname)) {
+      return denied(request, "Family access is not configured for this deployment.", 503);
+    }
+    const email = String(env.FACTORY_OWNER_EMAIL || "local-owner").trim().toLowerCase();
+    return requestWithIdentity(request, { email, role: "owner", mode: "local" });
+  }
 
   const { pathname } = request.nextUrl;
   /**
@@ -82,7 +155,10 @@ export async function middleware(request) {
 
   const expected = await tokenFor(password);
   const got = request.cookies.get(COOKIE)?.value;
-  if (got && safeEqual(got, expected)) return noRobots(NextResponse.next());
+  if (got && safeEqual(got, expected)) {
+    const email = String(env.FACTORY_OWNER_EMAIL || "owner").trim().toLowerCase();
+    return requestWithIdentity(request, { email, role: "owner", mode: "password" });
+  }
 
   // API calls get a 401 rather than an HTML redirect, so a fetch fails loudly
   if (pathname.startsWith("/api/")) {

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { videoArgs } from "../../shared/src/encoder.js";
+import { pushRender } from "../../shared/src/r2.js";
 
 /**
  * Smart 16:9 -> 9:16 reframe.
@@ -113,6 +114,9 @@ export async function reframe(argv = []) {
     return false;
   }
   console.log(`done -> ${path.relative(repoRoot, out)}\n`);
+  const uploaded = await pushRender("reframed", [out]);
+  if (uploaded.uploaded?.length) console.log(`cloud -> ${uploaded.uploaded[0].key}`);
+  if (uploaded.failed?.length) console.error(`  cloud copy failed: ${uploaded.failed[0].error}`);
   console.log(`RESULT ${JSON.stringify({ out, focus, confidence: det.confidence, from: `${det.w}x${det.h}` })}`);
   return true;
 }

@@ -59,6 +59,20 @@ export async function GET(_req, { params }) {
   let log = "";
 
   if (status === "queued") {
+    if (job.executor === "github-actions") {
+      return json({
+        job: {
+          ...job,
+          status,
+          log: [
+            `${job.cmd || job.kind} — sent at ${hhmm(job.queuedAt)} IST`,
+            "Waiting for GitHub Actions to claim this cloud job.",
+            "",
+            "The laptop can stay off and this page can be closed.",
+          ].join("\n"),
+        },
+      });
+    }
     const [when, man, ahead] = await Promise.all([whenWillItRun(env), readCommands(env), aheadOf(env, job)]);
 
     /* A live watcher claims work within a couple of seconds, so calling this
@@ -95,7 +109,9 @@ export async function GET(_req, { params }) {
       "You can close this page — it runs whether or not the tab is open.",
     ].join("\n");
   } else if (status === "running") {
-    log = `Running on the laptop since ${hhmm(job.startedAt)} IST.`;
+    log = job.executor === "github-actions"
+      ? `Running in GitHub Actions since ${hhmm(job.startedAt)} IST.`
+      : `Running on the laptop since ${hhmm(job.startedAt)} IST.`;
   } else if (status === "done") {
     log = job.result || "Finished.";
   } else if (status === "failed") {

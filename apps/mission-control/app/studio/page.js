@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { CloudFootagePicker } from "../../components/CloudFootagePicker.js";
 
 /**
  * Studio — every command, organised by what you're making.
@@ -37,61 +38,6 @@ const TERMINAL_ONLY = [
   ["factory publish <id> --go", "the one real upload. Kept in the terminal so it can never be a mis-click"],
 ];
 
-/**
- * Upload + pick, for commands that take a file.
- *
- * A path like "D:\footage\take1.mp4" only means something on the machine you
- * were sitting at. Once the portal is reachable from a laptop or phone — which
- * is exactly when you want the capture lane, right after filming — typing a
- * path is useless. Upload, then pick.
- */
-function FilePicker({ value, onChange, uploads, refreshUploads, label }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-
-  const upload = async (file) => {
-    if (!file) return;
-    setBusy(true);
-    setErr(null);
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("label", file.name.replace(/\.[^.]+$/, "").slice(0, 24));
-    const res = await fetch("/api/upload", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: "upload failed" }));
-    setBusy(false);
-    if (!res.ok) return setErr(res.error);
-    await refreshUploads();
-    onChange(res.path);
-  };
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <select value={value || ""} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 260, fontSize: 12 }}>
-          <option value="">{uploads.length ? "pick uploaded footage…" : "no footage uploaded yet"}</option>
-          {uploads.map((u) => (
-            <option key={u.name} value={u.path}>
-              {u.name} · {(u.bytes / 1e6).toFixed(0)}MB
-            </option>
-          ))}
-        </select>
-        <label className="btn ghost sm" style={{ cursor: busy ? "default" : "pointer" }}>
-          {busy ? <span className="spin" /> : null}
-          {busy ? "uploading…" : "Upload"}
-          <input type="file" accept="video/*,audio/*,image/*" style={{ display: "none" }} disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />
-        </label>
-      </div>
-      <input
-        className="mono"
-        placeholder={`…or type a path on the host — ${label}`}
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-        style={{ width: "100%", maxWidth: 500, fontSize: 11.5, marginTop: 6 }}
-      />
-      {err && <div style={{ color: "#ff6b6b", fontSize: 11.5, marginTop: 4 }}>{err}</div>}
-    </div>
-  );
-}
-
 /** One runnable command. Used in both the vertical block and the shared list. */
 function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders, uploads, refreshUploads }) {
   const needsPick = c.argKind === "briefId" || c.argKind === "renderId";
@@ -101,7 +47,7 @@ function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders, up
         <button
           className={`btn ${c.primary ? "" : "ghost"} sm`}
           style={{ minWidth: 172, justifyContent: "center", borderColor: c.primary && accent ? accent : undefined }}
-          disabled={Boolean(busy)}
+          disabled={Boolean(busy) || c.available === false}
           onClick={() => run(c)}
         >
           {busy === c.key ? <span className="spin" /> : null}
@@ -113,7 +59,8 @@ function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders, up
             factory {c.id}
             {c.argKind ? " …" : ""}
             {c.slow ? "   · runs in the background" : ""}
-            {c.danger === "spend" ? "   · ⚠ spends money" : ""}
+            {c.danger ? `   · ⚠ ${c.danger}` : ""}
+            {c.available === false ? (c.ownerOnly ? "   · owner only" : "   · unavailable without local files") : ""}
           </div>
         </div>
       </div>
@@ -138,7 +85,7 @@ function Row({ c, accent, busy, out, inputs, setInputs, run, briefs, renders, up
               })}
             </select>
           ) : c.argKind === "file" ? (
-            <FilePicker
+            <CloudFootagePicker
               value={inputs[c.key]}
               onChange={(v) => setInputs((i) => ({ ...i, [c.key]: v }))}
               uploads={uploads}
@@ -203,6 +150,7 @@ export default function StudioPage() {
   };
 
   const run = async (c) => {
+    if (c.danger && !window.confirm(`${c.label}: ${c.danger}. Continue?`)) return;
     setBusy(c.key);
     setOut((o) => ({ ...o, [c.key]: "running…" }));
     const res = await fetch("/api/run", {
@@ -226,8 +174,9 @@ export default function StudioPage() {
       const j = await fetch(`/api/jobs/${res.jobId}`).then((r) => r.json()).catch(() => null);
       if (!j?.job) return;
       setOut((o) => ({ ...o, [c.key]: j.job.log || "running…" }));
-      if (j.job.status !== "running") {
+      if (j.job.status !== "running" && j.job.status !== "queued") {
         clearInterval(poll.current);
+        if (c.key === "drive-import" && j.job.status === "done") refreshUploads();
         setBusy(null);
       }
     }, 1500);

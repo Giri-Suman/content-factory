@@ -28,7 +28,7 @@
  */
 
 import { createHash, createHmac } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { createReadStream, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { loadEnv } from "./config.js";
 
@@ -192,6 +192,47 @@ export function presignGet(key, expiresSec = 604800) {
   return `https://${cfg.host}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 }
 
+/** Presign a streaming PUT. The payload is intentionally unsigned. */
+export function presignPut(key, expiresSec = 900) {
+  const cfg = r2Config();
+  if (!cfg) throw new Error("R2 is not configured");
+  if (!Number.isInteger(expiresSec) || expiresSec < 1 || expiresSec > 604800) {
+    throw new Error("presigned URLs cannot exceed 7 days (604800s)");
+  }
+  const { amzDate, date } = stamps();
+  const scope = `${date}/${REGION}/${SERVICE}/aws4_request`;
+  const canonicalUri = `/${cfg.bucket}/${encodeKey(key)}`;
+  const params = {
+    "X-Amz-Algorithm": ALGO,
+    "X-Amz-Credential": `${cfg.accessKeyId}/${scope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresSec),
+    "X-Amz-SignedHeaders": "host",
+  };
+  const canonicalQuery = Object.keys(params)
+    .sort()
+    .map((k) => `${rfc3986(k)}=${rfc3986(params[k])}`)
+    .join("&");
+  const canonicalRequest = ["PUT", canonicalUri, canonicalQuery, `host:${cfg.host}\n`, "host", "UNSIGNED-PAYLOAD"].join("\n");
+  const stringToSign = [ALGO, amzDate, scope, sha256hex(canonicalRequest)].join("\n");
+  const signature = createHmac("sha256", signingKey(cfg.secretAccessKey, date)).update(stringToSign).digest("hex");
+  return `https://${cfg.host}${canonicalUri}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+}
+
+/** Upload a local file without reading a multi-gigabyte video into RAM. */
+export async function putFileObject(key, filePath, { contentType = "application/octet-stream" } = {}) {
+  const size = statSync(filePath).size;
+  if (size > 5 * 1024 ** 3) throw new Error(`${path.basename(filePath)} is over R2's 5GB single-PUT limit`);
+  const response = await fetch(presignPut(key, 1800), {
+    method: "PUT",
+    headers: { "content-type": contentType, "content-length": String(size) },
+    body: createReadStream(filePath),
+    duplex: "half",
+  });
+  if (!response.ok) throw new Error(`R2 streaming PUT ${key} failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
+  return { key, bytes: size, etag: response.headers.get("etag") || null };
+}
+
 /* ----------------------------------------------------------------- list --- */
 
 export async function listObjects(prefix = "") {
@@ -240,14 +281,8 @@ export async function listObjects(prefix = "") {
 /* ------------------------------------------------------- render helpers --- */
 
 const CONTENT_TYPES = { ".mp4": "video/mp4", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".wav": "audio/wav", ".mp3": "audio/mpeg" };
-const MAX_BYTES = 200 * 1024 * 1024;
-
 /** Upload one local file under `renders/<id>/`. Key mirrors the local layout. */
 export async function pushFile(id, filePath) {
-  const size = statSync(filePath).size;
-  if (size > MAX_BYTES) {
-    throw new Error(`${path.basename(filePath)} is ${Math.round(size / 1048576)}MB — over the ${MAX_BYTES / 1048576}MB single-PUT cap (multipart not implemented)`);
-  }
   const ext = path.extname(filePath).toLowerCase();
   /* Keep the subdirectory. The comment above always claimed the key mirrors the
      local layout, but basename() flattened it - so renders/<id>/thumbs/X.png
@@ -258,7 +293,7 @@ export async function pushFile(id, filePath) {
   const at = filePath.lastIndexOf(marker);
   const rel = at >= 0 ? filePath.slice(at + marker.length).split(path.sep).join("/") : path.basename(filePath);
   const key = `renders/${id}/${rel}`;
-  const r = await putObject(key, readFileSync(filePath), { contentType: CONTENT_TYPES[ext] || "application/octet-stream" });
+  const r = await putFileObject(key, filePath, { contentType: CONTENT_TYPES[ext] || "application/octet-stream" });
   return { ...r, url: presignGet(key) };
 }
 

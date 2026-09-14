@@ -9,15 +9,12 @@ import { useEffect, useRef, useState } from "react";
  * QUEUED and may not start for hours, which this has to represent without
  * either spinning forever or claiming the work is done.
  *
- * So a queued job keeps polling briefly - long enough to catch the common case
- * where the laptop is awake and picks it up within a minute - then stops and
- * leaves the queue message on screen. `running` stays false while queued, so
- * the button re-enables instead of being stuck for the rest of the day.
+ * A queued job keeps polling until either GitHub Actions or the laptop runner
+ * records a terminal outcome. The button remains disabled for that same job,
+ * which prevents a second click from dispatching duplicate paid work.
  */
 
 const POLL_MS = 2500;
-/** ~1 minute of watching before we accept that this one is for later. */
-const QUEUED_POLL_LIMIT = 24;
 
 export function useJob() {
   const [job, setJob] = useState(null);
@@ -38,7 +35,6 @@ export function useJob() {
       return null;
     }
 
-    let queuedPolls = 0;
     const poll = async () => {
       const jr = await fetch(`/api/jobs/${data.jobId}`)
         .then((r) => r.json())
@@ -46,8 +42,7 @@ export function useJob() {
       if (!jr?.job) return;
       setJob(jr.job);
 
-      if (jr.job.status === "running") return; // keep watching
-      if (jr.job.status === "queued" && ++queuedPolls < QUEUED_POLL_LIMIT) return;
+      if (jr.job.status === "running" || jr.job.status === "queued") return;
       clearInterval(timer.current);
     };
     poll();
@@ -55,7 +50,7 @@ export function useJob() {
     return data.jobId;
   };
 
-  return { job, start, running: job?.status === "running" };
+  return { job, start, running: job?.status === "running" || job?.status === "queued" };
 }
 
 export function JobLog({ job }) {

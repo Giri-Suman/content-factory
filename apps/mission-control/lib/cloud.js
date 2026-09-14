@@ -7,23 +7,25 @@
  *
  *   readCollection()  state/os/<name>.json   <- pushed by `factory sync push`
  *   listRenders()     renders/               <- pushed on every render
- *   enqueue()         queue/pending/         <- drained by the laptop
+ *   enqueue()         queue/pending/         <- claimed by Actions or laptop
  *
  * WHAT CHANGES FOR THE USER: reading is identical and faster (edge, not a tunnel
- * to a 2-core CPU). EXECUTING becomes asynchronous - a click queues the job and
- * the laptop runs it. That is the one real behavioural difference, and the UI is
- * expected to say so rather than pretend the work happened.
+ * to a 2-core CPU). EXECUTING becomes asynchronous: a click creates a durable
+ * job and dispatches GitHub Actions when configured. The UI follows that job
+ * instead of pretending it completed inside the Worker request.
  *
  * WHAT DOES NOT MOVE: `doctor` and `health` inspect the local machine - ffmpeg,
  * disk, the Python venv. Run from the cloud they would describe a runner that
  * does not exist, so they stay laptop-only and are marked as such.
  *
- * SAFETY: enqueue() writes a registry KEY, never a command line. argv is rebuilt
- * on the laptop from that key. This is the same rule the local runner has always
- * followed, and it matters more here because the endpoint is public.
+ * SAFETY: enqueue() writes a registry KEY, never a command line. The executor
+ * rebuilds argv from that key. This is the same rule the local runner has always
+ * followed, and it matters more here because the endpoint is internet-facing.
  */
 
-import { dedupeKey, jobIdentity } from "../../../packages/shared/src/commands.js";
+import { CLOUD_RUNNABLE_KEYS, COMMANDS, dedupeKey, jobIdentity, keyOf } from "../../../packages/shared/src/commands.js";
+import { dispatchJob, githubConfig } from "./github.js";
+import { identityFromRequest } from "./identity.js";
 
 const STATE = "state";
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -56,6 +58,27 @@ export async function readCollection(env, name) {
 
 export const readConfig = (env) => readJson(env, `${STATE}/config.json`, {});
 export const readPerf = (env) => readJson(env, `${STATE}/perf.json`, {});
+
+export async function writeConfig(env, patch, requestedBy = "portal") {
+  if (!env?.QUEUE) throw new Error("storage is not bound");
+  const current = await readConfig(env);
+  const mergeFields = ["categories", "edit", "scoreWeights", "aiTiers", "serviceTiers"];
+  const next = {
+    ...current,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+    updatedBy: String(requestedBy || "portal").slice(0, 120),
+  };
+  for (const field of mergeFields) {
+    if (patch[field] && typeof patch[field] === "object" && !Array.isArray(patch[field])) {
+      next[field] = { ...(current[field] || {}), ...patch[field] };
+    }
+  }
+  const body = JSON.stringify(next, null, 2);
+  if (new TextEncoder().encode(body).byteLength > 256 * 1024) throw new Error("settings are over the 256KB limit");
+  await env.QUEUE.put(`${STATE}/config.json`, body, { httpMetadata: { contentType: "application/json" } });
+  return next;
+}
 
 /**
  * Which credentials the laptop has, as booleans - published by `factory sync
@@ -101,6 +124,31 @@ export async function readTrends(env) {
 
 /** One compiled script, by brief id. */
 export const readScript = (env, id) => readJson(env, `${STATE}/scripts/${id}.json`, null);
+
+/** Save a reviewed script directly to the canonical R2 state. */
+export async function writeScript(env, id, script, requestedBy = "portal") {
+  if (!env?.QUEUE) throw new Error("storage is not bound");
+  const safe = String(id || "").trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$/.test(safe)) throw new Error("invalid script id");
+  if (!script || typeof script !== "object" || Array.isArray(script)) throw new Error("script object required");
+  if (!Array.isArray(script.scenes) || !script.scenes.length || script.scenes.length > 100) {
+    throw new Error("script needs between 1 and 100 scenes");
+  }
+  for (const [index, scene] of script.scenes.entries()) {
+    if (!scene || typeof scene !== "object" || typeof scene.type !== "string") throw new Error(`scene ${index + 1} is invalid`);
+    if (typeof scene.voiceover !== "string" || scene.voiceover.length > 10000) throw new Error(`scene ${index + 1} needs valid voiceover`);
+  }
+  const saved = {
+    ...script,
+    id: safe,
+    updatedAt: new Date().toISOString(),
+    updatedBy: String(requestedBy || "portal").slice(0, 120),
+  };
+  const body = JSON.stringify(saved, null, 2);
+  if (new TextEncoder().encode(body).byteLength > 1024 * 1024) throw new Error("script is over the 1MB limit");
+  await env.QUEUE.put(`${STATE}/scripts/${safe}.json`, body, { httpMetadata: { contentType: "application/json" } });
+  return saved;
+}
 
 /* ------------------------------------------------------------- renders --- */
 
@@ -190,13 +238,14 @@ async function aheadOfJob(env, id) {
   return listed.objects.filter((o) => o.key < `queue/pending/${id}.json`).length;
 }
 
-export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
+export async function enqueue(env, { cmd, arg = "", requestedBy = "portal", requestedRole = "member", executor = "laptop" }) {
   if (!env?.QUEUE) throw new Error("queue storage is not bound");
   const man = await readCommands(env);
-  if (!man) throw new Error("no command manifest - run `factory sync push` once");
-
-  const row = man.commands.find((c) => c.key === cmd);
+  const builtIn = COMMANDS.find((c) => keyOf(c) === cmd);
+  const published = man?.commands?.find((c) => c.key === cmd);
+  const row = builtIn ? { ...published, ...builtIn, key: keyOf(builtIn) } : null;
   if (!row) throw new Error(`unknown command "${cmd}"`);
+  if (row.danger && requestedRole !== "owner") throw new Error("Only the workspace owner can run this command.");
 
   const text = String(arg ?? "").trim();
   if (row.argKind && !text) throw new Error(`${row.label} needs ${row.argLabel || row.argKind}`);
@@ -246,7 +295,9 @@ export async function enqueue(env, { cmd, arg = "", requestedBy = "portal" }) {
     kind: "command",
     cmd,
     input: text,
-    requestedBy: String(requestedBy).replace(CONTROL, "").slice(0, 40),
+    requestedBy: String(requestedBy).replace(CONTROL, "").slice(0, 120),
+    requestedRole: requestedRole === "owner" ? "owner" : "member",
+    executor,
     state: "pending",
     queuedAt: new Date().toISOString(),
   };
@@ -394,11 +445,35 @@ async function runLocally(request, cmd, arg) {
 /**
  * The one call every action route makes: do it now if we can, queue it if not.
  */
-export async function actOn(env, request, { cmd, arg = "", requestedBy = "portal" }) {
+export async function actOn(env, request, { cmd, arg = "" }) {
+  const identity = identityFromRequest(request);
+  const row = COMMANDS.find((item) => keyOf(item) === cmd);
+  if (!row) throw new Error(`unknown command "${cmd}"`);
+  if (row?.danger && !identity.isOwner) throw new Error("Only the workspace owner can run this command.");
+
   const direct = await runLocally(request, cmd, arg);
   if (direct) return direct;
-  const r = await enqueue(env, { cmd, arg, requestedBy });
-  return queuedResponse(r);
+  const github = githubConfig(env);
+  if (github && !CLOUD_RUNNABLE_KEYS.has(cmd)) {
+    throw new Error(`"${row.label}" still needs local files or an interactive session and is not available on the cloud runner yet.`);
+  }
+  const r = await enqueue(env, {
+    cmd,
+    arg,
+    requestedBy: identity.email,
+    requestedRole: identity.role,
+    executor: github ? "github-actions" : "laptop",
+  });
+  if (github) {
+    try {
+      const dispatch = await dispatchJob(env, r.record.id);
+      return queuedResponse(r, dispatch);
+    } catch (error) {
+      const message = `Cloud job ${r.record.id} was saved, but GitHub Actions could not start it. Retry this action. ${error.message}`;
+      return { ok: false, queued: true, retryable: true, jobId: r.record.id, id: r.record.id, executor: "github-actions", error: message, out: message, message };
+    }
+  }
+  return queuedResponse(r, { executor: "laptop", configured: false });
 }
 
 /**
@@ -410,9 +485,18 @@ export async function actOn(env, request, { cmd, arg = "", requestedBy = "portal
  * queued perfectly well produced no visible result and read as a dead button.
  * Both keys are sent: `out` for the existing UI, `message` for anything newer.
  */
-export function queuedResponse(r) {
+export function queuedResponse(r, dispatch = null) {
   const text = queuedMessage(r);
-  return { ok: true, queued: true, jobId: r.record.id, id: r.record.id, message: text, out: text };
+  return {
+    ok: true,
+    queued: true,
+    jobId: r.record.id,
+    id: r.record.id,
+    executor: dispatch?.executor || r.record.executor || "laptop",
+    dispatched: Boolean(dispatch?.dispatched),
+    message: text,
+    out: text,
+  };
 }
 
 /**
@@ -429,8 +513,14 @@ export function notAvailable(action, hint) {
 }
 
 /** The sentence a person reads after pressing a button. */
-export function queuedMessage({ row, ahead, when, duplicate }) {
+export function queuedMessage({ row, ahead, when, duplicate, record }) {
   const tail = ahead ? ` ${ahead} job(s) ahead of it.` : "";
+  const cloud = record?.executor === "github-actions";
+  if (cloud) {
+    return duplicate
+      ? `"${row.label}" already has the same cloud job. GitHub Actions has been asked to run it again if it was not already claimed.`
+      : `"${row.label}" was sent to GitHub Actions. It runs in the cloud, so the laptop can stay off and this page can be closed.`;
+  }
   // Silently reusing the existing job would look like the click did nothing -
   // the very thing that caused the double-click in the first place.
   if (duplicate) {
@@ -494,7 +584,8 @@ export async function listScripts(env, limit = 60) {
  */
 export async function readJob(env, id) {
   if (!env?.QUEUE) return null;
-  const safe = String(id).split("/").pop();
+  const safe = String(id || "").trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(safe)) return null;
   for (const state of ["running", "pending", "done", "failed"]) {
     const rec = await readJson(env, `queue/${state}/${safe}.json`, null);
     if (rec) return { ...rec, state: rec.state || state };

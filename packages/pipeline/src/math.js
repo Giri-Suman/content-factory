@@ -6,6 +6,7 @@ import { chat, providerStatus } from "../../llm/src/llm.js";
 import { MATH_GUIDE, buildMathPrompt, lintLayout, lintManim } from "../../studio/src/mathStyle.js";
 import { synthesize, ffprobeDuration } from "./voice.js";
 import { noteDegradation } from "../../shared/src/degradations.js";
+import { pushRender } from "../../shared/src/r2.js";
 
 const FPS = 30;
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
@@ -199,6 +200,9 @@ export async function mathShort(argv) {
     console.error("overlay render FAILED");
     return false;
   }
+  const uploaded = await pushRender(id, [out]);
+  if (uploaded.uploaded?.length) console.log(`cloud -> ${uploaded.uploaded[0].key}`);
+  if (uploaded.failed?.length) console.error(`  cloud copy failed: ${uploaded.failed[0].error}`);
   console.log(`\ndone -> ${out}\n`);
   console.log(`RESULT ${JSON.stringify({ out, id, title: spec.title })}`);
   return true;

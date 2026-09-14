@@ -20,7 +20,7 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const arg = String(body.briefId || body.id || "").trim();
   try {
-    return json(await actOn(env, request, { cmd: "produce", arg, requestedBy: body.requestedBy || "portal" }));
+    return json(await actOn(env, request, { cmd: "render-script", arg }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

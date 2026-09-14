@@ -1,9 +1,8 @@
 /**
  * One compiled script.
  *
- * Read-only in the cloud: editing a script writes to the laptop's data/scripts,
- * and a cloud write would be silently overwritten by the next `sync push`.
- * Saying so is better than accepting an edit that quietly disappears.
+ * R2 is canonical for remote edits. The sync layer compares remote timestamps
+ * before a laptop push, so a reviewed script cannot be silently overwritten.
  */
 
 import { getEnv } from "@factory-env";
@@ -12,7 +11,8 @@ export const runtime = "edge";
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
-import { readScript } from "../../../../lib/cloud.js";
+import { readScript, writeScript } from "../../../../lib/cloud.js";
+import { identityFromRequest } from "../../../../lib/identity.js";
 
 export async function GET(request, { params }) {
   const env = getEnv();
@@ -22,9 +22,14 @@ export async function GET(request, { params }) {
   return json({ script });
 }
 
-export async function PUT() {
-  return json(
-    { ok: false, error: "Scripts are read-only from the cloud portal - edit on the laptop, then `factory sync push`." },
-    405
-  );
+export async function PUT(request, { params }) {
+  const env = getEnv();
+  const { id } = await params;
+  const { script } = await request.json().catch(() => ({}));
+  try {
+    const saved = await writeScript(env, id, script, identityFromRequest(request).email);
+    return json({ ok: true, script: saved });
+  } catch (error) {
+    return json({ ok: false, error: error.message }, 400);
+  }
 }

@@ -2,6 +2,7 @@
   "name": "@factory/mission-control",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev -p 4600",
     "build": "next build",

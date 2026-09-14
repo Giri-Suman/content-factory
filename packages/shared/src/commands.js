@@ -70,6 +70,8 @@ export const COMMANDS = [
 
   /* ---------------- make ---------------- */
   { id: "produce", args: [], argKind: "briefId", stage: "make", cat: "all", label: "Produce", desc: "the whole conveyor — routes by vertical automatically", primary: true, slow: true },
+  { id: "render", args: [], argKind: "scriptId", argLabel: "Reviewed script id", stage: "make", cat: "all", label: "Render a reviewed script", desc: "render the saved scene edits exactly as reviewed", key: "render-script", slow: true },
+  { id: "drive", args: ["import"], argKind: "url", argLabel: "Shared Google Drive video link", stage: "make", cat: "all", label: "Import from Google Drive", desc: "copy a shared video into private cloud footage without downloading it to a laptop", key: "drive-import", primary: true, slow: true },
   { id: "math", args: [], argKind: "text", argLabel: "Math topic", stage: "make", cat: "math", label: "Make a math short", desc: "LLM writes the Manim scene and renders it", primary: true, slow: true },
   { id: "math", args: ["gauss-sum", "--demo"], stage: "make", cat: "math", label: "Render the demo", desc: "bundled scene, works with no AI key", key: "math-demo", slow: true },
   { id: "edit", args: ["--beauty"], argKind: "file", argLabel: "Path to your footage", stage: "make", cat: "beauty", label: "AI Cut your footage", desc: "silences, fillers, retakes, captions - colour measured, never pushed", key: "edit-beauty", primary: true, slow: true },
@@ -109,20 +111,20 @@ export const COMMANDS = [
   { id: "publish", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Publish dry run", desc: "uploads nothing — shows what would happen", primary: true },
   { id: "center", args: [], stage: "ship", cat: "all", label: "Publish queue", desc: "what is staged and ready" },
   { id: "sync", args: ["status"], stage: "ship", cat: "all", label: "Cloud sync status", desc: "is the cloud able to run your jobs", key: "sync-status" },
-  { id: "sync", args: ["push"], stage: "ship", cat: "all", label: "Send state to cloud", desc: "lets GitHub Actions render and edit your briefs", key: "sync-push" },
-  { id: "sync", args: ["pull"], stage: "ship", cat: "all", label: "Get cloud results", desc: "bring back what the cloud did while this PC slept", key: "sync-pull" },
+  { id: "sync", args: ["push"], stage: "ship", cat: "all", label: "Send state to cloud", desc: "lets GitHub Actions render and edit your briefs", key: "sync-push", danger: "owner maintenance" },
+  { id: "sync", args: ["pull"], stage: "ship", cat: "all", label: "Get cloud results", desc: "bring back what the cloud did while this PC slept", key: "sync-pull", danger: "owner maintenance" },
   { id: "sync", args: ["footage", "push"], argKind: "text", argLabel: "Footage file name", stage: "ship", cat: "beauty", label: "Send footage to cloud", desc: "so a cloud edit can use it - no laptop needed after this", key: "sync-footage-push", slow: true },
   { id: "r2", args: ["status"], stage: "ship", cat: "all", label: "Off-machine storage", desc: "what is backed up to R2 and what is not", key: "r2-status" },
   { id: "inbox", args: ["list"], stage: "make", cat: "all", label: "Footage drop folder", desc: "where to copy big files instead of uploading them", key: "inbox-list", primary: true },
   { id: "inbox", args: ["edit"], argKind: "text", argLabel: "File name from the drop folder", stage: "make", cat: "beauty", label: "AI Cut a dropped file", desc: "no upload — just the file name", key: "inbox-edit", slow: true },
   { id: "queue", args: ["status"], stage: "ship", cat: "all", label: "Request queue", desc: "what others have asked for while this PC was asleep", key: "queue-status", primary: true },
-  { id: "queue", args: ["drain"], stage: "ship", cat: "all", label: "Run queued requests", desc: "work through the backlog oldest first", key: "queue-drain", slow: true },
-  { id: "queue", args: ["retry"], stage: "ship", cat: "all", label: "Retry failed requests", desc: "requeue everything that errored", key: "queue-retry" },
+  { id: "queue", args: ["drain"], stage: "ship", cat: "all", label: "Run queued requests", desc: "work through the backlog oldest first", key: "queue-drain", danger: "owner maintenance", slow: true },
+  { id: "queue", args: ["retry"], stage: "ship", cat: "all", label: "Retry failed requests", desc: "requeue everything that errored", key: "queue-retry", danger: "may repeat paid work" },
   { id: "viewer", args: ["build"], stage: "ship", cat: "all", label: "Rebuild public page", desc: "refresh the always-on video list", key: "viewer-build" },
   { id: "r2", args: ["push"], argKind: "renderId", stage: "ship", cat: "all", label: "Push a render off this PC", desc: "makes it downloadable anywhere, even with this laptop asleep", key: "r2-push", slow: true },
   { id: "r2", args: ["push", "--all"], stage: "ship", cat: "all", label: "Push every render", desc: "backfill everything not yet uploaded", key: "r2-push-all", slow: true },
   { id: "r2", args: ["url"], argKind: "renderId", stage: "ship", cat: "all", label: "Get download links", desc: "shareable links, valid up to 7 days", key: "r2-url" },
-  { id: "r2", args: ["prune"], stage: "ship", cat: "all", label: "Free expired storage", desc: "delete anything past 48h — permanent", key: "r2-prune" },
+  { id: "r2", args: ["prune"], stage: "ship", cat: "all", label: "Free expired storage", desc: "delete anything past 48h — permanent", key: "r2-prune", danger: "deletes remote files" },
   { id: "r2", args: ["prune", "--dry-run"], stage: "ship", cat: "all", label: "Preview what expires", desc: "shows what prune would delete, deletes nothing", key: "r2-prune-dry" },
   { id: "r2", args: ["rm"], argKind: "renderId", stage: "ship", cat: "all", label: "Delete one from storage", desc: "permanent in R2; the local copy stays", key: "r2-rm", danger: "deletes remote files" },
 
@@ -161,6 +163,23 @@ export function argvFor(cmd, input = "") {
 
 /** Every command id the registry can run — the runner's allowlist. */
 export const RUNNABLE_IDS = [...new Set(COMMANDS.map((c) => c.id))];
+
+/**
+ * Commands an ephemeral Linux runner is allowed to execute from a remote job.
+ * This is intentionally an allowlist. Local maintenance, interactive OAuth,
+ * publishing, and recursive queue/sync commands cannot be reached by changing
+ * an R2 record.
+ */
+export const CLOUD_RUNNABLE_KEYS = new Set([
+  "radar-collect", "score", "evidence-report", "evidence-quotes", "cap-seasonal", "cap-seasonal-makeup",
+  "keywords", "ideabank-rank", "lab-extract", "yt-trending", "brief", "brief-topic", "claims-map",
+  "claims-audit", "capture-log", "catalog-fanout", "produce", "render-script", "drive-import", "math",
+  "math-demo", "edit-beauty", "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut",
+  "edit-screencast", "edit-screencast-ai", "reframe", "motion-list", "tools-prompter", "tools-gaps",
+  "tools-repurpose", "tools-competitors", "tools-calendar", "tools-niche", "humanize-script",
+  "humanize-audit", "center", "analytics", "cal-scorecard", "cal-memo",
+  "lessons", "playbook", "prompts", "digest",
+]);
 
 /**
  * Deliberately terminal-only, with the reason. Listed so "why is this not a

@@ -148,6 +148,19 @@ async function readJsonOrNull(key) {
   }
 }
 
+/** Read one exact id without relying on R2 LIST consistency. */
+export async function findJob(id, wantedState = null) {
+  const safe = String(id || "").trim();
+  if (!/^[a-z0-9]{8,40}$/i.test(safe)) throw new Error("invalid queue job id");
+  const states = wantedState ? [wantedState] : STATES;
+  if (wantedState && !STATES.includes(wantedState)) throw new Error(`unknown state ${wantedState}`);
+  for (const state of states) {
+    const job = await readJsonOrNull(keyFor(state, safe));
+    if (job) return { ...job, state: job.state || state };
+  }
+  return null;
+}
+
 async function readJson(key) {
   // listObjects gives keys; fetching one object needs a signed GET, which
   // presignGet already produces — cheaper than adding another signed verb.
@@ -218,9 +231,14 @@ export const fail = async (job, error) => {
  * claimed forever. Without this the queue silently stops draining, which looks
  * identical to "nothing was requested".
  */
-export async function requeueStuck({ olderThanMin = 45 } = {}) {
+export async function requeueStuck({ olderThanMin = 45, executor = null, excludeExecutor = null } = {}) {
   const cutoff = Date.now() - olderThanMin * 60000;
-  const stuck = (await list("running")).filter((j) => (Date.parse(j.startedAt || "") || 0) < cutoff);
+  const stuck = (await list("running")).filter((j) => {
+    if ((Date.parse(j.startedAt || "") || 0) >= cutoff) return false;
+    if (executor !== null && j.executor !== executor) return false;
+    if (excludeExecutor !== null && j.executor === excludeExecutor) return false;
+    return true;
+  });
   for (const j of stuck) await move(j, "running", "pending", { requeuedAt: new Date().toISOString() });
   return stuck;
 }

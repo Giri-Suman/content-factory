@@ -60,8 +60,10 @@ export default function SettingsPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).then((r) => r.json());
-    if (res.config) setConfig((c) => ({ ...c, ...res.config }));
-    setSaved(true);
+    if (res.config) {
+      setConfig((c) => ({ ...c, ...res.config }));
+      setSaved(true);
+    }
   };
 
   const toggle = async (cat) => {
@@ -293,7 +295,7 @@ export default function SettingsPage() {
             <span className={`badge ${env.elevenlabs ? "ok" : "cool"}`}>{env.elevenlabs ? "configured" : "not set"}</span>
             <strong style={{ width: 90 }}>ElevenLabs</strong>
             <span className="muted" style={{ fontSize: 12 }}>
-              your cloned voice — until set, renders use the Windows TTS placeholder
+              your cloned voice — until set, renders use the system TTS placeholder
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

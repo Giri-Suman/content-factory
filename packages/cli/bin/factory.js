@@ -124,6 +124,17 @@ switch (cmd) {
     }
     break;
   }
+  case "drive": {
+    const { drive } = await import("../src/drive.js");
+    try {
+      const ok = await drive(rest);
+      process.exit(ok ? 0 : 1);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    break;
+  }
   case "inbox": {
     const { inbox } = await import("../src/inbox.js");
     try {
