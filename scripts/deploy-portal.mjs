@@ -45,4 +45,7 @@ mkdirSync(staticDir, { recursive: true });
 run("tar", ["-xzf", "portal-latest.tgz", "-C", "output/static"], path.join(app, ".vercel"));
 
 console.log("→ deploying (wrangler.toml supplies project, nodejs_compat and the R2 binding)");
-run("npx", ["wrangler", "pages", "deploy", "--branch=main", "--commit-dirty=true"], app, true);
+// Cloudflare marks `master` as this Pages project's production branch. Using
+// `main` creates only main.content-factory-viewer.pages.dev, leaving the public
+// content-factory-viewer.pages.dev URL on its previous deployment.
+run("npx", ["wrangler", "pages", "deploy", "--branch=master", "--commit-dirty=true"], app, true);

@@ -93,4 +93,4 @@ jobs:
           # No directory and no --project-name: wrangler.toml supplies both, plus
           # the nodejs_compat flag and the R2 binding. Passing a directory here
           # conflicts with pages_build_output_dir.
-          npx wrangler pages deploy --branch=main --commit-dirty=true
+          npx wrangler pages deploy --branch=master --commit-dirty=true
