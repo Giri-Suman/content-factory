@@ -23,6 +23,69 @@ Two steps need you: **approving the brief** and **tapping publish**. Everything 
 
 ---
 
+## Family portal — use it from anywhere
+
+Open [content-factory-viewer.pages.dev](https://content-factory-viewer.pages.dev)
+and enter the shared family password. The password is stored as a Cloudflare
+Pages secret; do not put it in this handbook, a script, or a Git commit. Anyone
+who knows it receives the same portal access, so change the Pages
+`FACTORY_PASSWORD` secret if it is shared outside the family.
+
+The portal is the shared workspace. Its state, scripts, footage, render files,
+job records, and finished downloads live in private Cloudflare R2 storage rather
+than on one laptop. You can open it from a phone or another computer to:
+
+- read the dashboard and research data;
+- create, edit, approve, and review briefs and scripts;
+- upload footage directly from the browser to R2, import a shared Google Drive
+  video when Drive is configured, preview it, and download finished files;
+- start supported jobs and watch them move from queued to running to done;
+- review renders, captions, thumbnails, quality checks, lessons, analytics,
+  costs, ideas, keywords, and workspace settings.
+
+The dashboard has 24 working areas:
+
+| Area | What it is for |
+|---|---|
+| Today, Trends, YouTube, Keywords, Ideas, Wishlist, Lab | Find and rank topics, hooks, search demand, competitor signals, and ideas |
+| Studio, Briefs, Scripts, Production, Math, Motion | Plan, approve, script, generate, and review video work |
+| Footage, Renders, Packaging, Tools, QC | Upload, edit, preview, download, caption, thumbnail, and quality-check content |
+| Catalog, Playbooks, Lessons, Analytics, Cost | Reuse a brief across formats, learn from results, and track usage and spending |
+| Publish, Settings | Review the publishing queue and manage safe workspace settings |
+
+### What runs in the cloud and what still needs the laptop
+
+| Capability | Works while the laptop is off? | Where it runs |
+|---|---:|---|
+| Sign in, browse every portal page, read shared data, edit briefs/scripts/settings | Yes | Cloudflare Pages + R2 |
+| Upload browser footage, preview/download R2 files | Yes | Browser + private R2 |
+| Import a shared Google Drive file | Yes, when Drive secrets are configured | GitHub Actions + Drive + R2 |
+| Trend collection, supported renders, edits, captions, Manim, ffmpeg, whisper | Yes, when GitHub Actions and its secrets are configured | GitHub-hosted Linux runner + R2 |
+| Queue status and completed job history | Yes | R2 |
+| Old local state migration | One time only | `factory sync push` on the laptop |
+| Commands not enabled for GitHub Actions | No | Laptop queue watcher |
+| Browser/Chrome evidence capture, local-only AI such as Ollama, or any local binary not installed in the cloud runner | No | Laptop |
+| YouTube OAuth and the final `publish <id> --go` action | No — deliberately manual | Laptop terminal |
+
+Cloud jobs are marked `github-actions`. They start on GitHub and the laptop
+watcher ignores them. Laptop fallback jobs are marked `laptop`; they wait in R2
+until the queue watcher runs. The installed Windows Startup shortcut starts that
+watcher after sign-in, so queued fallback work resumes automatically. A fully
+powered-off laptop cannot wake itself; scheduled wake from sleep is optional.
+
+To test the cloud-backed portal locally:
+
+```powershell
+cd "D:\youtube\automated website\content-factory"
+npx wrangler login                 # once per Windows profile
+npm run dev:cloud --workspace @factory/mission-control
+```
+
+Open `http://127.0.0.1:4700`. This starts the local portal, loopback runner,
+and laptop queue watcher together. Press Ctrl+C to stop them.
+
+---
+
 ## The four verticals
 
 Each has a different lane. That's the single most important thing to understand:
@@ -255,9 +318,10 @@ Tiers only fall **down**, never up — you're never charged more than you picked
 
 ## Portal or terminal?
 
-**Everything is a button now.** Open **Studio** (localhost:4600/studio), pick your
-vertical, and the commands appear in workflow order — find → plan → make →
-package → ship → learn. Buttons and `factory <cmd>` run exactly the same thing.
+**Everything is a button now.** Open **Studio** on the family portal, or run it
+locally at `http://127.0.0.1:4700/studio`, pick your vertical, and the commands
+appear in workflow order — find → plan → make → package → ship → learn. Buttons
+and `factory <cmd>` run exactly the same checked-in command registry.
 
 Three things stay in the terminal on purpose:
 
@@ -273,7 +337,15 @@ Three things stay in the terminal on purpose:
 npm run dev --prefix apps/mission-control      # localhost:4600
 ```
 
-24 tabs. **Studio** is the one to start with — every command, grouped by vertical. Others you will actually use: **Today** (what needs doing), **Briefs** (approve/kill), **Motion** (watch all 22 effects), **Renders** (preview video), **Publish**, **Settings** (tiers + keys).
+For the ordinary local Node version use `localhost:4600`. For the real
+Cloudflare Pages runtime and R2 bucket, use `npm run dev:cloud --workspace
+@factory/mission-control` and open `localhost:4700` instead.
+
+**Studio** is the one to start with — every command, grouped by vertical.
+**Today** shows what needs attention, **Briefs** approves or kills a plan,
+**Footage** and **Renders** handle files, **Motion** previews all effects,
+**Packaging** and **Tools** prepare delivery assets, and **Publish** keeps the
+final upload deliberate.
 
 ---
 
