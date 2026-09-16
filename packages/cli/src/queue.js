@@ -218,6 +218,32 @@ async function runPending({ limit = 0, quiet = false, watching = false, jobId = 
       console.log(`  FAILED - ${String(jobError.message).slice(0, 160)}`);
       bad++;
     } else {
+      /*
+       * The Pages portal reads state from R2, never this laptop's disk.  A
+       * local job used to be marked done before its changed collections were
+       * copied there, so Today immediately reloaded the same old snapshot.
+       * Sync before completing the queue record: the browser seeing `done`
+       * can now rely on the fresh state already being available.
+       *
+       * Cloud jobs do their own pull/run/push in runJob().  Repeating it here
+       * would both waste requests and risk replacing their newer state.
+       */
+      if (!cloud) {
+        try {
+          const synced = await pushState();
+          const changed = synced.pushed.length;
+          const conflicts = synced.conflicts?.length || 0;
+          const note = `synced ${changed} state file(s)${conflicts ? `; ${conflicts} newer cloud edit(s) preserved` : ""}`;
+          result = `${result}; ${note}`;
+          console.log(`  ${note}`);
+        } catch (syncError) {
+          // The command itself finished. Keep that fact in the job record,
+          // but make the portal-side freshness problem visible for recovery.
+          const note = `warning: cloud state sync failed: ${String(syncError.message).slice(0, 180)}`;
+          result = `${result}; ${note}`;
+          console.log(`  ${note}`);
+        }
+      }
       console.log(`  DONE - ${result}`);
       ok++;
     }
