@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadEnv, repoRoot } from "../../shared/src/config.js";
 import { withJobRun } from "../../shared/src/jobs.js";
+import { isConfigured } from "../../shared/src/r2.js";
+import { pushState } from "../../shared/src/stateSync.js";
 
 const CLI = fileURLToPath(new URL("../bin/factory.js", import.meta.url));
 const LOCK = path.join(repoRoot, "data", "worker.lock");
@@ -90,10 +92,21 @@ export async function runWorker(argv = []) {
   console.log(`\nfactory worker up${fast ? " (FAST mode: 90s/2.5m/5m)" : ""} — ctrl-c to stop`);
   console.log(`  collect+score every ${collectMs / 60e3}m · youtube+tracking every ${youtubeMs / 60e3}m · deep refresh every ${deepMs / 60e3}m · digest 08:00 IST\n`);
 
+  // The public portal reads its collections from R2. Scheduled work runs on
+  // this laptop, so publishing its changed state is part of completing a tick
+  // rather than a separate, easy-to-forget manual command.
+  const syncPortalState = async (name) => {
+    if (!isConfigured()) return;
+    const synced = await pushState();
+    const conflicts = synced.conflicts?.length || 0;
+    console.log(`[${stamp()}] ${name}: synced ${synced.pushed.length} state file(s)${conflicts ? `; preserved ${conflicts} newer cloud edit(s)` : ""}`);
+  };
+
   const collectTick = async () => {
     console.log(`[${stamp()}] tick: collect+score`);
     const { runRadar } = await import("../../radar/src/radar.js");
     await runRadar({ github: false });
+    await syncPortalState("collect+score");
   };
 
   const ranToday = async (jobName) => {
@@ -118,6 +131,7 @@ export async function runWorker(argv = []) {
     }
     const r = await pollTracked();
     if (r.polled) console.log(`  wishlist tracking: ${r.polled} updated`);
+    await syncPortalState("youtube+wishlist");
   };
 
   const deepTick = async () => {
@@ -159,6 +173,7 @@ export async function runWorker(argv = []) {
         })
       );
     }
+    await syncPortalState("deep refresh");
   };
 
   // P20: pace the synthetic lane to the configured cadence + warn on stale capture items
@@ -252,6 +267,7 @@ export async function runWorker(argv = []) {
       const { prune } = await import("./prune.js");
       await withJobRun("prune-report", async () => prune([]));
     }
+    await syncPortalState("daily digest");
   };
 
   // fire the fast lanes immediately so the system is warm from minute one
