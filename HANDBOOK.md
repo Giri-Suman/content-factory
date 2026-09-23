@@ -82,6 +82,12 @@ laptop is off. The scheduled workflow needs the repository's four `R2_*`
 secrets. If they are missing, its run fails visibly rather than silently
 updating a data branch the portal does not read.
 
+Refresh updates research and opportunity scores; it does not move an old brief
+to a new publishing date. **To Post Today** contains briefs due today (plus
+approved briefs without a date). Older unfinished briefs and old drafts appear
+as a backlog count with a link to Brief Studio, where their original dates and
+checklists remain available for review.
+
 To test the cloud-backed portal locally:
 
 ```powershell

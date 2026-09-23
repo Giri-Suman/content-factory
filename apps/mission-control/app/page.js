@@ -161,10 +161,11 @@ export default function TodayPage() {
       ) : (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} style={{ display: "grid", gap: 18 }}>
           {/* To Post Today */}
-          {d.toPost.length > 0 && (
-            <section>
-              <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>To Post Today</h2>
-              {d.toPost.map((b) => (
+          <section>
+            <h2 style={{ fontSize: 15.5, marginBottom: 8 }}>To Post Today</h2>
+            {d.toPost.length === 0 ? (
+              <div className="empty">nothing scheduled for today — use Generate Briefs on a new opportunity below</div>
+            ) : d.toPost.map((b) => (
                 <div key={b.id} className="panel" style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
                     <span className="badge ok">approved</span>
@@ -179,8 +180,17 @@ export default function TodayPage() {
                     </label>
                   ))}
                 </div>
-              ))}
-            </section>
+            ))}
+          </section>
+
+          {(d.overdueApprovedCount > 0 || d.staleDraftCount > 0) && (
+            <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="badge warm">backlog</span>
+              <span className="muted" style={{ flex: 1, fontSize: 12.5 }}>
+                {d.overdueApprovedCount || 0} older approved brief(s) · {d.staleDraftCount || 0} older draft(s)
+              </span>
+              <button className="btn ghost sm" onClick={() => router.push("/briefs")}>Review in Brief Studio</button>
+            </div>
           )}
 
           {/* Self-improvement (P19) */}

@@ -9,6 +9,7 @@ const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 import { actOn, readCollection } from "../../../lib/cloud.js";
+import { splitTodayBriefs } from "../../../lib/today-briefs.js";
 
 /**
  * The Today dashboard.
@@ -49,6 +50,7 @@ export async function GET() {
   const lastCollect = jobruns
     .filter((j) => j.job === "collect")
     .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))[0];
+  const briefLists = splitTodayBriefs(briefs);
 
   const today = new Date().toISOString().slice(0, 10);
   const memoRow = memos[0] || null;
@@ -68,10 +70,7 @@ export async function GET() {
     top: ranked.slice(0, 10),
     rising,
     outliers,
-    awaiting: briefs
-      .filter((b) => b.status === "draft")
-      .sort((a, b) => (a.deadline || "z").localeCompare(b.deadline || "z")),
-    toPost: briefs.filter((b) => b.status === "approved" && (b.checklistState || []).some((x) => !x)),
+    ...briefLists,
     lastCollect: lastCollect ? { at: lastCollect.startedAt, ok: lastCollect.ok, ms: lastCollect.ms } : null,
   });
 }
