@@ -61,6 +61,7 @@ The dashboard has 24 working areas:
 | Upload browser footage, preview/download R2 files | Yes | Browser + private R2 |
 | Import a shared Google Drive file | Yes, when Drive secrets are configured | GitHub Actions + Drive + R2 |
 | Trend collection, supported renders, edits, captions, Manim, ffmpeg, whisper | Yes, when GitHub Actions and its secrets are configured | GitHub-hosted Linux runner + R2 |
+| Automatic trend refresh for Today | Yes, when GitHub Actions R2 secrets are configured | GitHub Actions every six hours, then R2 |
 | Queue status and completed job history | Yes | R2 |
 | Old local state migration | One time only | `factory sync push` on the laptop |
 | Commands not enabled for GitHub Actions | No | Laptop queue watcher |
@@ -72,6 +73,14 @@ watcher ignores them. Laptop fallback jobs are marked `laptop`; they wait in R2
 until the queue watcher runs. The installed Windows Startup shortcut starts that
 watcher after sign-in, so queued fallback work resumes automatically. A fully
 powered-off laptop cannot wake itself; scheduled wake from sleep is optional.
+
+Today's **Refresh now** queues a full collect. When the portal reports “running
+on the laptop,” it can take 7–14 minutes; keep the page open to see completion,
+or reopen Today later. The separate scheduled collect runs every six hours in
+GitHub Actions and publishes directly to R2, so Today can update while the
+laptop is off. The scheduled workflow needs the repository's four `R2_*`
+secrets. If they are missing, its run fails visibly rather than silently
+updating a data branch the portal does not read.
 
 To test the cloud-backed portal locally:
 
