@@ -39,6 +39,9 @@ const LOCK_STALE_MS = 30000;
  */
 function withLock(file, fn) {
   const lockDir = `${file}.lock`;
+  // A fresh cloud runner has no data/os directory yet. Create the parent
+  // before the lock itself, or the first successful collect fails at save().
+  mkdirSync(path.dirname(file), { recursive: true });
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   for (;;) {
     try {
