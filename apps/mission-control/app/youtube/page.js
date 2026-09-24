@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n ?? 0));
 const TABS = ["Trending", "Niche Heat", "Watchlist", "Shorts Outliers", "Discover"];
@@ -11,6 +12,7 @@ export default function YouTubePage() {
   const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
+  const { jobs, follow, running } = useQueueMonitor();
 
   const load = () => fetch("/api/youtube").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -28,21 +30,25 @@ export default function YouTubePage() {
       body: JSON.stringify({ action: "watch", handle: target }),
     }).then((r) => r.json());
     setBusy(false);
-    setNote(res.ok ? `now watching ${target}` : res.error);
+    setNote(res.out || res.error || null);
     if (res.ok) {
       setHandle("");
-      load();
+      if (res.jobId) follow(res.jobId, load);
+      else load();
     }
   };
 
   const scan = async () => {
     setBusy(true);
-    setNote("scanning trending + niche heat in the background — refresh in ~30s");
-    await fetch("/api/youtube", {
+    setNote("Starting trending and niche heat scans…");
+    const res = await fetch("/api/youtube", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "scan" }),
-    });
+    }).then((response) => response.json());
+    setNote(res.out || res.error || null);
+    if (res.ok && res.jobIds?.length) follow(res.jobIds, load);
+    else if (res.ok) load();
     setBusy(false);
   };
 
@@ -58,8 +64,9 @@ export default function YouTubePage() {
       body: JSON.stringify({ action: "discover", seed: seed.trim() }),
     }).then((r) => r.json());
     setBusy(false);
-    setNote(res.ok ? null : res.error);
-    load();
+    setNote(res.out || res.error || null);
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const shortAction = async (videoId, action) => {
@@ -71,7 +78,9 @@ export default function YouTubePage() {
       body: JSON.stringify({ action, videoId }),
     }).then((r) => r.json());
     setBusy(false);
-    setNote(res.ok ? (action === "briefShort" ? "brief created — see Briefs" : "analyzed — see Wishlist") : res.error);
+    setNote(res.out || res.error || null);
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const rows = data ? (tab === "Trending" ? data.trending : tab === "Niche Heat" ? data.heat : null) : null;
@@ -102,7 +111,7 @@ export default function YouTubePage() {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        <button className="btn ghost sm" disabled={busy || !data?.hasKey} onClick={scan}>
+        <button className="btn ghost sm" disabled={busy || running || !data?.hasKey} onClick={scan}>
           Scan now
         </button>
         <span className="mono muted" style={{ fontSize: 11.5 }}>
@@ -115,6 +124,7 @@ export default function YouTubePage() {
           {note}
         </div>
       )}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {data?.nichemap && (
         <div className="panel" style={{ marginBottom: 16, borderColor: "var(--accent, #ffb224)" }}>

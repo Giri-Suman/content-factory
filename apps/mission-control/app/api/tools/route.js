@@ -38,7 +38,7 @@ export async function GET(request) {
     if (!cmd) return json({ ok: false, error: `unknown view "${view}"` }, 400);
     try {
       const r = await actOn(env, request, { cmd, arg: "", requestedBy: "portal" });
-      return json({ ok: r.ok !== false, queued: !r.ranLocally, text: r.out, out: r.out });
+      return json({ ok: r.ok !== false, queued: !r.ranLocally, jobId: r.jobId || null, text: r.out, out: r.out });
     } catch (e) {
       return json({ ok: false, error: e.message }, 400);
     }
@@ -74,12 +74,12 @@ const ACTIONS = {
   reframe: "reframe",
   longform: "longform",
   batch: "batch-3",
-  cta: null,
-  link: null,
-  nichepack: null,
-  replies: null,
-  stock: null,
-  translate: null,
+  cta: "tools-cta-next",
+  link: "tools-link",
+  nichepack: "tools-nichepack",
+  replies: "tools-replies",
+  stock: "tools-stock-video",
+  translate: "tools-translate",
 };
 const HINTS = {};
 
@@ -88,10 +88,11 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || "").trim();
   if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
-  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
+  const cmd = action === "stock" && body.arg2 === "music" ? "tools-stock-music"
+    : action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
   if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   try {
-    return json(await actOn(env, request, { cmd, arg: String(body.renderId || body.id || "").trim(), requestedBy: body.requestedBy || "portal" }));
+    return json(await actOn(env, request, { cmd, arg: String(body.arg || body.renderId || body.id || "").trim() }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

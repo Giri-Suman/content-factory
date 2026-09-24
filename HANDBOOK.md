@@ -98,6 +98,21 @@ labelled fill-in template for that same selected item; it does not invent a
 different topic. Edit the template or retry generation when provider capacity
 returns.
 
+The portal also follows queued Trends and YouTube scans, keyword passes,
+Wishlist URL analyses, Idea Bank syncs, playbook refreshes, lesson distillation,
+and Publish Center staging until each job finishes. Idea Bank series edits,
+IG/FB manual Wishlist metrics, lesson and prompt decisions, QC escalation
+resolution, and Golden 60 checks save to R2 immediately. The Title Lab scores
+titles and hooks instantly in its labelled heuristic mode. AI title rewriting
+remains a local CLI capability when an AI provider is available.
+
+The Publish Center can stage an approved brief and record a manually posted
+item from the portal. Attaching a laptop file path and uploading to YouTube
+still require the authenticated laptop publisher. The portal reports that
+limit explicitly instead of claiming an upload has started. Newsletter
+compilation and other buttons without a cloud-safe command also explain their
+local requirement.
+
 To test the cloud-backed portal locally:
 
 ```powershell

@@ -15,8 +15,16 @@ export default function QCPage() {
   }, []);
 
   const resolve = async (id) => {
-    await fetch("/api/qc", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resolve: id }) });
-    load();
+    setBusy(true);
+    try {
+      const result = await fetch("/api/qc", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resolve: id }) }).then((r) => r.json());
+      setNote(result.ok ? "Escalation resolved." : result.error || "Could not resolve escalation.");
+      if (result.ok) await load();
+    } catch (error) {
+      setNote(error.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

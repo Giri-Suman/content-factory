@@ -8,6 +8,7 @@
 
 import { getEnv } from "@factory-env";
 import { actOn, notAvailable, readCollection } from "../../../lib/cloud.js";
+import { scoreTitle, scoreHook } from "../../../lib/title-score.js";
 
 export const runtime = "edge";
 
@@ -36,6 +37,12 @@ const HINTS = {};
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
+  if (body.title || body.hook) {
+    const input = String(body.title || body.hook).trim();
+    if (!input || input.length > 300) return json({ ok: false, error: "title or hook must be 1–300 characters" }, 400);
+    const patterns = body.title ? await readCollection(env, "titlepatterns") : [];
+    return json({ ok: true, result: body.title ? scoreTitle(input, patterns) : scoreHook(input) });
+  }
   const action = String(body.action || "").trim();
   if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
   const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);

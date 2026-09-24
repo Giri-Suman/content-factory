@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const oppClass = (n) => (n >= 12 ? "hot" : n >= 6 ? "warm" : "cool");
 
@@ -10,6 +11,7 @@ export default function KeywordsPage() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
+  const { jobs, follow, running } = useQueueMonitor();
 
   const load = () => fetch("/api/keywords").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -21,8 +23,9 @@ export default function KeywordsPage() {
     setNote("mining autocomplete + scoring supply (budgeted ≤2200 units/day)…");
     const res = await fetch("/api/keywords", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).then((r) => r.json());
     setBusy(false);
-    setNote(res.ok ? null : res.error);
-    load();
+    setNote(res.out || res.error || null);
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const briefIt = async (keyword) => {
@@ -34,7 +37,7 @@ export default function KeywordsPage() {
       body: JSON.stringify({ keyword }),
     }).then((r) => r.json());
     setBusy(false);
-    if (res.ok) router.push("/briefs");
+    if (res.ok) router.push(res.jobId ? `/briefs?job=${encodeURIComponent(res.jobId)}` : "/briefs");
     else setNote(res.error);
   };
 
@@ -49,7 +52,7 @@ export default function KeywordsPage() {
       </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-        <button className="btn" disabled={busy} onClick={run}>
+        <button className="btn" disabled={busy || running} onClick={run}>
           {busy ? <span className="spin" /> : null}Run gap pass
         </button>
         <span className="muted" style={{ fontSize: 12 }}>
@@ -58,6 +61,7 @@ export default function KeywordsPage() {
         </span>
       </div>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {!data ? (
         <div className="empty">loading…</div>

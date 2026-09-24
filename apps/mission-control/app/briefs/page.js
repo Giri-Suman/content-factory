@@ -49,8 +49,13 @@ export default function BriefsPage() {
         try {
           const rows = await load();
           const sourceField = job.cmd === "brief-cluster" ? "topicClusterId" : job.cmd === "brief-wishlist" ? "wishlistEntryId" : null;
-          const created = sourceField && rows
-            .filter((brief) => brief[sourceField] === job.input && Date.parse(brief.createdAt) >= Date.parse(job.queuedAt))
+          const idea = job.cmd === "ideabank-brief"
+            ? await fetch("/api/ideas", { cache: "no-store" }).then((response) => response.json()).then((data) => data.ideas?.find((item) => item.id === job.input))
+            : null;
+          const topic = job.cmd === "brief-topic" ? job.input : idea?.title;
+          const created = rows
+            .filter((brief) => (sourceField ? brief[sourceField] === job.input : topic && brief.topic === topic)
+              && Date.parse(brief.createdAt) >= Date.parse(job.queuedAt))
             .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
           if (created) {
             setCreatedBriefId(created.id);
@@ -58,7 +63,7 @@ export default function BriefsPage() {
               setNote("The selected brief was saved as a fill-in template because the AI providers were unavailable or throttled. You can edit it here or retry generation later.");
             }
           }
-          else if (sourceField) setNote("Job finished, but its new brief is not visible yet. Reload Brief Studio in a moment.");
+          else setNote("Job finished, but its new brief is not visible yet. Reload Brief Studio in a moment.");
         } catch {
           setNote("Brief finished. Reload to see the new draft.");
         }
@@ -194,7 +199,7 @@ export default function BriefsPage() {
                           body: JSON.stringify({ action: "send", briefId: b.id }),
                         }).then((r) => r.json());
                         setNote(res.out || res.error || null);
-                        if (res.ok) window.location.href = "/publish";
+                        if (res.ok) window.location.href = res.jobId ? `/publish?job=${encodeURIComponent(res.jobId)}` : "/publish";
                       }}
                     >
                       Send to Publish Center

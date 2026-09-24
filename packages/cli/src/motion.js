@@ -87,6 +87,7 @@ export async function motion(argv) {
       const ids = all ? ML.EFFECTS.filter((e) => e.impl === "live").map((e) => e.id) : targs;
       if (!ids.length) return console.log("usage: factory motion bench <id…> | --all"), false;
       console.log(`\nrendering + measuring ${ids.length} effect(s) — this is real pixel analysis, not a guess\n`);
+      let failures = 0;
       for (const id of ids) {
         try {
           const r = ML.benchEffect(id, { seconds: num(rest, "seconds", 3) });
@@ -95,13 +96,15 @@ export async function motion(argv) {
             console.log(`  ${" ".repeat(20)} ↳ wrapper: this measures its OWN motion only — your footage supplies the rest`);
           }
         } catch (e) {
+          failures++;
           // strip ANSI before truncating, or the escape codes eat the message
           const msg = e.message.replace(/\[[0-9;]*m/g, "").split("\n")[0].slice(0, 90);
           console.log(`  ${pad(id, 20)} failed: ${msg}`);
         }
       }
       console.log("");
-      return true;
+      if (failures) console.log(`${failures}/${ids.length} effect(s) failed to benchmark`);
+      return failures === 0;
     }
 
     /* ------------------------------------------------ measure -------- */

@@ -74,22 +74,31 @@ export async function GET() {
  * action the registry has no row for - those are refused by name rather than
  * quietly running something else.
  */
-const ACTIONS = {
-  scan: "yt-trending",
-  watch: null,
-  discover: null,
-};
-const HINTS = { watch: "factory yt watch <handle>", discover: "factory yt discover" };
-
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || "").trim();
-  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
-  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
-  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   try {
-    return json(await actOn(env, request, { cmd, arg: "", requestedBy: body.requestedBy || "portal" }));
+    if (action === "scan") {
+      const first = await actOn(env, request, { cmd: "yt-trending" });
+      const second = await actOn(env, request, { cmd: "yt-heat" });
+      return json({ ok: first.ok && second.ok, queued: true, jobIds: [first.jobId, second.jobId].filter(Boolean), out: `${first.out}\n${second.out}` });
+    }
+    if (action === "watch" || action === "discover") {
+      const arg = String(action === "watch" ? body.handle || "" : body.seed || "").trim();
+      if (!arg) return json({ ok: false, error: `${action} needs a channel or seed` }, 400);
+      return json(await actOn(env, request, { cmd: action === "watch" ? "yt-watch" : "yt-discover", arg }));
+    }
+    if (action === "analyzeShort" && /^[A-Za-z0-9_-]{11}$/.test(String(body.videoId || ""))) {
+      return json(await actOn(env, request, { cmd: "wishlist-add", arg: `https://www.youtube.com/watch?v=${body.videoId}` }));
+    }
+    if (action === "briefShort" && /^[A-Za-z0-9_-]{11}$/.test(String(body.videoId || ""))) {
+      const videos = await readCollection(env, "watchvideos");
+      const video = videos.find((item) => item.id === body.videoId || item.videoId === body.videoId);
+      if (!video?.title) return json({ ok: false, error: "video not found in the current watchlist" }, 404);
+      return json(await actOn(env, request, { cmd: "brief-topic", arg: video.title }));
+    }
+    return json(notAvailable(action || "this"), 400);
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

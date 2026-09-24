@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const LANE_CLASS = { synthetic: "ok", capture: "warm", hybrid: "cool" };
 
@@ -8,6 +9,7 @@ export default function CatalogPage() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState(null);
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/catalog").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -19,7 +21,8 @@ export default function CatalogPage() {
     const res = await fetch("/api/catalog", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }).then((r) => r.json());
     setBusy(null);
     setNote(res.out || res.error || null);
-    load();
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   return (
@@ -38,6 +41,7 @@ export default function CatalogPage() {
         <button className="btn ghost sm" disabled={busy} onClick={() => act("comments")}>Mine comments</button>
       </div>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {!data ? (
         <div className="empty">loading…</div>

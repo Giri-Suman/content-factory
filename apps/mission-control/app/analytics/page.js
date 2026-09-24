@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const ratioClass = (r) => (r >= 1.15 ? "ok" : r >= 0.9 ? "warm" : "hot");
 const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n ?? 0));
@@ -9,6 +10,7 @@ export default function CalibrationPage() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState(null);
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/analytics").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -25,7 +27,8 @@ export default function CalibrationPage() {
     }).then((r) => r.json());
     setBusy(null);
     setNote(res.out || res.error || null);
-    load();
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const joins = data?.state?.joins;
@@ -55,18 +58,18 @@ export default function CalibrationPage() {
       </p>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        <button className="btn ghost sm" disabled={busy} onClick={() => act("seed")}>{busy === "seed" ? <span className="spin" /> : null}Seed 25 (demo)</button>
         <button className="btn ghost sm" disabled={busy} onClick={() => act("ingest")}>Ingest my channel</button>
         <button className="btn sm" disabled={busy} onClick={() => act("memo")}>{busy === "memo" ? <span className="spin" /> : null}Run weekly memo</button>
         <button className="btn sm" disabled={busy} onClick={() => act("tune")}>{busy === "tune" ? <span className="spin" /> : null}Auto-tune</button>
       </div>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, whiteSpace: "pre-wrap" }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {!data ? (
         <div className="empty">loading…</div>
       ) : !joins || joins.n === 0 ? (
         <div className="empty">
-          no post data yet — publish videos (they become MyPosts) or hit “Seed 25 (demo)” to see the loop work
+          no real post data yet — publish videos (they become MyPosts); synthetic demo posts do not count toward calibration
           {!data.youtube && " · live my-channel ingestion needs YouTube OAuth"}
         </div>
       ) : (

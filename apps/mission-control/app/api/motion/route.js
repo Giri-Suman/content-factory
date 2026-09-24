@@ -64,7 +64,7 @@ export async function GET(request) {
  */
 const ACTIONS = {
   bench: null,
-  benchAll: null,
+  benchAll: "motion-bench-all",
 };
 const HINTS = { bench: "factory motion bench <id>", benchAll: "factory motion bench --all" };
 

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion as m } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const SCENES = ["hook", "kinetic", "quote", "stat", "screenshot", "terminal", "code", "outro"];
 const NICHES = ["coding", "ai-automation", "math", "makeup", "nails", "cooking", "fitness"];
@@ -17,6 +18,8 @@ export default function MotionPage() {
   const [fam, setFam] = useState("");
   const [playing, setPlaying] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const { jobs, follow, running } = useQueueMonitor();
 
   const load = () =>
     fetch(`/api/motion?scene=${scene}&niche=${niche}`)
@@ -29,11 +32,14 @@ export default function MotionPage() {
 
   const benchAll = async () => {
     setBusy(true);
-    await fetch("/api/motion", {
+    const result = await fetch("/api/motion", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "benchAll" }),
-    });
+    }).then((response) => response.json());
+    setNote(result.out || result.error || null);
+    if (result.ok && result.jobId) follow(result.jobId, load);
+    else if (result.ok) load();
     setBusy(false);
   };
 
@@ -52,6 +58,8 @@ export default function MotionPage() {
         nothing here is scraped from another creator&apos;s work. Scores come from rendering the effect and measuring
         real pixels, not from guessing what looks viral.
       </p>
+      {note && <div className="muted" style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {/* suggest bar */}
       <div className="panel" style={{ marginBottom: 14 }}>
@@ -63,7 +71,7 @@ export default function MotionPage() {
           <select value={niche} onChange={(e) => setNiche(e.target.value)}>
             {NICHES.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
-          <button className="btn ghost sm" disabled={busy} onClick={benchAll}>
+          <button className="btn ghost sm" disabled={busy || running} onClick={benchAll}>
             {busy ? <span className="spin" /> : null}Re-bench all (renders 16 clips)
           </button>
         </div>

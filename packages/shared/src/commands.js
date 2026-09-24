@@ -55,8 +55,15 @@ export const COMMANDS = [
   { id: "capabilities", args: ["seasonal", "makeup"], stage: "find", cat: "beauty", label: "Beauty deadlines", desc: "Diwali, Durga Puja, wedding season — with publish-by dates", primary: true, key: "cap-seasonal-makeup" },
   { id: "keywords", args: [], stage: "find", cat: "all", label: "Keyword gap", desc: "what people search vs what exists", slow: true },
   { id: "ideabank", args: ["rank"], stage: "find", cat: "all", label: "Rank ideas", desc: "your backlog by pillar × effort × freshness" },
+  { id: "ideabank", args: ["sync"], stage: "plan", cat: "all", label: "Sync approved briefs", desc: "bring approved briefs into the idea bank", key: "ideabank-sync" },
+  { id: "ideabank", args: ["brief"], argKind: "text", argLabel: "Idea ID", stage: "plan", cat: "all", label: "Brief selected idea", desc: "generate from the exact idea selected", key: "ideabank-brief", slow: true },
   { id: "lab", args: ["extract"], stage: "find", cat: "all", label: "Extract title patterns", desc: "what your winning titles have in common" },
   { id: "yt", args: ["trending"], stage: "find", cat: "all", label: "YouTube trending", desc: "needs a YouTube API key", slow: true },
+  { id: "yt", args: ["heat"], stage: "find", cat: "all", label: "YouTube niche heat", desc: "scan niche keywords", key: "yt-heat", slow: true },
+  { id: "yt", args: ["watch"], argKind: "text", argLabel: "Channel handle", stage: "find", cat: "all", label: "Watch channel", desc: "add a channel to the watchlist", key: "yt-watch", slow: true },
+  { id: "yt", args: ["discover"], argKind: "text", argLabel: "Search seed", stage: "find", cat: "all", label: "Discover channels", desc: "find channels from a seed", key: "yt-discover", slow: true },
+  { id: "wishlist", args: ["add"], argKind: "url", argLabel: "YouTube video URL", stage: "find", cat: "all", label: "Analyze wishlist video", desc: "analyze the exact video selected", key: "wishlist-add", slow: true },
+  { id: "wishlist", args: ["poll"], stage: "find", cat: "all", label: "Poll wishlist", desc: "update tracked video performance", key: "wishlist-poll", slow: true },
 
   /* ---------------- plan ---------------- */
   { id: "brief", args: [], stage: "plan", cat: "all", label: "Brief the top cluster", desc: "hooks, title, beats, caption, blog outline", primary: true, slow: true },
@@ -69,6 +76,9 @@ export const COMMANDS = [
   { id: "capture", args: ["url"], argKind: "url", argLabel: "URL to screenshot", stage: "plan", cat: "coding", label: "Screenshot a page", desc: "evidence you can put on screen", key: "capture-url", slow: true },
   { id: "capture", args: ["log"], stage: "plan", cat: "all", label: "Capture log", desc: "everything screenshotted so far", key: "capture-log" },
   { id: "catalog", args: ["fanout"], argKind: "briefId", stage: "plan", cat: "all", label: "Fan out", desc: "one brief → carousel, blog, newsletter, Pinterest", key: "catalog-fanout" },
+  { id: "catalog", args: ["seed-formats"], stage: "plan", cat: "all", label: "Seed formats", desc: "initialize the format registry", key: "catalog-seed-formats" },
+  { id: "catalog", args: ["seed-ideas"], stage: "plan", cat: "all", label: "Seed ideas", desc: "add starter ideas to the bank", key: "catalog-seed-ideas" },
+  { id: "catalog", args: ["comments"], stage: "find", cat: "all", label: "Mine comments", desc: "find comments worth a reply video", key: "catalog-comments" },
 
   /* ---------------- make ---------------- */
   { id: "produce", args: [], argKind: "briefId", stage: "make", cat: "all", label: "Produce", desc: "the whole conveyor — routes by vertical automatically", primary: true, slow: true },
@@ -88,6 +98,7 @@ export const COMMANDS = [
   { id: "steps", args: [], argKind: "renderId", stage: "make", cat: "coding", label: "Burn step callouts", desc: "STEP 1/5 overlays", slow: true },
   { id: "shorts", args: [], argKind: "renderId", stage: "make", cat: "all", label: "Cut clips", desc: "1-3 standalone clips from a finished video", slow: true },
   { id: "motion", args: ["list"], stage: "make", cat: "all", label: "Effect catalog", desc: "22 effects with measured scores", key: "motion-list" },
+  { id: "motion", args: ["bench", "--all"], stage: "make", cat: "all", label: "Bench all effects", desc: "render and measure every live motion effect", key: "motion-bench-all", slow: true },
 
   /* ---------------- package ---------------- */
   { id: "thumbnails", args: [], argKind: "renderId", stage: "package", cat: "all", label: "Thumbnails", desc: "2 variants, judged", slow: true },
@@ -104,6 +115,13 @@ export const COMMANDS = [
   { id: "tools", args: ["competitors"], stage: "find", cat: "all", label: "Competitors", desc: "who is shipping in this niche right now", key: "tools-competitors" },
   { id: "tools", args: ["calendar", "14"], stage: "plan", cat: "all", label: "Two-week calendar", desc: "a publishing schedule from the current backlog", key: "tools-calendar" },
   { id: "tools", args: ["niche"], stage: "find", cat: "all", label: "Niche check", desc: "how well the current mix matches the niches you picked", key: "tools-niche" },
+  { id: "tools", args: ["niche"], argKind: "text", argLabel: "Niche", stage: "plan", cat: "all", label: "Niche shot list", desc: "show the shot list for one niche", key: "tools-nichepack" },
+  { id: "tools", args: ["cta", "next"], argKind: "text", argLabel: "Platform", stage: "package", cat: "all", label: "Next CTA", desc: "rotate a call to action", key: "tools-cta-next" },
+  { id: "tools", args: ["replies"], stage: "package", cat: "all", label: "Draft comment replies", desc: "prepare replies for review", key: "tools-replies" },
+  { id: "tools", args: ["link"], argKind: "text", argLabel: "Video ID", stage: "package", cat: "all", label: "Link block", desc: "make a UTM-tagged link block", key: "tools-link" },
+  { id: "tools", args: ["stock"], argKind: "text", argLabel: "Search query", stage: "make", cat: "all", label: "Find stock video", desc: "find free-licence b-roll", key: "tools-stock-video" },
+  { id: "tools", args: ["stock", "--music"], argKind: "text", argLabel: "Search query", stage: "make", cat: "all", label: "Find stock music", desc: "find free-licence music", key: "tools-stock-music" },
+  { id: "tools", args: ["translate"], argKind: "renderId", stage: "package", cat: "all", label: "Translate captions", desc: "translate a render's captions", key: "tools-translate" },
   { id: "humanize", args: ["script"], argKind: "briefId", stage: "package", cat: "all", label: "Check for AI tells", desc: "per-scene score with the specific tells named", key: "humanize-script" },
   { id: "humanize", args: ["audit"], stage: "package", cat: "all", label: "Audit all copy", desc: "how machine-written everything reads", key: "humanize-audit" },
   { id: "qc", args: [], argKind: "briefId", stage: "package", cat: "all", label: "Run the judges", desc: "all five quality gates" },
@@ -112,6 +130,8 @@ export const COMMANDS = [
   { id: "compliance", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Compliance check", desc: "exactly what is blocking publication", primary: true },
   { id: "publish", args: [], argKind: "renderId", stage: "ship", cat: "all", label: "Publish dry run", desc: "uploads nothing — shows what would happen", primary: true },
   { id: "center", args: [], stage: "ship", cat: "all", label: "Publish queue", desc: "what is staged and ready" },
+  { id: "center", args: ["send"], argKind: "briefId", stage: "ship", cat: "all", label: "Send to Publish Center", desc: "stage platform items from the selected brief", key: "center-send" },
+  { id: "center", args: ["live"], argKind: "text", argLabel: "Publish item ID", stage: "ship", cat: "all", label: "Mark item posted", desc: "record a manual post after you publish it", key: "center-live" },
   { id: "sync", args: ["status"], stage: "ship", cat: "all", label: "Cloud sync status", desc: "is the cloud able to run your jobs", key: "sync-status" },
   { id: "sync", args: ["push"], stage: "ship", cat: "all", label: "Send state to cloud", desc: "lets GitHub Actions render and edit your briefs", key: "sync-push", danger: "owner maintenance" },
   { id: "sync", args: ["pull"], stage: "ship", cat: "all", label: "Get cloud results", desc: "bring back what the cloud did while this PC slept", key: "sync-pull", danger: "owner maintenance" },
@@ -132,10 +152,16 @@ export const COMMANDS = [
 
   /* ---------------- learn ---------------- */
   { id: "analytics", args: [], stage: "learn", cat: "all", label: "Pull stats", desc: "real numbers from your channel", slow: true },
+  { id: "calibrate", args: ["seed", "25"], stage: "learn", cat: "all", label: "Seed demo posts", desc: "add synthetic posts for the calibration demo", key: "cal-seed" },
+  { id: "calibrate", args: ["ingest"], stage: "learn", cat: "all", label: "Ingest my channel", desc: "refresh real channel stats", key: "cal-ingest" },
+  { id: "calibrate", args: ["tune"], stage: "learn", cat: "all", label: "Auto-tune", desc: "adjust weights from measured results", key: "cal-tune" },
+  { id: "calibrate", args: ["revert"], argKind: "text", argLabel: "Tuning ID", stage: "learn", cat: "all", label: "Revert tuning", desc: "undo one tuning change", key: "cal-revert" },
   { id: "calibrate", args: ["scorecard"], stage: "learn", cat: "all", label: "Scorecard", desc: "what you predicted vs what happened", key: "cal-scorecard" },
   { id: "calibrate", args: ["memo"], stage: "learn", cat: "all", label: "Weekly memo", desc: "what changed and why", key: "cal-memo" },
   { id: "lessons", args: [], stage: "learn", cat: "all", label: "Lessons", desc: "rules learned, injected back into generation" },
+  { id: "lessons", args: ["distill"], stage: "learn", cat: "all", label: "Distill lessons", desc: "extract rules from critiques", key: "lessons-distill" },
   { id: "playbook", args: [], stage: "learn", cat: "all", label: "Playbooks", desc: "per-platform rules from your own results" },
+  { id: "playbook", args: ["refresh"], stage: "learn", cat: "all", label: "Refresh playbooks", desc: "propose changes from observed results", key: "playbook-refresh" },
   { id: "prompts", args: [], stage: "learn", cat: "all", label: "Prompt versions", desc: "you approve every change" },
   { id: "digest", args: [], stage: "learn", cat: "all", label: "Today's digest", desc: "what moved overnight" },
 
@@ -174,13 +200,13 @@ export const RUNNABLE_IDS = [...new Set(COMMANDS.map((c) => c.id))];
  */
 export const CLOUD_RUNNABLE_KEYS = new Set([
   "radar-collect", "score", "evidence-report", "evidence-quotes", "cap-seasonal", "cap-seasonal-makeup",
-  "keywords", "ideabank-rank", "lab-extract", "yt-trending", "brief", "brief-cluster", "brief-wishlist", "brief-topic", "claims-map",
-  "claims-audit", "capture-log", "catalog-fanout", "produce", "render-script", "drive-import", "math",
+  "keywords", "ideabank-rank", "ideabank-sync", "ideabank-brief", "lab-extract", "yt-trending", "yt-heat", "yt-watch", "yt-discover", "wishlist-add", "wishlist-poll", "brief", "brief-cluster", "brief-wishlist", "brief-topic", "claims-map",
+  "claims-audit", "capture-log", "catalog-fanout", "catalog-seed-formats", "catalog-seed-ideas", "catalog-comments", "produce", "render-script", "drive-import", "math",
   "math-demo", "edit-beauty", "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut",
-  "edit-screencast", "edit-screencast-ai", "reframe", "motion-list", "tools-prompter", "tools-gaps",
-  "tools-repurpose", "tools-competitors", "tools-calendar", "tools-niche", "humanize-script",
-  "humanize-audit", "center", "analytics", "cal-scorecard", "cal-memo",
-  "lessons", "playbook", "prompts", "digest",
+  "edit-screencast", "edit-screencast-ai", "reframe", "longform", "motion-list", "motion-bench-all", "tools-prompter", "tools-gaps",
+  "tools-repurpose", "tools-competitors", "tools-calendar", "tools-niche", "tools-nichepack", "tools-cta-next", "tools-replies", "tools-link", "tools-stock-video", "tools-stock-music", "humanize-script",
+  "humanize-audit", "center", "center-send", "center-live", "analytics", "cal-seed", "cal-ingest", "cal-tune", "cal-revert", "cal-scorecard", "cal-memo",
+  "lessons", "lessons-distill", "playbook", "playbook-refresh", "prompts", "digest",
 ]);
 
 /**

@@ -16,15 +16,18 @@ const json = (o, status = 200) =>
 
 export async function GET() {
   const env = getEnv();
-  const rows = await readCollection(env, "keywords");
-  return json({ keywords: rows });
+  const [rows, quota] = await Promise.all([readCollection(env, "keywords"), readCollection(env, "quota")]);
+  const today = new Date().toISOString().slice(0, 10);
+  const unitsToday = quota.filter((r) => r.date === today && r.job === "yt-kwgap").reduce((sum, r) => sum + (Number(r.units) || 0), 0);
+  return json({ keywords: rows.sort((a, b) => (b.opportunity || 0) - (a.opportunity || 0)), unitsToday, budget: 2200 });
 }
 
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
   try {
-    return json(await actOn(env, request, { cmd: "keywords", arg: "", requestedBy: body.requestedBy || "portal" }));
+    const keyword = String(body.keyword || "").trim();
+    return json(await actOn(env, request, { cmd: keyword ? "brief-topic" : "keywords", arg: keyword }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

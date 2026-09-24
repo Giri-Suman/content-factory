@@ -7,7 +7,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { actOn, readCollection } from "../../../lib/cloud.js";
+import { actOn, readCollection, writeCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -40,9 +40,16 @@ export async function GET() {
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
-  // Resolving an escalation is a WRITE to a collection the laptop owns; the next
-  // `sync push` would overwrite it, so it queues like everything else.
   try {
+    if (body.resolve) {
+      const rows = await readCollection(env, "escalations");
+      const index = rows.findIndex((row) => row.id === body.resolve);
+      if (index < 0) return json({ ok: false, error: "unknown escalation" }, 404);
+      rows[index] = { ...rows[index], resolved: true, resolvedAt: new Date().toISOString() };
+      await writeCollection(env, "escalations", rows);
+      return json({ ok: true, escalation: rows[index] });
+    }
+    if (!body.briefId && !body.id) return json({ ok: false, error: "briefId or resolve is required" }, 400);
     const r = await actOn(env, request, { cmd: "qc", arg: String(body.briefId || body.id || "").trim(), requestedBy: body.requestedBy || "portal", });
     return json(r);
   } catch (e) {

@@ -53,6 +53,44 @@ export function useJob() {
   return { job, start, running: job?.status === "running" || job?.status === "queued" };
 }
 
+/** Follow one or more queued commands until their result is visible in cloud state. */
+export function useQueueMonitor() {
+  const [ids, setIds] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const onFinished = useRef(null);
+
+  const follow = (jobIds, callback) => {
+    const next = [...new Set((Array.isArray(jobIds) ? jobIds : [jobIds]).filter(Boolean))];
+    onFinished.current = callback || null;
+    setJobs(next.map((id) => ({ id, status: "queued", log: "Checking job status…" })));
+    setIds(next);
+  };
+
+  useEffect(() => {
+    if (!ids.length) return undefined;
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      const found = await Promise.all(ids.map(async (id) => {
+        const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { cache: "no-store" })
+          .then((res) => res.json()).catch(() => null);
+        return response?.job || { id, status: "queued", log: "Waiting for job status…" };
+      }));
+      if (cancelled) return;
+      setJobs(found);
+      if (found.every((job) => job.status === "done" || job.status === "failed")) {
+        onFinished.current?.(found);
+      } else {
+        timer = setTimeout(poll, 3000);
+      }
+    };
+    poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [ids]);
+
+  return { jobs, follow, running: jobs.some((job) => job.status === "queued" || job.status === "running") };
+}
+
 export function JobLog({ job }) {
   if (!job) return null;
   const badge =

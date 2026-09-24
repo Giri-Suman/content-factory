@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const EFFORT_HINT = { S: "≤2h", M: "≤1 day", L: ">1 day" };
 const STATUS_CLASS = { backlog: "warm", scheduled: "ok", made: "ok", retired: "cool" };
@@ -13,6 +14,7 @@ export default function IdeasPage() {
   const [note, setNote] = useState(null);
   const [seriesName, setSeriesName] = useState("");
   const [assigning, setAssigning] = useState(null);
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/ideas").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -28,8 +30,9 @@ export default function IdeasPage() {
     }).then((r) => r.json());
     setBusy(false);
     setNote(res.out || res.error || null);
-    if (res.ok && thenBriefs) router.push("/briefs");
-    else load();
+    if (res.ok && thenBriefs) router.push(res.jobId ? `/briefs?job=${encodeURIComponent(res.jobId)}` : "/briefs");
+    else if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   return (
@@ -57,7 +60,6 @@ export default function IdeasPage() {
           disabled={busy || !seriesName.trim()}
           onClick={() => {
             act({ action: "seriesCreate", name: seriesName.trim() });
-            setSeriesName("");
           }}
         >
           Create series
@@ -69,6 +71,7 @@ export default function IdeasPage() {
         )}
       </div>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, whiteSpace: "pre-wrap" }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {(data?.series || []).length > 0 && (
         <div style={{ marginBottom: 18 }}>

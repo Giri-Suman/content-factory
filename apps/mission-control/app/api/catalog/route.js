@@ -42,10 +42,10 @@ export async function GET() {
  * quietly running something else.
  */
 const ACTIONS = {
-  "seed-formats": null,
-  "seed-ideas": null,
+  "seed-formats": "catalog-seed-formats",
+  "seed-ideas": "catalog-seed-ideas",
   newsletter: null,
-  comments: "evidence-quotes",
+  comments: "catalog-comments",
 };
 const HINTS = { "seed-formats": "factory catalog seed", "seed-ideas": "factory catalog ideas", newsletter: "factory catalog newsletter" };
 

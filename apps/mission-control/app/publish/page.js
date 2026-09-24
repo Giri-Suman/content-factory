@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const STATUS_CLASS = { preparing: "warm", ready: "ok", published: "ok", failed: "hot" };
 
@@ -16,10 +17,13 @@ export default function PublishCenterPage() {
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState(null);
   const [fileInputs, setFileInputs] = useState({});
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/center").then((r) => r.json()).then(setData);
   useEffect(() => {
     load();
+    const jobId = new URLSearchParams(window.location.search).get("job");
+    if (jobId) follow(jobId, load);
     const t = setInterval(load, 60e3); // golden-60 countdowns stay live
     return () => clearInterval(t);
   }, []);
@@ -34,7 +38,8 @@ export default function PublishCenterPage() {
     }).then((r) => r.json());
     setBusy(null);
     if (res.out || res.error) setNote(res.out || res.error);
-    load();
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const copy = async (text, label) => {
@@ -72,6 +77,7 @@ export default function PublishCenterPage() {
         </div>
       )}
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, whiteSpace: "pre-wrap" }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {!data ? (
         <div className="empty">loading…</div>

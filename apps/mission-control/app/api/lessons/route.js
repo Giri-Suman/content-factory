@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { actOn, readCollection } from "../../../lib/cloud.js";
+import { actOn, readCollection, writeCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -74,9 +74,29 @@ export async function GET() {
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
-  const arg = "";
   try {
-    return json(await actOn(env, request, { cmd: "lessons", arg, requestedBy: body.requestedBy || "portal" }));
+    if (body.action === "distill") return json(await actOn(env, request, { cmd: "lessons-distill" }));
+    if (body.action === "pin" || body.action === "kill") {
+      const rows = await readCollection(env, "lessons");
+      const index = rows.findIndex((row) => row.id === body.id);
+      if (index < 0) return json({ ok: false, error: "unknown lesson" }, 404);
+      rows[index] = body.action === "pin"
+        ? { ...rows[index], pinned: !rows[index].pinned, active: true }
+        : { ...rows[index], active: false };
+      await writeCollection(env, "lessons", rows);
+      return json({ ok: true, out: body.action === "pin" ? (rows[index].pinned ? "Lesson pinned." : "Lesson unpinned.") : "Lesson retired." });
+    }
+    if (body.action === "approve") {
+      const rows = await readCollection(env, "promptversions");
+      const target = rows.find((row) => row.id === body.id && row.proposed);
+      if (!target) return json({ ok: false, error: "unknown proposed version" }, 404);
+      const now = new Date().toISOString();
+      await writeCollection(env, "promptversions", rows.map((row) => row.task !== target.task ? row
+        : row.id === target.id ? { ...row, active: true, proposed: false, approvedAt: now }
+          : row.active ? { ...row, active: false, retired: true } : row));
+      return json({ ok: true, out: `Approved ${target.task} version ${target.version}.` });
+    }
+    return json({ ok: false, error: "unknown action" }, 400);
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

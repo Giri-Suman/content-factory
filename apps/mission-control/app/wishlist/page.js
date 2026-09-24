@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const TIER_ORDER = { S: 0, A: 1, B: 2, C: 3 };
 const TIER_CLASS = { S: "hot", A: "warm", B: "ok", C: "cool" };
@@ -21,6 +22,7 @@ export default function WishlistPage() {
   const [sortByTier, setSortByTier] = useState(true);
   const [showManual, setShowManual] = useState(false);
   const [manual, setManual] = useState(EMPTY_MANUAL);
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/wishlist").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -37,10 +39,11 @@ export default function WishlistPage() {
       body: JSON.stringify({ url: url.trim() }),
     }).then((r) => r.json());
     setBusy(false);
-    setNote(res.ok ? null : res.error);
+    setNote(res.out || res.error || null);
     if (res.ok) {
       setUrl("");
-      load();
+      if (res.jobId) follow(res.jobId, load);
+      else load();
     }
   };
 
@@ -52,7 +55,7 @@ export default function WishlistPage() {
       body: JSON.stringify({ manual }),
     }).then((r) => r.json());
     setBusy(false);
-    setNote(res.ok ? null : res.error);
+    setNote(res.out || res.error || null);
     if (res.ok) {
       setManual(EMPTY_MANUAL);
       setShowManual(false);
@@ -68,13 +71,15 @@ export default function WishlistPage() {
       body: JSON.stringify({ action: "poll" }),
     }).then((r) => r.json());
     setBusy(false);
-    setNote(res.out || null);
-    load();
+    setNote(res.out || res.error || null);
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const del = async (id) => {
-    await fetch(`/api/wishlist?id=${id}`, { method: "DELETE" });
-    load();
+    const result = await fetch(`/api/wishlist?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then((response) => response.json());
+    setNote(result.ok ? "Wishlist entry removed." : result.error || "Could not remove entry.");
+    if (result.ok) load();
   };
 
   const briefIt = async (id) => {
@@ -168,6 +173,7 @@ export default function WishlistPage() {
       </div>
 
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12, whiteSpace: "pre-wrap" }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button className={`chip${sortByTier ? " on" : ""}`} onClick={() => setSortByTier(true)}>by tier</button>

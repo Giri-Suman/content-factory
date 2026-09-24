@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const ANALYSES = [
   ["health", "System health", "one audit across all 25 milestones — catches features that run but produce degraded output"],
@@ -18,6 +19,7 @@ export default function ToolsPage() {
   const [busy, setBusy] = useState(null);
   const [renderId, setRenderId] = useState("");
   const [file, setFile] = useState("");
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/tools").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function ToolsPage() {
     setBusy(key);
     const r = await fetch(`/api/tools?view=${key}`).then((x) => x.json());
     setOut((o) => ({ ...o, [key]: r.text || r.error }));
+    if (r.ok && r.jobId) follow(r.jobId);
     setBusy(null);
   };
 
@@ -39,6 +42,7 @@ export default function ToolsPage() {
       body: JSON.stringify({ action, arg, arg2 }),
     }).then((x) => x.json());
     setOut((o) => ({ ...o, [action]: r.text || (r.jobId ? `running in background (job ${r.jobId}) — check Renders when it finishes` : r.error) }));
+    if (r.ok && r.jobId) follow(r.jobId, load);
     setBusy(null);
     load();
   };
@@ -57,6 +61,7 @@ export default function ToolsPage() {
         The practical layer around the pipeline: caption sidecars YouTube can actually index, chapters, a teleprompter
         for capture days, batch production, and the analyses that tell you what to make next.
       </p>
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {!data ? (
         <div className="empty">loading…</div>

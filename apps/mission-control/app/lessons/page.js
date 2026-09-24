@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const SCOPE_CLASS = { script: "warm", metadata: "ok", visual: "hot", timing: "cool", topic: "warm", idea: "ok" };
 
@@ -8,6 +9,7 @@ export default function LessonsPage() {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
+  const { jobs, follow } = useQueueMonitor();
 
   const load = () => fetch("/api/lessons").then((r) => r.json()).then(setData);
   useEffect(() => {
@@ -19,7 +21,8 @@ export default function LessonsPage() {
     const res = await fetch("/api/lessons", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     setBusy(false);
     setNote(res.out || res.error || null);
-    load();
+    if (res.ok && res.jobId) follow(res.jobId, load);
+    else if (res.ok) load();
   };
 
   const maxRate = 100;
@@ -37,6 +40,7 @@ export default function LessonsPage() {
         <button className="btn sm" disabled={busy} onClick={() => act({ action: "distill" })}>{busy ? <span className="spin" /> : null}Distill now</button>
       </div>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>{note}</div>}
+      {jobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {!data ? (
         <div className="empty">loading…</div>

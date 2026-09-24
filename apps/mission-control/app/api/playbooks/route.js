@@ -8,7 +8,7 @@
  */
 
 import { getEnv } from "@factory-env";
-import { actOn, notAvailable, readCollection } from "../../../lib/cloud.js";
+import { actOn, readCollection, writeCollection } from "../../../lib/cloud.js";
 
 export const runtime = "edge";
 
@@ -37,23 +37,31 @@ export async function GET() {
  * action the registry has no row for - those are refused by name rather than
  * quietly running something else.
  */
-const ACTIONS = {
-  refresh: "playbook",
-  approve: null,
-  reject: null,
-};
-const HINTS = { approve: "factory playbook approve <id>", reject: "factory playbook reject <id>" };
-
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
   const action = String(body.action || "").trim();
-  if (action && !(action in ACTIONS)) return json(notAvailable(action, HINTS[action]), 400);
-  const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
-  if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
-  const arg = "";
   try {
-    return json(await actOn(env, request, { cmd, arg, requestedBy: body.requestedBy || "portal" }));
+    if (action === "refresh") return json(await actOn(env, request, { cmd: "playbook-refresh" }));
+    if (action === "approve" || action === "reject") {
+      const [proposals, playbooks] = await Promise.all([readCollection(env, "playbookproposals"), readCollection(env, "playbooks")]);
+      const index = proposals.findIndex((item) => item.id === body.id && item.status === "pending");
+      if (index < 0) return json({ ok: false, error: "unknown pending proposal" }, 404);
+      const proposal = proposals[index];
+      const now = new Date().toISOString();
+      if (action === "approve") {
+        const target = playbooks.findIndex((item) => item.platform === proposal.platform);
+        if (target < 0) return json({ ok: false, error: "proposal platform is no longer available" }, 404);
+        const current = playbooks[target];
+        playbooks[target] = { ...current, [proposal.field]: proposal.proposed, updatedAt: now,
+          history: [...(current.history || []), { field: proposal.field, from: current[proposal.field], to: proposal.proposed, evidence: proposal.evidence, source: proposal.source, at: now }].slice(-30) };
+        await writeCollection(env, "playbooks", playbooks);
+      }
+      proposals[index] = { ...proposal, status: action === "approve" ? "approved" : "rejected", [action === "approve" ? "appliedAt" : "at"]: now };
+      await writeCollection(env, "playbookproposals", proposals);
+      return json({ ok: true, out: `Proposal ${action === "approve" ? "approved" : "rejected"}.` });
+    }
+    return json({ ok: false, error: "unknown action" }, 400);
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

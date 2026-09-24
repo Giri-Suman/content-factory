@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { JobLog, useQueueMonitor } from "../../components/useJob.js";
 
 const CATEGORY_LABELS = { coding: "Coding", ai: "AI", math: "Math", makeup: "Makeup" };
 
@@ -28,6 +29,7 @@ export default function TrendsPage() {
   const [drafting, setDrafting] = useState(null);
   const [topic, setTopic] = useState("");
   const [error, setError] = useState(null);
+  const { jobs: scanJobs, follow: followScan, running: scanRunning } = useQueueMonitor();
 
   const load = async () => {
     const res = await fetch("/api/trends");
@@ -47,11 +49,13 @@ export default function TrendsPage() {
     try {
       const res = await fetch("/api/trends", { method: "POST" });
       const data = await res.json();
-      setTrends(data.trends);
-      setConfig(data.config);
-      if (!data.ok) setError("scan finished with errors — see terminal log");
-      const cl = await fetch("/api/clusters").then((r) => r.json());
-      setClusters(cl.clusters || []);
+      if (!data.ok) setError(data.error || "scan could not start");
+      else if (data.id) {
+        followScan(data.id, (finished) => {
+          if (finished.some((job) => job.status === "failed")) setError(finished.find((job) => job.status === "failed")?.log || "scan failed");
+          else load();
+        });
+      } else await load();
     } catch (e) {
       setError(String(e));
     }
@@ -83,7 +87,7 @@ export default function TrendsPage() {
         body: JSON.stringify({ input }),
       });
       const data = await res.json();
-      if (data.ok) router.push(`/scripts/${data.id}`);
+      if (data.ok) router.push(data.jobId ? `/briefs?job=${encodeURIComponent(data.jobId)}` : "/briefs");
       else setError(data.error || "draft failed");
     } catch (e) {
       setError(String(e));
@@ -100,7 +104,7 @@ export default function TrendsPage() {
       <p className="sub">What the internet is talking about right now, in your niches — scored for viral video potential.</p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 18 }}>
-        <button className="btn" onClick={scan} disabled={scanning}>
+        <button className="btn" onClick={scan} disabled={scanning || scanRunning}>
           {scanning ? (
             <>
               <span className="spin" />
@@ -139,7 +143,7 @@ export default function TrendsPage() {
           style={{ maxWidth: 520 }}
         />
         <button className="btn ghost" disabled={!topic.trim() || drafting} onClick={() => draft(topic.trim())}>
-          {drafting === topic.trim() ? <span className="spin" /> : null}Draft topic
+          {drafting === topic.trim() ? <span className="spin" /> : null}Brief topic
         </button>
       </div>
 
@@ -148,6 +152,7 @@ export default function TrendsPage() {
           {error}
         </div>
       )}
+      {scanJobs.map((job) => <JobLog key={job.id} job={job} />)}
 
       {clusters.length > 0 && (
         <div style={{ marginBottom: 26 }}>

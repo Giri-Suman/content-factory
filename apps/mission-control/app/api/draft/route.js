@@ -1,14 +1,6 @@
 /**
- * Draft a script from a trend headline.
- *
- * The disk route ran the CLI, waited up to six minutes, then handed back an id
- * so the page could navigate straight to the new script. Queued work cannot do
- * that — the script does not exist yet, so navigating would 404.
- *
- * So this deliberately answers `ok: false` with the queue message in `error`,
- * which is the field the Trends page renders. The wording says it was queued and
- * when it will run; what it must NOT do is claim success and then send the user
- * to a page that is not there.
+ * Generate a topic brief in a background job. The caller follows the returned
+ * job on Brief Studio rather than navigating to a script that does not exist.
  */
 
 import { getEnv } from "@factory-env";
@@ -24,8 +16,7 @@ export async function POST(request) {
   const { input } = await request.json().catch(() => ({}));
   if (!input || typeof input !== "string") return json({ ok: false, error: "missing input" }, 400);
   try {
-    const r = await actOn(env, request, { cmd: "brief-topic", arg: input, requestedBy: "portal" });
-    return json({ ...r, ok: false, error: r.out });
+    return json(await actOn(env, request, { cmd: "brief-topic", arg: input }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

@@ -7,6 +7,8 @@
 
 import { getEnv } from "@factory-env";
 import { actOn, notAvailable, readEnvFlags, readPerf } from "../../../lib/cloud.js";
+import { readCollection } from "../../../lib/cloud.js";
+import { calibrationView } from "../../../lib/calibration-view.js";
 
 export const runtime = "edge";
 
@@ -15,8 +17,13 @@ const json = (o, status = 200) =>
 
 export async function GET() {
   const env = getEnv();
-  const [perf, flags] = await Promise.all([readPerf(env), readEnvFlags(env)]);
+  const [perf, flags, posts, memos, tuning] = await Promise.all([
+    readPerf(env), readEnvFlags(env), readCollection(env, "myposts"), readCollection(env, "memos"), readCollection(env, "tuning"),
+  ]);
   return json({
+    state: calibrationView(posts),
+    memo: memos[0] || null,
+    tuning: [...tuning].reverse(),
     perf,
     youtube: Boolean(flags.youtube),
     tuning: perf?.tuning || null,
@@ -33,13 +40,13 @@ export async function GET() {
  * quietly running something else.
  */
 const ACTIONS = {
-  ingest: "analytics",
-  tune: "analytics",
+  ingest: "cal-ingest",
+  tune: "cal-tune",
   memo: "cal-memo",
-  seed: null,
-  revert: null,
+  seed: "cal-seed",
+  revert: "cal-revert",
 };
-const HINTS = { seed: "factory seed myposts", revert: "factory analytics" };
+const HINTS = {};
 
 export async function POST(request) {
   const env = getEnv();
@@ -49,7 +56,7 @@ export async function POST(request) {
   const cmd = action ? ACTIONS[action] : Object.values(ACTIONS).find(Boolean);
   if (!cmd) return json(notAvailable(action || "this", HINTS[action]), 400);
   try {
-    return json(await actOn(env, request, { cmd, arg: "", requestedBy: body.requestedBy || "portal" }));
+    return json(await actOn(env, request, { cmd, arg: action === "revert" ? String(body.id || "").trim() : "" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }
