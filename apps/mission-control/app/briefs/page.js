@@ -52,7 +52,12 @@ export default function BriefsPage() {
           const created = sourceField && rows
             .filter((brief) => brief[sourceField] === job.input && Date.parse(brief.createdAt) >= Date.parse(job.queuedAt))
             .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
-          if (created) setCreatedBriefId(created.id);
+          if (created) {
+            setCreatedBriefId(created.id);
+            if (created.payload?.template) {
+              setNote("The selected brief was saved as a fill-in template because the AI providers were unavailable or throttled. You can edit it here or retry generation later.");
+            }
+          }
           else if (sourceField) setNote("Job finished, but its new brief is not visible yet. Reload Brief Studio in a moment.");
         } catch {
           setNote("Brief finished. Reload to see the new draft.");
@@ -171,7 +176,7 @@ export default function BriefsPage() {
                     </span>
                   )}
                   {b.scheduledDate && <span className="chip static" style={{ fontSize: 11 }}>slot {b.scheduledDate}</span>}
-                  {p.template && <span className="chip static" style={{ fontSize: 11 }}>template — add LLM key</span>}
+                  {p.template && <span className="chip static" style={{ fontSize: 11 }}>fill-in template — AI generation unavailable</span>}
                   <strong style={{ flex: 1 }}>{b.topic}</strong>
                   {b.status === "draft" && (
                     <>

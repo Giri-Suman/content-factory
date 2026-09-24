@@ -93,6 +93,10 @@ Wishlist entry, passes that exact item to the job. Brief Studio shows the
 queued/running result and reloads the new draft when it finishes. When a laptop
 executes the job, it first pulls the current shared state from R2, so a newly
 collected cloud opportunity can be briefed without a manual sync.
+If both configured free AI providers are throttled, the job saves a clearly
+labelled fill-in template for that same selected item; it does not invent a
+different topic. Edit the template or retry generation when provider capacity
+returns.
 
 To test the cloud-backed portal locally:
 
