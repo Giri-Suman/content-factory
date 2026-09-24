@@ -93,13 +93,17 @@ export default function TodayPage() {
 
   const brief = async (clusterId) => {
     setNote("generating brief…");
-    const res = await fetch("/api/briefs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clusterId }),
-    }).then((r) => r.json());
-    if (res.ok) router.push("/briefs");
-    else setNote(res.error);
+    try {
+      const res = await fetch("/api/briefs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clusterId }),
+      }).then((r) => r.json());
+      if (res.ok) router.push(res.jobId ? `/briefs?job=${encodeURIComponent(res.jobId)}` : "/briefs");
+      else setNote(res.error || "brief generation failed");
+    } catch (error) {
+      setNote(`brief generation failed: ${error.message}`);
+    }
   };
 
   const tick = async (b, i) => {

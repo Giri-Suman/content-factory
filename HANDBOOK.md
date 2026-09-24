@@ -88,6 +88,12 @@ approved briefs without a date). Older unfinished briefs and old drafts appear
 as a backlog count with a link to Brief Studio, where their original dates and
 checklists remain available for review.
 
+**Generate Briefs** on a Today or Trends opportunity, or **Brief it** on a
+Wishlist entry, passes that exact item to the job. Brief Studio shows the
+queued/running result and reloads the new draft when it finishes. When a laptop
+executes the job, it first pulls the current shared state from R2, so a newly
+collected cloud opportunity can be briefed without a manual sync.
+
 To test the cloud-backed portal locally:
 
 ```powershell

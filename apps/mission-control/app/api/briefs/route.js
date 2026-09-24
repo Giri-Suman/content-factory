@@ -9,6 +9,7 @@
 
 import { getEnv } from "@factory-env";
 import { actOn, readCollection, writeCollection } from "../../../lib/cloud.js";
+import { briefRequest } from "../../../lib/brief-request.js";
 
 export const runtime = "edge";
 
@@ -24,10 +25,15 @@ export async function GET() {
 export async function POST(request) {
   const env = getEnv();
   const body = await request.json().catch(() => ({}));
-  // The old route spawned `factory brief ...`. Same intent, queued instead.
-  const cmd = body.topic ? "brief-topic" : "brief";
   try {
-    return json(await actOn(env, request, { cmd, arg: body.topic || "", requestedBy: body.requestedBy || "portal" }));
+    const selected = briefRequest(body);
+    if (selected.collection) {
+      const rows = await readCollection(env, selected.collection);
+      if (!rows.some((row) => row.id === selected.arg)) {
+        return json({ ok: false, error: `The selected ${selected.collection === "clusters" ? "opportunity" : "wishlist entry"} is no longer available. Reload this page and choose again.` }, 404);
+      }
+    }
+    return json(await actOn(env, request, { cmd: selected.cmd, arg: selected.arg, requestedBy: body.requestedBy || "portal" }));
   } catch (e) {
     return json({ ok: false, error: e.message }, 400);
   }

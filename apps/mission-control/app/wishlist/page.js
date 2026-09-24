@@ -80,14 +80,19 @@ export default function WishlistPage() {
   const briefIt = async (id) => {
     setBusy(true);
     setNote("generating brief from this autopsy…");
-    const res = await fetch("/api/briefs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ wishlistId: id }),
-    }).then((r) => r.json());
-    setBusy(false);
-    if (res.ok) router.push("/briefs");
-    else setNote(res.error);
+    try {
+      const res = await fetch("/api/briefs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wishlistId: id }),
+      }).then((r) => r.json());
+      if (res.ok) router.push(res.jobId ? `/briefs?job=${encodeURIComponent(res.jobId)}` : "/briefs");
+      else setNote(res.error || "brief generation failed");
+    } catch (error) {
+      setNote(`brief generation failed: ${error.message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const entries = data

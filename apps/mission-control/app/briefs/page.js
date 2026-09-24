@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { JobLog } from "../../components/useJob.js";
 
 const PLATFORM_TABS = ["YT Short", "IG Reel", "Carousel", "LinkedIn", "X", "Blog"];
 const STATUS_ORDER = { draft: 0, approved: 1, killed: 2 };
@@ -18,10 +19,51 @@ export default function BriefsPage() {
   const [tab, setTab] = useState({});
   const [edits, setEdits] = useState({});
   const [note, setNote] = useState(null);
+  const [generationJob, setGenerationJob] = useState(null);
+  const [createdBriefId, setCreatedBriefId] = useState(null);
 
-  const load = () => fetch("/api/briefs").then((r) => r.json()).then((d) => setBriefs(d.briefs));
+  const load = () => fetch("/api/briefs", { cache: "no-store" }).then((r) => r.json()).then((d) => {
+    setBriefs(d.briefs);
+    return d.briefs;
+  });
   useEffect(() => {
     load();
+  }, []);
+
+  // A Generate Briefs click starts a background job. Follow that exact job on
+  // this page so the old drafts do not look like the result of the new click.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("job");
+    if (!id) return;
+    setGenerationJob({ id, status: "queued", log: "Checking the new brief job…" });
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .catch(() => null);
+      if (cancelled) return;
+      const job = response?.job;
+      if (job) setGenerationJob(job);
+      if (job?.status === "done") {
+        try {
+          const rows = await load();
+          const sourceField = job.cmd === "brief-cluster" ? "topicClusterId" : job.cmd === "brief-wishlist" ? "wishlistEntryId" : null;
+          const created = sourceField && rows
+            .filter((brief) => brief[sourceField] === job.input && Date.parse(brief.createdAt) >= Date.parse(job.queuedAt))
+            .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
+          if (created) setCreatedBriefId(created.id);
+          else if (sourceField) setNote("Job finished, but its new brief is not visible yet. Reload Brief Studio in a moment.");
+        } catch {
+          setNote("Brief finished. Reload to see the new draft.");
+        }
+        return;
+      }
+      if (job?.status === "failed") return;
+      timer = setTimeout(poll, 3000);
+    };
+    poll();
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
   const patch = async (id, body) => {
@@ -96,6 +138,18 @@ export default function BriefsPage() {
         24-hour deadline.
       </p>
       {note && <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>{note}</div>}
+      {generationJob && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="muted" style={{ fontSize: 12.5 }}>
+            {generationJob.status === "done"
+              ? createdBriefId ? "Your selected brief is ready in the draft list below." : "The job finished; checking for the new draft."
+              : generationJob.status === "failed"
+                ? "Brief generation failed; the older drafts below are unchanged."
+                : "Generating your selected brief. The older drafts below are existing work; this job continues if you leave the page."}
+          </div>
+          <JobLog job={generationJob} />
+        </div>
+      )}
 
       {!sorted ? (
         <div className="empty">loading…</div>
@@ -107,7 +161,7 @@ export default function BriefsPage() {
             const t = tab[b.id] || "YT Short";
             const p = b.payload || {};
             return (
-              <div key={b.id} className="panel" style={{ marginBottom: 14, opacity: b.status === "killed" ? 0.45 : 1 }}>
+              <div key={b.id} className="panel" style={{ marginBottom: 14, opacity: b.status === "killed" ? 0.45 : 1, borderColor: b.id === createdBriefId ? "var(--accent)" : undefined }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <span className={`badge ${b.status === "approved" ? "ok" : b.status === "killed" ? "cool" : "warm"}`}>{b.status}</span>
                   <span className="chip static" style={{ fontSize: 11 }}>{b.kind}</span>

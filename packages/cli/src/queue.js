@@ -38,6 +38,10 @@ const CAN_START_WITHOUT_STATE = new Set([
   "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut", "edit-screencast",
   "edit-screencast-ai", "reframe",
 ]);
+// The portal and scheduled cloud collector can change clusters, wishlist and
+// briefs while the laptop is on. Brief jobs must read that shared state before
+// choosing their source or writing a new draft, even on the local executor.
+const BRIEF_COMMANDS = new Set(["brief", "brief-cluster", "brief-wishlist", "brief-topic"]);
 
 const ARGV = {
   math: (job) => ["math", job.input],
@@ -92,7 +96,7 @@ async function runJob(job, { cloud = false } = {}) {
     argv = build(job);
   }
 
-  if (cloud) {
+  if (cloud || (job.kind === "command" && BRIEF_COMMANDS.has(job.cmd))) {
     const pulled = await pullState();
     if (pulled?.error && !(pulled.missing && CAN_START_WITHOUT_STATE.has(job.cmd || job.kind))) throw new Error(pulled.error);
   }

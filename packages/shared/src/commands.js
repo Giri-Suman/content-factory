@@ -60,6 +60,8 @@ export const COMMANDS = [
 
   /* ---------------- plan ---------------- */
   { id: "brief", args: [], stage: "plan", cat: "all", label: "Brief the top cluster", desc: "hooks, title, beats, caption, blog outline", primary: true, slow: true },
+  { id: "brief", args: [], argKind: "clusterId", argLabel: "Cluster ID", stage: "plan", cat: "all", label: "Brief a selected cluster", desc: "generate from the exact opportunity you chose", key: "brief-cluster", slow: true },
+  { id: "brief", args: [], argKind: "wishlistId", argLabel: "Wishlist entry ID", stage: "plan", cat: "all", label: "Brief a wishlist entry", desc: "generate from the exact autopsy you chose", key: "brief-wishlist", slow: true },
   { id: "brief", args: ["topic"], argKind: "text", argLabel: "Topic or angle", stage: "plan", cat: "all", label: "Brief a specific idea", desc: "type any topic — a seasonal angle, a tool, a question", key: "brief-topic", slow: true },
   { id: "claims", args: ["map"], argKind: "briefId", stage: "plan", cat: "ai-automation", label: "Claims map", desc: "every factual claim and what backs it", primary: true, key: "claims-map" },
   { id: "claims", args: ["audit"], stage: "plan", cat: "all", label: "Claims audit", desc: "unbacked numbers across every brief", key: "claims-audit" },
@@ -172,7 +174,7 @@ export const RUNNABLE_IDS = [...new Set(COMMANDS.map((c) => c.id))];
  */
 export const CLOUD_RUNNABLE_KEYS = new Set([
   "radar-collect", "score", "evidence-report", "evidence-quotes", "cap-seasonal", "cap-seasonal-makeup",
-  "keywords", "ideabank-rank", "lab-extract", "yt-trending", "brief", "brief-topic", "claims-map",
+  "keywords", "ideabank-rank", "lab-extract", "yt-trending", "brief", "brief-cluster", "brief-wishlist", "brief-topic", "claims-map",
   "claims-audit", "capture-log", "catalog-fanout", "produce", "render-script", "drive-import", "math",
   "math-demo", "edit-beauty", "edit-beauty-nocap", "edit-beauty-dissolve", "edit-hardcut",
   "edit-screencast", "edit-screencast-ai", "reframe", "motion-list", "tools-prompter", "tools-gaps",
