@@ -61,7 +61,7 @@ The dashboard has 24 working areas:
 | Upload browser footage, preview/download R2 files | Yes | Browser + private R2 |
 | Import a shared Google Drive file | Yes, when Drive secrets are configured | GitHub Actions + Drive + R2 |
 | Trend collection, supported renders, edits, captions, Manim, ffmpeg, whisper | Yes, when GitHub Actions and its secrets are configured | GitHub-hosted Linux runner + R2 |
-| Automatic trend refresh for Today | Yes, when GitHub Actions R2 secrets are configured | GitHub Actions every six hours, then R2 |
+| Automatic trend refresh and Today digest | Yes, when GitHub Actions R2 secrets are configured | GitHub Actions every six hours, then R2 |
 | Queue status and completed job history | Yes | R2 |
 | Old local state migration | One time only | `factory sync push` on the laptop |
 | Commands not enabled for GitHub Actions | No | Laptop queue watcher |
@@ -76,11 +76,20 @@ powered-off laptop cannot wake itself; scheduled wake from sleep is optional.
 
 Today's **Refresh now** queues a full collect. When the portal reports “running
 on the laptop,” it can take 7–14 minutes; keep the page open to see completion,
-or reopen Today later. The separate scheduled collect runs every six hours in
-GitHub Actions and publishes directly to R2, so Today can update while the
-laptop is off. The scheduled workflow needs the repository's four `R2_*`
+or reopen Today later. The separate scheduled collect runs at about 08:00,
+14:00, 20:00, and 02:00 IST in GitHub Actions. It publishes refreshed trends,
+scores, and the date's morning digest directly to R2, so Today can update while
+the laptop is off. GitHub's actual start time can drift from the scheduled time.
+The scheduled workflow needs the repository's four `R2_*`
 secrets. If they are missing, its run fails visibly rather than silently
 updating a data branch the portal does not read.
+
+At present the portal reports `executor: laptop` from `/api/run`: on-demand
+buttons, including **Refresh now**, use the Windows queue watcher. The scheduled
+cloud collection above runs separately. To move on-demand jobs to GitHub Actions,
+configure `GITHUB_ACTIONS_TOKEN`, `GITHUB_REPOSITORY`, and `GITHUB_REF` in the
+Cloudflare Pages environment; verify `/api/run` reports `github-actions` after
+redeploying. Until then, the laptop must be on and signed in for those jobs.
 
 Refresh updates research and opportunity scores; it does not move an old brief
 to a new publishing date. **To Post Today** contains briefs due today (plus
