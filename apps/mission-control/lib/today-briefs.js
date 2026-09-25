@@ -1,8 +1,8 @@
 /** Keep historical briefs in the backlog instead of presenting them as today's work. */
-const IST_OFFSET_MS = 330 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { istDay } from "../../../packages/shared/src/ist.js";
+export { istDay };
 
-export const istDay = (timestamp) => new Date(timestamp + IST_OFFSET_MS).toISOString().slice(0, 10);
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function splitTodayBriefs(briefs, now = Date.now()) {
   const today = istDay(now);

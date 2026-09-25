@@ -1,4 +1,5 @@
 import { collection } from "../../shared/src/store.js";
+import { istDay } from "../../shared/src/ist.js";
 import { upcoming } from "./seasonal.js";
 
 /**
@@ -26,7 +27,7 @@ export function buildDigest() {
   const weekAgo = Date.now() - 7 * 864e5;
 
   const digest = {
-    date: new Date().toISOString().slice(0, 10),
+    date: istDay(),
     top10: clusters.slice(0, 10).map((c) => ({ id: c.id, label: c.label, score: c.opportunityScore, status: c.status })),
     overnightRisers: clusters
       .map((c) => {

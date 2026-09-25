@@ -5,6 +5,7 @@ import { paths } from "../packages/shared/src/config.js";
 import { isConfigured, presignGet } from "../packages/shared/src/r2.js";
 import { pullState, pushState } from "../packages/shared/src/stateSync.js";
 import { runRadar } from "../packages/radar/src/radar.js";
+import { buildDigest } from "../packages/studio/src/digest.js";
 
 if (!isConfigured()) throw new Error("R2 credentials are required for scheduled collection");
 
@@ -29,11 +30,13 @@ if (response.ok) {
 }
 
 await runRadar({ github: true });
+const digest = buildDigest();
+console.log(`Updated ${digest.date} digest with ${digest.top10.length} trends`);
 
-// Today reads clusters and jobruns from R2. Publish those before reporting the
-// scheduled run as successful, along with the Trend Radar's trends.json copy.
+// Today reads clusters, jobruns and digests from R2. Publish those before
+// reporting the scheduled run as successful, with the trends.json copy.
 const synced = await pushState();
-const essential = new Set(["os/clusters.json", "os/jobruns.json"]);
+const essential = new Set(["os/clusters.json", "os/jobruns.json", "os/digests.json"]);
 const blocked = (synced.conflicts || []).filter((file) => essential.has(file));
 if (blocked.length) {
   throw new Error(`Scheduled collection could not publish newer portal state: ${blocked.join(", ")}`);
