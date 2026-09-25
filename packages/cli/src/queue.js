@@ -52,6 +52,15 @@ const ARGV = {
   edit: (job) => ["edit", ...(job.vertical === "beauty" ? ["--beauty"] : []), resolveInInbox(job.input)],
 };
 
+export function jobOutputTail(out, { success = false } = {}) {
+  const lines = out.split(String.fromCharCode(10)).map((line) => line.trim()).filter(Boolean);
+  if (success) {
+    const resultLine = lines.findLast((line) => line.startsWith("RESULT "));
+    if (resultLine) return resultLine;
+  }
+  return lines.slice(-6).join(" | ").slice(0, 400);
+}
+
 /**
  * Run one queued job, capturing enough of its output to explain a failure.
  *
@@ -118,13 +127,10 @@ async function runJob(job, { cloud = false } = {}) {
   const mins = ((Date.now() - started) / 60000).toFixed(1);
   /* The last non-empty lines are where a stack trace or "missing key" lands.
      Trimmed to 400 chars because complete() stores 500 and the rest is noise. */
-  const tail = out
-    .split(String.fromCharCode(10))
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(-6)
-    .join(" | ")
-    .slice(0, 400);
+  const tail = jobOutputTail(out);
+  // Keep the structured result instead of frame progress. The queue only keeps
+  // 500 characters, and trimming progress first used to cut the JSON in half.
+  const successTail = jobOutputTail(out, { success: true });
 
   if (res.error) throw new Error(`${res.error.message} (after ${mins} min)${tail ? " - " + tail : ""}`);
   if (res.status !== 0) throw new Error(`exited ${res.status} after ${mins} min${tail ? " - " + tail : ""}`);
@@ -141,7 +147,7 @@ async function runJob(job, { cloud = false } = {}) {
       syncNote = `; warning: state sync failed: ${String(error.message).slice(0, 140)}`;
     }
   }
-  return `ok in ${mins} min${syncNote}${tail ? ` — ${tail}` : ""}`;
+  return `ok in ${mins} min${syncNote}${successTail ? ` — ${successTail}` : ""}`;
 }
 
 /**

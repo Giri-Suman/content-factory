@@ -22,8 +22,7 @@ export default function MathPage() {
 
   useEffect(() => {
     if (job?.status === "done") {
-      const m = (job.log || "").match(/RESULT (\{.*\})/);
-      const id = m ? JSON.parse(m[1]).id : null;
+      const id = (job.log || "").match(/"id":"([A-Za-z0-9._-]+)"/)?.[1] || null;
       const t = setTimeout(() => router.push(id ? `/renders#${id}` : "/renders"), 1200);
       return () => clearTimeout(t);
     }
