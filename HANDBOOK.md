@@ -37,7 +37,7 @@ than on one laptop. You can open it from a phone or another computer to:
 
 - read the dashboard and research data;
 - create, edit, approve, and review briefs and scripts;
-- upload footage directly from the browser to R2, import a shared Google Drive
+- upload footage from the browser into R2, import a shared Google Drive
   video when Drive is configured, preview it, and download finished files;
 - start supported jobs and watch them move from queued to running to done;
 - review renders, captions, thumbnails, quality checks, lessons, analytics,
@@ -67,6 +67,12 @@ The dashboard has 24 working areas:
 | Commands not enabled for GitHub Actions | No | Laptop queue watcher |
 | Browser/Chrome evidence capture, local-only AI such as Ollama, or any local binary not installed in the cloud runner | No | Laptop |
 | YouTube OAuth and the final `publish <id> --go` action | No — deliberately manual | Laptop terminal |
+
+Browser footage uploads use a signed direct R2 request when Pages has R2
+signing credentials. Without them, the portal automatically sends 8 MB parts
+through its R2-bound Worker. Either path stores the file in the same private
+bucket; uploading does not need the laptop. A failed or interrupted multipart
+upload can be retried from the browser; unfinished R2 parts expire automatically.
 
 Cloud jobs are marked `github-actions`. They start on GitHub and the laptop
 watcher ignores them. Laptop fallback jobs are marked `laptop`; they wait in R2
