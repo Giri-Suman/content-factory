@@ -12,6 +12,8 @@ const view = calibrationView([
 assert.equal(view.joins.n, 2, "demo posts must not enter calibration");
 assert.equal(view.joins.overallMedian, 150);
 assert.equal(view.scorecard.byTier.find((row) => row.tier === "S").median, 200);
+const oneTier = calibrationView(Array.from({ length: 10 }, (_, index) => post(`only${index}`, 100 + index, { predictedTier: "B" })));
+assert.match(oneTier.scorecard.tierHonest, /not enough tier spread/);
 
 assert.equal(scoreTitle("You won't believe this").banned, true);
 assert.equal(scoreTitle("How to automate Python in 5 minutes").mode, "heuristic");

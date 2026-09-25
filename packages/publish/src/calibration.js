@@ -276,11 +276,14 @@ export function predictionScorecard() {
     return { tier, n: g.length, median: g.length ? median(g.map(outcomeViews)) : null, reliable: g.length >= 3 };
   });
   // is the tier ordering actually monotonic (S>=A>=B>=C on median)?
-  const seq = tierRows.filter((r) => r.median != null).map((r) => r.median);
+  const reliableTiers = tierRows.filter((r) => r.reliable);
+  const seq = reliableTiers.map((r) => r.median);
   const monotonic = seq.every((v, i) => i === 0 || v <= seq[i - 1]);
   const tierHonest =
     withTier.length < 10
       ? "not enough data yet (need 10+ posts with a predicted tier)"
+      : reliableTiers.length < 2
+        ? "not enough tier spread to test the ranking (need 3+ real posts in at least two tiers)"
       : monotonic
         ? `calibrated ✓ — tiers rank correctly (${withTier.length} posts). Tiers with n<3 are still small samples.`
         : "MISCALIBRATED — higher tiers are NOT beating lower ones; the rubric needs review";

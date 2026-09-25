@@ -33,7 +33,8 @@ export function calibrationView(myposts) {
     return { tier, n: values.length, median: values.length ? median(values) : null, reliable: values.length >= 3 };
   });
   const withTier = tierRows.reduce((sum, row) => sum + row.n, 0);
-  const medians = tierRows.map((row) => row.median).filter((value) => value != null);
+  const reliableTiers = tierRows.filter((row) => row.reliable);
+  const medians = reliableTiers.map((row) => row.median);
   const monotonic = medians.every((value, index) => index === 0 || value <= medians[index - 1]);
   return {
     joins: { n: posts.length, overallMedian, byHook: groupBy((post) => post.hookPattern),
@@ -41,6 +42,7 @@ export function calibrationView(myposts) {
       bySlot: groupBy((post) => slot(post.postedAt)), byKind: groupBy((post) => post.kind) },
     scorecard: { n: posts.length, overallMedian, byTier: tierRows,
       tierHonest: withTier < 10 ? "not enough data yet (need 10+ posts with a predicted tier)"
+        : reliableTiers.length < 2 ? "not enough tier spread to test the ranking (need 3+ real posts in at least two tiers)"
         : monotonic ? `calibrated — tiers rank correctly (${withTier} posts). Tiers with n<3 are still small samples.`
           : "MISCALIBRATED — higher tiers are not beating lower ones; the rubric needs review",
       titleScoreN: posts.filter((post) => typeof post.titleScore === "number").length },
