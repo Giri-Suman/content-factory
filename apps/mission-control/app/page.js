@@ -57,16 +57,19 @@ export default function TodayPage() {
         body: "{}",
       }).then((r) => r.json());
 
+      if (!res.ok) throw new Error(res.error || res.log || "refresh could not start");
       if (res.log) setNote(res.log);
 
       // ran here and already finished - the data is new, just show it
-      if (!res.queued || !res.id) {
+      if (!res.queued) {
         await load();
         setNote(null);
         setRefreshing(false);
         return;
       }
+      if (!res.id) throw new Error("refresh was queued without a job ID");
 
+      let finished = false;
       for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 5000));
         const j = await fetch(`/api/jobs/${res.id}`)
@@ -80,11 +83,13 @@ export default function TodayPage() {
             : "collecting all sources + rescoring — running on the laptop…");
         }
         if (st === "done" || st === "failed") {
+          finished = true;
           await load();
           setNote(st === "failed" ? `refresh failed: ${j.job.log || "see the laptop"}` : null);
           break;
         }
       }
+      if (!finished) setNote(`Refresh job ${res.id} is still queued or running. Reload Today later to see new data.`);
     } catch (e) {
       setNote(`refresh failed: ${e}`);
     }
