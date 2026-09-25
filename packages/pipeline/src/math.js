@@ -7,6 +7,7 @@ import { MATH_GUIDE, buildMathPrompt, lintLayout, lintManim } from "../../studio
 import { synthesize, ffprobeDuration } from "./voice.js";
 import { noteDegradation } from "../../shared/src/degradations.js";
 import { pushRender } from "../../shared/src/r2.js";
+import { renderMathFallback } from "./mathFallback.js";
 
 const FPS = 30;
 const RENDERER = path.join(repoRoot, "renderers", "code-report");
@@ -197,8 +198,13 @@ export async function mathShort(argv) {
     timeout: 1000 * 60 * 30,
   });
   if (render.status !== 0) {
-    console.error("overlay render FAILED");
-    return false;
+    console.warn("Remotion overlay failed; finishing with ffmpeg captions instead.");
+    const recovered = renderMathFallback({
+      video: manimOut, audio: vo.file, words: vo.words, out,
+      durationSec: totalFrames / FPS, workdir: buildDir,
+    });
+    if (!recovered) return false;
+    noteDegradation(id, "overlay", "Remotion failed; ffmpeg captions fallback used");
   }
   const uploaded = await pushRender(id, [out]);
   if (uploaded.uploaded?.length) console.log(`cloud -> ${uploaded.uploaded[0].key}`);

@@ -228,6 +228,9 @@ f math gauss-sum --demo               # bundled demo, no AI key needed
 **Seasonal:** board exams (Feb–Mar), JEE/NEET (Jan), Pi Day (Mar 14), back to school (Jun).
 
 **The gotcha:** a Manim render takes minutes. Start it and go do something else.
+If Remotion cannot load the generated scene, Math Studio finishes the short with
+ffmpeg captions and voice instead. The job records this visual downgrade in the
+degradation log, and the finished MP4 is still uploaded to the portal.
 
 ---
 
