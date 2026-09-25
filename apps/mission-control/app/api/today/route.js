@@ -9,7 +9,7 @@ const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 import { actOn, readCollection } from "../../../lib/cloud.js";
-import { splitTodayBriefs } from "../../../lib/today-briefs.js";
+import { istDay, splitTodayBriefs } from "../../../lib/today-briefs.js";
 
 /**
  * The Today dashboard.
@@ -52,7 +52,7 @@ export async function GET() {
     .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))[0];
   const briefLists = splitTodayBriefs(briefs);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = istDay(Date.now());
   const memoRow = memos[0] || null;
   const recentCrits = critiques.filter((c) => Date.now() - new Date(c.createdAt).getTime() < 14 * 864e5);
 

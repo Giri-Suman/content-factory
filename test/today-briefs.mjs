@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { splitTodayBriefs } from "../apps/mission-control/lib/today-briefs.js";
+import { istDay, splitTodayBriefs } from "../apps/mission-control/lib/today-briefs.js";
 
 const now = Date.parse("2026-09-24T01:00:00Z"); // 06:30 IST on Sep 24
+assert.equal(istDay(Date.parse("2026-09-25T19:32:00Z")), "2026-09-26");
 const brief = (id, status, fields = {}) => ({
   id,
   status,

@@ -2,7 +2,7 @@
 const IST_OFFSET_MS = 330 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const istDay = (timestamp) => new Date(timestamp + IST_OFFSET_MS).toISOString().slice(0, 10);
+export const istDay = (timestamp) => new Date(timestamp + IST_OFFSET_MS).toISOString().slice(0, 10);
 
 export function splitTodayBriefs(briefs, now = Date.now()) {
   const today = istDay(now);
