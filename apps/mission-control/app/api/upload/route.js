@@ -27,6 +27,7 @@ const MIME = {
   webm: "video/webm",
 };
 const R2_SINGLE_PUT_MAX = 5 * 1024 ** 3;
+const WORKER_PART_SIZE = 8 * 1024 ** 2;
 
 const json = (o, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
@@ -89,7 +90,8 @@ export async function POST(request) {
     const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 10);
     const name = `${parsed.stem}-${Date.now().toString(36)}-${suffix}.${parsed.ext}`;
     const key = `footage/${name}`;
-    let signed;
+    let signed = null;
+    let multipart = null;
     try {
       signed = await presignR2Put(
         {
@@ -100,8 +102,14 @@ export async function POST(request) {
         },
         { key, contentType: parsed.mime, expiresSec: 900 }
       );
-    } catch (error) {
-      return json({ ok: false, error: error.message }, 503);
+    } catch {
+      // A Pages R2 binding can upload without S3 signing credentials. Use small
+      // Worker requests so even videos above the request-body limit can upload.
+      try {
+        multipart = await env.QUEUE.createMultipartUpload(key, { httpMetadata: { contentType: parsed.mime } });
+      } catch (error) {
+        return json({ ok: false, error: `could not start R2 upload: ${error.message}` }, 503);
+      }
     }
 
     const identity = identityFromRequest(request);
@@ -113,14 +121,23 @@ export async function POST(request) {
       contentType: parsed.mime,
       requestedBy: identity.email,
       requestedRole: identity.role,
-      state: "pending",
+      state: multipart ? "multipart" : "pending",
       createdAt: new Date().toISOString(),
-      expiresAt: signed.expiresAt,
+      ...(multipart
+        ? { uploadId: multipart.uploadId, partSize: WORKER_PART_SIZE, partCount: Math.ceil(size / WORKER_PART_SIZE), parts: [] }
+        : { expiresAt: signed.expiresAt }),
     };
-    await env.QUEUE.put(`uploads/${name}.json`, JSON.stringify(audit, null, 2), {
-      httpMetadata: { contentType: "application/json" },
-    });
-    return json({ ok: true, upload: { name, path: name, key, ...signed }, maxBytes });
+    try {
+      await env.QUEUE.put(`uploads/${name}.json`, JSON.stringify(audit, null, 2), {
+        httpMetadata: { contentType: "application/json" },
+      });
+    } catch (error) {
+      if (multipart) await multipart.abort().catch(() => {});
+      return json({ ok: false, error: `could not save upload: ${error.message}` }, 503);
+    }
+    return json({ ok: true, upload: multipart
+      ? { name, path: name, key, mode: "worker-multipart", partSize: WORKER_PART_SIZE }
+      : { name, path: name, key, mode: "direct", ...signed }, maxBytes });
   }
 
   const form = await request.formData().catch(() => null);
@@ -154,6 +171,35 @@ export async function POST(request) {
   return json({ ok: true, name, path: name, bytes: file.size, note: "ready for a cloud edit" });
 }
 
+export async function PUT(request) {
+  const env = getEnv();
+  if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
+  const url = new URL(request.url);
+  const name = exactName(url.searchParams.get("name"));
+  const partNumber = Number(url.searchParams.get("part"));
+  if (!name || !Number.isInteger(partNumber)) return json({ ok: false, error: "valid upload name and part required" }, 400);
+  const pending = await env.QUEUE.get(`uploads/${name}.json`);
+  const audit = pending ? await pending.json().catch(() => ({})) : {};
+  if (audit.state !== "multipart" || !audit.uploadId) return json({ ok: false, error: "multipart upload not found" }, 404);
+  if (partNumber < 1 || partNumber > audit.partCount) return json({ ok: false, error: "part out of range" }, 400);
+  const expectedBytes = Math.min(audit.partSize, audit.expectedBytes - (partNumber - 1) * audit.partSize);
+  const declaredBytes = request.headers.get("content-length");
+  if (declaredBytes && Number(declaredBytes) !== expectedBytes) return json({ ok: false, error: "part size does not match the selected file" }, 400);
+  if (!request.body) return json({ ok: false, error: "empty upload part" }, 400);
+  try {
+    const multipart = env.QUEUE.resumeMultipartUpload(audit.key, audit.uploadId);
+    const uploaded = await multipart.uploadPart(partNumber, request.body);
+    const parts = [...(audit.parts || []).filter((part) => part.partNumber !== partNumber), uploaded]
+      .sort((a, b) => a.partNumber - b.partNumber);
+    await env.QUEUE.put(`uploads/${name}.json`, JSON.stringify({ ...audit, parts }, null, 2), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return json({ ok: true, partNumber });
+  } catch (error) {
+    return json({ ok: false, error: `could not upload part: ${error.message}` }, 503);
+  }
+}
+
 export async function PATCH(request) {
   const env = getEnv();
   if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
@@ -161,15 +207,25 @@ export async function PATCH(request) {
   const name = exactName(body.name);
   if (!name) return json({ ok: false, error: "valid upload name required" }, 400);
   const key = `footage/${name}`;
-  const object = await env.QUEUE.head(key);
+  const pending = await env.QUEUE.get(`uploads/${name}.json`);
+  const audit = pending ? await pending.json().catch(() => ({})) : {};
+  let object;
+  if (audit.state === "multipart" && audit.uploadId) {
+    if (audit.parts?.length !== audit.partCount) return json({ ok: false, error: "upload has missing parts" }, 409);
+    try {
+      object = await env.QUEUE.resumeMultipartUpload(key, audit.uploadId).complete(audit.parts);
+    } catch (error) {
+      return json({ ok: false, error: `could not complete upload: ${error.message}` }, 503);
+    }
+  } else {
+    object = await env.QUEUE.head(key);
+  }
   if (!object) return json({ ok: false, error: "R2 has not received this upload" }, 404);
   const maxBytes = uploadLimit(env);
   if (object.size > maxBytes) {
     await env.QUEUE.delete(key);
     return json({ ok: false, error: "uploaded object exceeded the workspace limit and was removed" }, 413);
   }
-  const pending = await env.QUEUE.get(`uploads/${name}.json`);
-  const audit = pending ? await pending.json().catch(() => ({})) : {};
   if (audit.expectedBytes && Number(audit.expectedBytes) !== object.size) {
     await env.QUEUE.delete(key);
     return json({ ok: false, error: "uploaded byte count did not match the selected file" }, 400);
@@ -188,6 +244,11 @@ export async function DELETE(request) {
   if (!env?.QUEUE) return json({ ok: false, error: "storage not bound" }, 500);
   const name = exactName(new URL(request.url).searchParams.get("name"));
   if (!name) return json({ ok: false, error: "valid name required" }, 400);
+  const pending = await env.QUEUE.get(`uploads/${name}.json`);
+  const audit = pending ? await pending.json().catch(() => ({})) : {};
+  if (audit.state === "multipart" && audit.uploadId) {
+    await env.QUEUE.resumeMultipartUpload(`footage/${name}`, audit.uploadId).abort().catch(() => {});
+  }
   await Promise.all([env.QUEUE.delete(`footage/${name}`), env.QUEUE.delete(`uploads/${name}.json`)]);
   return json({ ok: true });
 }

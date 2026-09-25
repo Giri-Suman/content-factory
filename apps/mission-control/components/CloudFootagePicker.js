@@ -21,20 +21,36 @@ export function CloudFootagePicker({ value, onChange, uploads, refreshUploads, l
       }).then((response) => response.json());
       if (!init.ok) throw new Error(init.error || "could not start upload");
 
-      await new Promise((resolve, reject) => {
+      const send = (url, bytes, headers, offset) => new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("PUT", init.upload.url);
-        for (const [name, val] of Object.entries(init.upload.headers || {})) xhr.setRequestHeader(name, val);
+        xhr.open("PUT", url);
+        for (const [name, val] of Object.entries(headers || {})) xhr.setRequestHeader(name, val);
         xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) setProgress(Math.round((event.loaded / event.total) * 100));
+          if (event.lengthComputable) setProgress(Math.round(((offset + event.loaded) / file.size) * 100));
         };
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new Error(`R2 upload failed (${xhr.status})`));
+          else {
+            let message;
+            try { message = JSON.parse(xhr.responseText).error; } catch { /* R2 may return plain text. */ }
+            reject(new Error(message || `upload failed (${xhr.status})`));
+          }
         };
-        xhr.onerror = () => reject(new Error("could not reach R2 — check the bucket CORS policy"));
-        xhr.send(file);
+        xhr.onerror = () => reject(new Error(init.upload.mode === "worker-multipart"
+          ? "could not reach the portal during upload"
+          : "could not reach R2 — check the bucket CORS policy"));
+        xhr.send(bytes);
       });
+
+      if (init.upload.mode === "worker-multipart") {
+        const partSize = init.upload.partSize;
+        for (let offset = 0, part = 1; offset < file.size; offset += partSize, part++) {
+          const url = `/api/upload?name=${encodeURIComponent(init.upload.name)}&part=${part}`;
+          await send(url, file.slice(offset, offset + partSize), { "content-type": "application/octet-stream" }, offset);
+        }
+      } else {
+        await send(init.upload.url, file, init.upload.headers, 0);
+      }
 
       const done = await fetch("/api/upload", {
         method: "PATCH",
